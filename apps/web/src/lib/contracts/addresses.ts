@@ -67,6 +67,7 @@ export const CONTRACTS = {
     ADDRESS_REGISTRY: "0x0",
     DYNAMIC_PRICING: "0x0",
     SHIELDED_SWAP_ROUTER: "0x0",
+    CONFIDENTIAL_TRANSFER: "0x0",
 
     // Session Management (Wallet-Agnostic AA)
     SESSION_MANAGER: "0x0",
@@ -142,8 +143,12 @@ export const CONTRACTS = {
     DYNAMIC_PRICING: "0x28881df510544345d29e12701b6b6366441219364849a43d3443f37583bc0df",
 
     // Shielded Swap Router (Ekubo AMM integration)
-    // Deployed: TBD — update after sncast deploy
-    SHIELDED_SWAP_ROUTER: "0x0",
+    // Deployed: 2026-02-05 via sncast — class hash 0x1f97f75107d4f86ce7227208e9774607582da05c23f779b3d510e38814707f9
+    SHIELDED_SWAP_ROUTER: "0x056b76b42487b943a0d33f5787437ee08af9fd61e1926de9602b3cfb5392f1d6",
+
+    // Confidential Transfer (Tongo-style encrypted balances)
+    // Deployed: 2026-02-05 via sncast — class hash 0x7fe19305e2f2d2f49a82f037b642218a59782abc2b26b1ae19a4d45b6c2563a
+    CONFIDENTIAL_TRANSFER: "0x07ab4e4cf7ec2fca487573efe4573aee7e24c60a3aee080befc763cc0f400e86",
 
     // Session Management (Wallet-Agnostic AA)
     // Redeployed 2025-12-31 with upgradability
@@ -191,6 +196,7 @@ export const CONTRACTS = {
     ADDRESS_REGISTRY: "0x0",
     DYNAMIC_PRICING: "0x0",
     SHIELDED_SWAP_ROUTER: "0x0",
+    CONFIDENTIAL_TRANSFER: "0x0",
 
     // Session Management (Wallet-Agnostic AA)
     SESSION_MANAGER: "0x0",

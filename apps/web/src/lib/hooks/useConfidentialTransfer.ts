@@ -28,10 +28,18 @@ import {
   type AEHint,
 } from "../crypto/aeHints";
 import { usePrivacyKeys } from "./usePrivacyKeys";
+import { CONTRACTS } from "../contracts/addresses";
+import { useNetwork } from "../contexts/NetworkContext";
 
-// Contract address from env
-const CONFIDENTIAL_TRANSFER_ADDRESS = process.env.NEXT_PUBLIC_CONFIDENTIAL_TRANSFER_ADDRESS ||
-  "0x626df6abac7e4c2140d8a2e2024503431a5492526adda96f78c1b623a855b";
+// Use centralized contract address — falls back to sepolia
+function getConfidentialTransferAddress(network: string): string {
+  const contracts = CONTRACTS[network as keyof typeof CONTRACTS];
+  if (contracts && "CONFIDENTIAL_TRANSFER" in contracts) {
+    const addr = (contracts as Record<string, string>).CONFIDENTIAL_TRANSFER;
+    if (addr && addr !== "0x0") return addr;
+  }
+  return CONTRACTS.sepolia.CONFIDENTIAL_TRANSFER;
+}
 
 // Asset IDs (matching Cairo contract)
 export const ASSET_IDS = {
@@ -151,6 +159,9 @@ function generateProofForTransfer(
 export function useConfidentialTransfer(): UseConfidentialTransferReturn {
   const { address, account } = useAccount();
   const { sendAsync } = useSendTransaction({});
+
+  // Dynamic contract address from centralized config
+  const CONFIDENTIAL_TRANSFER_ADDRESS = getConfidentialTransferAddress("sepolia");
 
   // Use privacy keys hook for proper key management
   const {

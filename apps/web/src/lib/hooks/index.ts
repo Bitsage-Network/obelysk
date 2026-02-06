@@ -81,6 +81,13 @@ export {
   type UseShieldedSwapResult,
 } from './useShieldedSwap';
 
+// Privacy events (on-chain event stream)
+export {
+  usePrivacyEvents,
+  type UsePrivacyEventsOptions,
+  type UsePrivacyEventsResult,
+} from './usePrivacyEvents';
+
 // Workload deployment hooks
 export * from './useWorkloadDeployment';
 
