@@ -50,6 +50,8 @@ import {
 
 import type { PrivacyNote } from "../crypto/constants";
 
+import { generateMerkleProofOnChain } from "../crypto/onChainMerkleProof";
+
 import { usePrivacyKeys } from "./usePrivacyKeys";
 
 // Contract ABIs (minimal)
@@ -161,48 +163,6 @@ const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
  * Fetch the leafIndex from a deposit transaction receipt
  * The contract emits PPDepositExecuted event with global_index
  */
-// API base URL for backend requests
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
-/**
- * Fetch Merkle proof from backend for a deposit commitment
- * Returns the proof needed for withdrawal verification
- */
-async function fetchMerkleProof(
-  commitment: string
-): Promise<{
-  siblings: string[];
-  path_indices: number[];
-  root: string;
-  leafIndex: number;
-} | null> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/privacy/proof/${commitment}`);
-
-    if (!response.ok) {
-      console.warn("Failed to fetch Merkle proof:", response.status);
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.found) {
-      console.warn("Deposit not found in indexed data");
-      return null;
-    }
-
-    return {
-      siblings: data.siblings,
-      path_indices: data.path_indices.map((p: number) => p),
-      root: data.current_root || data.root,
-      leafIndex: data.leaf_index,
-    };
-  } catch (error) {
-    console.error("Error fetching Merkle proof:", error);
-    return null;
-  }
-}
-
 async function fetchLeafIndexFromReceipt(
   txHash: string,
   commitment: string
@@ -866,59 +826,55 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         }
 
         // ==============================
-        // Step 1: Derive nullifier
+        // Step 1: Generate Merkle proof from on-chain events
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 20 }));
 
-        // CRITICAL: Nullifier = H(nullifier_secret, leaf_index)
-        // NOT H(nullifier_secret, commitment)!
-        // The leaf_index is returned by pp_deposit and stored in the note
-        if (note.leafIndex === 0 && note.depositTxHash) {
-          // TODO: Fetch leafIndex from transaction receipt or indexer
-          console.warn("Warning: leafIndex is 0, may need to fetch from chain");
-        }
-
-        const nullifier = deriveNullifier(
-          BigInt(note.nullifierSecret),
-          note.leafIndex
-        );
-
-        console.log("Withdrawal nullifier:", nullifier, "for leafIndex:", note.leafIndex);
-
-        // ==============================
-        // Step 2: Fetch Merkle proof from backend
-        // ==============================
-        setWithdrawState((prev) => ({ ...prev, proofProgress: 40 }));
-
-        // Fetch actual Merkle proof from indexer/backend
-        const merkleProof = await fetchMerkleProof(noteCommitment);
+        // Generate Merkle proof from on-chain events (no backend needed)
+        const merkleProof = await generateMerkleProofOnChain(noteCommitment, "sepolia");
 
         if (!merkleProof) {
           throw new Error(
-            "Could not fetch Merkle proof. Deposit may not be indexed yet. " +
+            "Could not generate Merkle proof. Deposit commitment not found in on-chain events. " +
             "Please wait for the deposit to be confirmed on-chain."
           );
         }
 
-        console.log("Merkle proof fetched:", {
+        console.log("Merkle proof generated:", {
           root: merkleProof.root,
           siblings: merkleProof.siblings.length,
           leafIndex: merkleProof.leafIndex,
         });
 
-        // Convert to contract-expected format
+        // Convert to contract-expected format (LeanIMTProof)
         const globalTreeProof = {
           siblings: merkleProof.siblings,
           path_indices: merkleProof.path_indices,
           leaf: noteCommitment,
           root: merkleProof.root,
+          tree_size: merkleProof.tree_size,
         };
 
-        // Update note's leafIndex if it was 0
+        // Update note's leafIndex from on-chain data
         if (note.leafIndex === 0 && merkleProof.leafIndex > 0) {
           await updateNoteLeafIndex(noteCommitment, merkleProof.leafIndex);
           note.leafIndex = merkleProof.leafIndex;
         }
+
+        // ==============================
+        // Step 2: Derive nullifier (must come after Merkle proof to have correct leafIndex)
+        // ==============================
+        setWithdrawState((prev) => ({ ...prev, proofProgress: 40 }));
+
+        // CRITICAL: Nullifier = H(nullifier_secret, leaf_index)
+        // The leaf_index comes from the on-chain Merkle proof
+        const effectiveLeafIndex = merkleProof.leafIndex;
+        const nullifier = deriveNullifier(
+          BigInt(note.nullifierSecret),
+          effectiveLeafIndex,
+        );
+
+        console.log("Withdrawal nullifier:", nullifier, "for leafIndex:", effectiveLeafIndex);
 
         // ==============================
         // Step 3: Build withdrawal proof
@@ -936,23 +892,6 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           ? complianceOptions.selectedASPs[0] // Use first selected ASP
           : null;
 
-        const withdrawalProof = {
-          global_tree_proof: globalTreeProof,
-          deposit_commitment: noteCommitment,
-          association_set_id: associationSetId,
-          association_proof: null, // TODO: Generate actual ASP membership proof
-          exclusion_set_id: null,
-          exclusion_proof: null,
-          nullifier: "0x" + nullifier.toString(16),
-          amount: cairo.uint256(amountWei),
-          recipient: recipientAddress,
-          range_proof_data: [],
-          // Include audit key if auditable compliance
-          audit_key: complianceLevel === "auditable" && complianceOptions?.auditKey
-            ? complianceOptions.auditKey
-            : null,
-        };
-
         console.log("Withdrawal proof built with compliance level:", complianceLevel);
 
         // ==============================
@@ -966,12 +905,59 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         console.log("Submitting withdrawal transaction...");
 
+        // Manual calldata serialization for PPWithdrawalProof
+        // CallData.compile may not serialize LeanIMTProof arrays correctly
+        const TWO_POW_128 = 2n ** 128n;
+        const formatHex = (n: bigint) => "0x" + n.toString(16);
+
+        const serializeIMTProof = (p: typeof globalTreeProof) => {
+          const data: string[] = [];
+          // siblings: Array<felt252>
+          data.push(formatHex(BigInt(p.siblings.length)));
+          p.siblings.forEach((s) => data.push(s));
+          // path_indices: Array<felt252> (bool as felt)
+          data.push(formatHex(BigInt(p.path_indices.length)));
+          p.path_indices.forEach((b) => data.push(b ? "0x1" : "0x0"));
+          // leaf, root, tree_size
+          data.push(p.leaf);
+          data.push(p.root);
+          data.push(formatHex(BigInt(p.tree_size)));
+          return data;
+        };
+
+        const rawWithdrawCalldata: string[] = [];
+
+        // global_tree_proof: LeanIMTProof
+        rawWithdrawCalldata.push(...serializeIMTProof(globalTreeProof));
+        // deposit_commitment: felt252
+        rawWithdrawCalldata.push(noteCommitment);
+        // association_set_id: Option<felt252>
+        if (associationSetId) {
+          rawWithdrawCalldata.push("0x0"); // Some variant
+          rawWithdrawCalldata.push(associationSetId);
+        } else {
+          rawWithdrawCalldata.push("0x1"); // None variant
+        }
+        // association_proof: Option<LeanIMTProof>
+        rawWithdrawCalldata.push("0x1"); // None
+        // exclusion_set_id: Option<felt252>
+        rawWithdrawCalldata.push("0x1"); // None
+        // exclusion_proof: Option<ExclusionProofData>
+        rawWithdrawCalldata.push("0x1"); // None
+        // nullifier: felt252
+        rawWithdrawCalldata.push("0x" + nullifier.toString(16));
+        // amount: u256 (low, high)
+        rawWithdrawCalldata.push(formatHex(amountWei % TWO_POW_128));
+        rawWithdrawCalldata.push(formatHex(amountWei / TWO_POW_128));
+        // recipient: ContractAddress
+        rawWithdrawCalldata.push(recipientAddress);
+        // range_proof_data: Span<felt252>
+        rawWithdrawCalldata.push("0x0"); // empty span length
+
         const withdrawCall = {
           contractAddress: PRIVACY_POOLS_ADDRESS,
           entrypoint: "pp_withdraw",
-          calldata: CallData.compile({
-            proof: withdrawalProof,
-          }),
+          calldata: rawWithdrawCalldata,
         };
 
         const result = await account.execute([withdrawCall]);
