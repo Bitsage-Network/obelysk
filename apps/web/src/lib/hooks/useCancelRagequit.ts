@@ -18,7 +18,7 @@ import {
   type AssociationSetInfo,
   type RagequitRequest,
 } from "@/lib/contracts";
-import { getMerkleProof, type MerkleProof } from "@/lib/crypto/merkle";
+import type { MerkleProof } from "@/lib/crypto/merkle";
 import PrivacyPoolsABI from "@/lib/contracts/abis/PrivacyPools.json";
 
 // Default RPC for Starknet Sepolia

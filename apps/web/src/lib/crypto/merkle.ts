@@ -1,10 +1,15 @@
 /**
- * Merkle Tree for Privacy Pool Membership Proofs
+ * @deprecated — DO NOT USE for privacy pool proofs.
  *
- * Implements an incremental Merkle tree (Lean IMT) for efficient
- * membership proofs in the privacy pool.
+ * This module uses poseidonHash([left, right]) WITHOUT the domain separator
+ * required by the Cairo LeanIMT. It also uses fixed depth 20 with zero-hash
+ * padding, which differs from the Cairo sparse tree.
  *
- * Uses Starknet's Poseidon hash for all tree operations.
+ * For privacy pool Merkle proofs, use:
+ *   import { generateMerkleProofOnChain } from "./onChainMerkleProof";
+ *
+ * This file is kept only for its type exports (MerkleProof, LeanIMTState)
+ * used by useCancelRagequit and the barrel index.
  */
 
 import { poseidonHash } from "./nullifier";
