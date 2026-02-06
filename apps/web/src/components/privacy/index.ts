@@ -18,3 +18,6 @@ export type {
 export { PrivacySessionCard } from "./PrivacySessionCard";
 
 export { GaslessDepositPanel } from "./GaslessDepositPanel";
+
+export { PrivacyActivityFeed } from "./PrivacyActivityFeed";
+export type { PrivacyActivityFeedProps } from "./PrivacyActivityFeed";

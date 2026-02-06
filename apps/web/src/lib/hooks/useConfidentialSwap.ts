@@ -31,12 +31,11 @@ import {
   hybridDecrypt,
   type AEHint,
 } from "../crypto/aeHints";
+import { CONTRACTS } from "../contracts/addresses";
 
-// Contract addresses from env
-const CONFIDENTIAL_SWAP_ADDRESS = process.env.NEXT_PUBLIC_CONFIDENTIAL_SWAP_ADDRESS ||
-  "0x29516b3abfbc56fdf0c1f136c971602325cbabf07ad8f984da582e2106ad2af";
-const CONFIDENTIAL_TRANSFER_ADDRESS = process.env.NEXT_PUBLIC_CONFIDENTIAL_TRANSFER_ADDRESS ||
-  "0x626df6abac7e4c2140d8a2e2024503431a5492526adda96f78c1b623a855b";
+// Use centralized contract addresses
+const CONFIDENTIAL_SWAP_ADDRESS = CONTRACTS.sepolia.CONFIDENTIAL_SWAP;
+const CONFIDENTIAL_TRANSFER_ADDRESS = CONTRACTS.sepolia.CONFIDENTIAL_TRANSFER;
 
 // Asset IDs matching Cairo contract
 export type AssetId = "SAGE" | "USDC" | "STRK" | "ETH" | "BTC" | string;

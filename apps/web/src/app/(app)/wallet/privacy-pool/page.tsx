@@ -51,8 +51,8 @@ import { useCancelRagequit, type InclusionSet } from "@/lib/hooks/useCancelRageq
 import { useASPRegistry, type ASPInfo } from "@/lib/hooks/useASPRegistry";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination, type PrivacyNote } from "@/lib/crypto";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
-import { PrivacySessionCard } from "@/components/privacy";
-import { EXTERNAL_TOKENS } from "@/lib/contracts/addresses";
+import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
+import { EXTERNAL_TOKENS, CONTRACTS } from "@/lib/contracts/addresses";
 import { useGaslessPrivacyDeposit } from "@/lib/hooks/useGaslessPrivacyDeposit";
 
 // Supported assets for privacy pools
@@ -1569,6 +1569,18 @@ export default function PrivacyPoolPage() {
         <div className="space-y-6">
           {/* Privacy Session Card */}
           <PrivacySessionCard />
+
+          {/* Recent Privacy Activity */}
+          <PrivacyActivityFeed
+            title="Recent Pool Activity"
+            compact={false}
+            maxItems={10}
+            options={{
+              network: "sepolia",
+              contractFilter: [CONTRACTS.sepolia.PRIVACY_POOLS],
+              eventTypes: ["deposit", "withdrawal"],
+            }}
+          />
 
           {/* Your Deposits */}
           <div className="glass-card p-6">

@@ -63,7 +63,7 @@ import {
 import { TOKEN_METADATA, EXTERNAL_TOKENS, NETWORK_CONFIG } from "@/lib/contracts/addresses";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { usePragmaPrices } from "@/lib/hooks/usePragmaOracle";
-import { PrivacySessionCard } from "@/components/privacy";
+import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
 import { BridgeTab } from "@/components/bridge";
 import { ShieldedSwapPanel } from "@/components/swap";
 import { useConnect } from "@starknet-react/core";
@@ -864,10 +864,11 @@ function ActivityTab({
   formatTimeAgo: (timestamp: number) => string;
   explorerUrl: string;
 }) {
-  const [filter, setFilter] = useState<"all" | "sent" | "received" | "earnings">("all");
+  const [filter, setFilter] = useState<"all" | "sent" | "received" | "earnings" | "privacy">("all");
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredTx = transactions.filter(tx => {
+    if (filter === "privacy") return false; // Privacy tab uses PrivacyActivityFeed
     if (filter === "sent" && tx.type !== "send") return false;
     if (filter === "received" && tx.type !== "receive") return false;
     if (filter === "earnings" && !["gpu_earning", "rollover"].includes(tx.type)) return false;
@@ -909,7 +910,7 @@ function ActivityTab({
           />
         </div>
         <div className="flex gap-1.5 sm:gap-2 overflow-x-auto pb-1">
-          {(["all", "sent", "received", "earnings"] as const).map((f) => (
+          {(["all", "sent", "received", "earnings", "privacy"] as const).map((f) => (
             <button
               key={f}
               onClick={() => setFilter(f)}
@@ -920,32 +921,40 @@ function ActivityTab({
                   : "bg-surface-elevated text-gray-400 hover:text-white"
               )}
             >
-              {f.charAt(0).toUpperCase() + f.slice(1)}
+              {f === "privacy" ? "Privacy" : f.charAt(0).toUpperCase() + f.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Transaction List */}
-      <div className="glass-card divide-y divide-surface-border">
-        {filteredTx.length > 0 ? (
-          filteredTx.map((tx) => (
-            <TransactionRow
-              key={tx.id}
-              tx={tx}
-              formatAddress={formatAddress}
-              formatTimeAgo={formatTimeAgo}
-              expanded
-              explorerUrl={explorerUrl}
-            />
-          ))
-        ) : (
-          <div className="p-8 text-center">
-            <Activity className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-            <p className="text-gray-400">No transactions found</p>
-          </div>
-        )}
-      </div>
+      {/* Privacy Activity Feed (shown when "privacy" filter is selected) */}
+      {filter === "privacy" ? (
+        <PrivacyActivityFeed
+          title="Privacy Events"
+          options={{ network: "sepolia" }}
+        />
+      ) : (
+        /* Standard Transaction List */
+        <div className="glass-card divide-y divide-surface-border">
+          {filteredTx.length > 0 ? (
+            filteredTx.map((tx) => (
+              <TransactionRow
+                key={tx.id}
+                tx={tx}
+                formatAddress={formatAddress}
+                formatTimeAgo={formatTimeAgo}
+                expanded
+                explorerUrl={explorerUrl}
+              />
+            ))
+          ) : (
+            <div className="p-8 text-center">
+              <Activity className="w-12 h-12 text-gray-600 mx-auto mb-4" />
+              <p className="text-gray-400">No transactions found</p>
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
