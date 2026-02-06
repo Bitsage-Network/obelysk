@@ -71,6 +71,11 @@ const devnet: Chain = {
       http: ["http://localhost:5050"],
     },
   },
+  paymasterRpcUrls: {
+    default: {
+      http: [],
+    },
+  },
 };
 
 interface StarknetProviderProps {

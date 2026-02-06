@@ -266,7 +266,7 @@ export async function estimateSwapOutput(
     const provider = new RpcProvider({ nodeUrl: rpcUrl });
     const coreAddress = EKUBO_CORE[network as keyof typeof EKUBO_CORE] || EKUBO_CORE.sepolia;
 
-    const contract = new Contract(EKUBO_QUOTE_ABI, coreAddress, provider);
+    const contract = new Contract({ abi: EKUBO_QUOTE_ABI, address: coreAddress, providerOrAccount: provider });
     const result = await contract.call("quote", [
       {
         token0: poolKey.token0,

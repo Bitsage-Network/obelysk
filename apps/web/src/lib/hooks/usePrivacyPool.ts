@@ -618,7 +618,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           const provider = new RpcProvider({
             nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/CrJvEXftXMfkXvyJfunp3mQVEfDU2D81",
           });
-          const tokenContract = new Contract(ERC20_ABI, SAGE_TOKEN_ADDRESS, provider);
+          const tokenContract = new Contract({ abi: ERC20_ABI, address: SAGE_TOKEN_ADDRESS, providerOrAccount: provider });
           const allowanceResult = await tokenContract.allowance(address, PRIVACY_POOLS_ADDRESS);
 
           // Convert u256 result to bigint

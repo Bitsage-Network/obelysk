@@ -5,7 +5,7 @@
  * Supports SNIP-9 outside execution for meta-transactions.
  */
 
-import { Account, AccountInterface, Call, CallData, ec, hash, Provider, Contract, ProviderInterface } from 'starknet';
+import { Account, AccountInterface, Call, CallData, ec, hash, Contract, ProviderInterface } from 'starknet';
 import {
   Session,
   SessionConfig,
@@ -434,11 +434,11 @@ export class BitSageSessionManager {
 
     // Create an account instance for the session manager contract
     // We use a "pseudo" account that only executes through the session manager
-    const sessionAccount = new Account(
-      this.provider,
-      this.contractAddress,
-      privateKey
-    );
+    const sessionAccount = new Account({
+      provider: this.provider,
+      address: this.contractAddress,
+      signer: privateKey,
+    });
 
     // Execute through session manager
     const tx = await sessionAccount.execute({
@@ -480,11 +480,11 @@ export class BitSageSessionManager {
 
     // This can be executed by ANY account (relayer)
     // The owner's signature proves authorization
-    const relayerAccount = new Account(
-      this.provider,
-      this.contractAddress,
-      '0x0' // Dummy key - not used for outside execution
-    );
+    const relayerAccount = new Account({
+      provider: this.provider,
+      address: this.contractAddress,
+      signer: '0x0', // Dummy key - not used for outside execution
+    });
 
     const tx = await relayerAccount.execute({
       contractAddress: this.contractAddress,

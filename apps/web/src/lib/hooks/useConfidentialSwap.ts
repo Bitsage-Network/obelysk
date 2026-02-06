@@ -427,7 +427,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
   // Contract instance
   const contract = useMemo(
-    () => new Contract(CONFIDENTIAL_SWAP_ABI, CONFIDENTIAL_SWAP_ADDRESS, provider),
+    () => new Contract({ abi: CONFIDENTIAL_SWAP_ABI, address: CONFIDENTIAL_SWAP_ADDRESS, providerOrAccount: provider }),
     [provider]
   );
 

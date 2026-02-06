@@ -78,11 +78,11 @@ export function useCancelRagequit(): UseCancelRagequitResult {
 
   // Provider and contract
   const provider = new RpcProvider({ nodeUrl: RPC_URL });
-  const privacyPoolsContract = new Contract(
-    PrivacyPoolsABI,
-    addresses.PRIVACY_POOLS,
-    provider
-  );
+  const privacyPoolsContract = new Contract({
+    abi: PrivacyPoolsABI,
+    address: addresses.PRIVACY_POOLS,
+    providerOrAccount: provider,
+  });
 
   /**
    * Fetch available inclusion sets from contract
