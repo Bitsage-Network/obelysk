@@ -25,7 +25,6 @@
 // Upgradeable via timelocked schedule → execute pattern (5-minute default delay).
 
 use starknet::ContractAddress;
-use starknet::storage::Map;
 
 // ============================================================================
 // Ekubo Types (inline — avoids external dependency resolution issues)
@@ -197,8 +196,6 @@ trait IPrivacyPool<TContractState> {
 // ERC20 Interface
 // ============================================================================
 
-use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
-
 // ============================================================================
 // Events
 // ============================================================================
@@ -264,7 +261,7 @@ pub mod ShieldedSwapRouter {
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
 
     use super::{
-        ShieldedSwapRequest, PoolKey, SwapParameters, Delta, i129,
+        ShieldedSwapRequest,
         IEkuboCoreDispatcher, IEkuboCoreDispatcherTrait,
         IPrivacyPoolDispatcher, IPrivacyPoolDispatcherTrait,
         ShieldedSwapExecuted, PoolRegistered,
