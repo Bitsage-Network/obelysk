@@ -1,0 +1,25 @@
+{
+  "name": "@obelysk/crypto",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./elgamal": "./src/elgamal.ts",
+    "./pedersen": "./src/pedersen.ts",
+    "./merkle": "./src/merkle.ts",
+    "./zkProofs": "./src/zkProofs.ts"
+  },
+  "scripts": {
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "starknet": "^6.17.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  }
+}
