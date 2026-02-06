@@ -57,6 +57,7 @@ import {
   TOKEN_METADATA,
   type NetworkType,
 } from "@/lib/contracts/addresses";
+import { fetchMerkleProofWithFallback } from "@/lib/crypto/localMerkleProof";
 
 // ============================================================================
 // Types
@@ -113,9 +114,6 @@ const INITIAL_STATE: ShieldedSwapState = {
   outputAmount: "",
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -153,49 +151,8 @@ function selectNoteForSwap(
   return null;
 }
 
-/**
- * Fetch Merkle proof from coordinator API for a deposit commitment.
- * Same pattern as usePrivacyPool.ts:171-213.
- */
-async function fetchMerkleProofForSwap(
-  commitment: string
-): Promise<{
-  siblings: string[];
-  path_indices: number[];
-  root: string;
-  leafIndex: number;
-} | null> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/privacy/proof/${commitment}`
-    );
-
-    if (!response.ok) {
-      console.warn(
-        "[ShieldedSwap] Failed to fetch Merkle proof:",
-        response.status
-      );
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.found) {
-      console.warn("[ShieldedSwap] Deposit not found in indexed data");
-      return null;
-    }
-
-    return {
-      siblings: data.siblings,
-      path_indices: data.path_indices.map((p: number) => p),
-      root: data.current_root || data.root,
-      leafIndex: data.leaf_index,
-    };
-  } catch (error) {
-    console.error("[ShieldedSwap] Error fetching Merkle proof:", error);
-    return null;
-  }
-}
+// Merkle proof fetching is now handled by @/lib/crypto/localMerkleProof
+// which tries the coordinator API first, then falls back to local tree reconstruction.
 
 // ============================================================================
 // Hook
@@ -460,9 +417,10 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           message: "Fetching Merkle inclusion proof...",
         }));
 
-        // Fetch Merkle proof from coordinator
-        const merkleProof = await fetchMerkleProofForSwap(
-          selectedNote.commitment
+        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
+        const merkleProof = await fetchMerkleProofWithFallback(
+          selectedNote.commitment,
+          network as NetworkType
         );
 
         if (!merkleProof) {
