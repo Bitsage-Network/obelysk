@@ -5,11 +5,13 @@ import { Point, scalarMul, pointAdd, G, POINT_AT_INFINITY } from "./elgamal";
 import { CURVE_ORDER, GENERATOR_X } from "./constants";
 
 // Second generator H for Pedersen commitments
-// H = hash_to_curve("OBELYSK_PEDERSEN_H")
-// In production, this should be generated deterministically
+// Derived via hash-to-curve (try-and-increment) with Poseidon
+// Domain: "OBELYSK_PEDERSEN_H_V1" | Counter: 0
+// Matches contracts/src/elgamal.cairo GEN_H_X/GEN_H_Y
+// Nobody knows dlog_G(H) — binding property holds
 export const H: Point = {
-  x: BigInt("0x2a6a6e4d3b2c1f0e9d8c7b6a5948372615041302f1e0d9c8b7a6958473625140"),
-  y: BigInt("0x3b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"),
+  x: BigInt("0x73bd2c9434c955f80b06d2847f8384a226d6cc2557a5735fd9f84d632f576be"),
+  y: BigInt("0x1bd58ea52858154de69bf90e446ff200f173d49da444c4f462652ce6b93457e"),
 };
 
 export interface PedersenCommitment {
