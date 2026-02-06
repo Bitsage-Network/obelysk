@@ -150,6 +150,7 @@ pub mod ConfidentialTransfer {
     };
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
     use core::poseidon::poseidon_hash_span;
+    use core::num::traits::Zero;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
