@@ -2,10 +2,12 @@
  * useShieldedSwap Hook
  *
  * Provides React integration for privacy-preserving token swaps through
- * Ekubo AMM pools. Combines:
- * - STWO prover for withdrawal proof + deposit commitment generation
- * - Shielded swap service for call construction
- * - starknet-react for transaction submission
+ * Ekubo AMM pools. Uses real cryptographic operations:
+ * - Pedersen commitments for deposit note creation
+ * - Poseidon-based nullifier derivation
+ * - ElGamal encryption for amount hiding
+ * - Merkle proof fetch from coordinator API
+ * - IndexedDB note storage via keyStore
  *
  * Privacy model:
  * - Identity: HIDDEN (router is the on-chain actor)
@@ -17,22 +19,44 @@
 import { useState, useCallback, useRef, useMemo } from "react";
 import { useAccount, useSendTransaction } from "@starknet-react/core";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
-import { useSTWOProver } from "@/lib/prover/stwoProver";
 import { usePrivacyKeys } from "./usePrivacyKeys";
+import {
+  createNote,
+  commitmentToFelt,
+  commitmentToContractFormat,
+  type NoteData,
+} from "@/lib/crypto/pedersen";
+import { deriveNullifier, nullifierToFelt } from "@/lib/crypto/nullifier";
+import {
+  encrypt as elgamalEncrypt,
+  randomScalar,
+} from "@/lib/crypto/elgamal";
+import {
+  getUnspentNotes,
+  saveNote,
+  markNoteSpent,
+  updateNoteLeafIndex,
+} from "@/lib/crypto/keyStore";
+import type { PrivacyNote } from "@/lib/crypto/constants";
 import {
   type SwapStage,
   type ShieldedSwapParams,
   type SwapEstimate,
-  type ECPoint,
   buildShieldedSwapCalls,
   estimateSwapOutput,
   getMinOutputWithSlippage,
   getPrivacyPoolForToken,
   getTokenSymbolFromAddress,
   formatTokenAmount,
+  validateSwapPrerequisites,
+  getAssetIdForToken,
   SHIELDED_SWAP_ROUTER,
 } from "@/lib/swap/shieldedSwap";
-import { NETWORK_CONFIG, type NetworkType } from "@/lib/contracts/addresses";
+import {
+  NETWORK_CONFIG,
+  TOKEN_METADATA,
+  type NetworkType,
+} from "@/lib/contracts/addresses";
 
 // ============================================================================
 // Types
@@ -71,6 +95,7 @@ export interface UseShieldedSwapResult {
   ) => Promise<SwapEstimate | null>;
   reset: () => void;
   isRouterDeployed: boolean;
+  getPrivacyPoolBalance: (tokenSymbol?: string) => Promise<number>;
 }
 
 // ============================================================================
@@ -88,6 +113,90 @@ const INITIAL_STATE: ShieldedSwapState = {
   outputAmount: "",
 };
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/**
+ * Select the best unspent note for a swap.
+ * Prefers exact match, then smallest note >= required amount.
+ */
+function selectNoteForSwap(
+  notes: PrivacyNote[],
+  requiredAmount: number,
+  tokenSymbol: string
+): PrivacyNote | null {
+  // Filter for the correct token (notes without tokenSymbol are assumed SAGE)
+  const tokenNotes = notes.filter((n) => {
+    const noteToken = n.tokenSymbol || "SAGE";
+    return noteToken === tokenSymbol;
+  });
+
+  if (tokenNotes.length === 0) return null;
+
+  // Sort by denomination ascending
+  const sorted = [...tokenNotes].sort(
+    (a, b) => a.denomination - b.denomination
+  );
+
+  // Exact match
+  const exact = sorted.find((n) => n.denomination === requiredAmount);
+  if (exact) return exact;
+
+  // Smallest note >= required
+  const sufficient = sorted.find((n) => n.denomination >= requiredAmount);
+  if (sufficient) return sufficient;
+
+  return null;
+}
+
+/**
+ * Fetch Merkle proof from coordinator API for a deposit commitment.
+ * Same pattern as usePrivacyPool.ts:171-213.
+ */
+async function fetchMerkleProofForSwap(
+  commitment: string
+): Promise<{
+  siblings: string[];
+  path_indices: number[];
+  root: string;
+  leafIndex: number;
+} | null> {
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/privacy/proof/${commitment}`
+    );
+
+    if (!response.ok) {
+      console.warn(
+        "[ShieldedSwap] Failed to fetch Merkle proof:",
+        response.status
+      );
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data.found) {
+      console.warn("[ShieldedSwap] Deposit not found in indexed data");
+      return null;
+    }
+
+    return {
+      siblings: data.siblings,
+      path_indices: data.path_indices.map((p: number) => p),
+      root: data.current_root || data.root,
+      leafIndex: data.leaf_index,
+    };
+  } catch (error) {
+    console.error("[ShieldedSwap] Error fetching Merkle proof:", error);
+    return null;
+  }
+}
+
 // ============================================================================
 // Hook
 // ============================================================================
@@ -96,23 +205,38 @@ export function useShieldedSwap(): UseShieldedSwapResult {
   const { address, account } = useAccount();
   const { network } = useNetwork();
   const { sendAsync } = useSendTransaction({});
-  const { prove, isProving } = useSTWOProver();
-  const { hasKeys, publicKey } = usePrivacyKeys();
+  const { hasKeys, publicKey, initializeKeys, unlockKeys } = usePrivacyKeys();
 
   const [state, setState] = useState<ShieldedSwapState>(INITIAL_STATE);
   const abortRef = useRef(false);
 
   const isRouterDeployed = useMemo(() => {
-    const router = SHIELDED_SWAP_ROUTER[network as keyof typeof SHIELDED_SWAP_ROUTER];
+    const router =
+      SHIELDED_SWAP_ROUTER[network as keyof typeof SHIELDED_SWAP_ROUTER];
     return !!router && router !== "0x0";
   }, [network]);
 
   const reset = useCallback(() => {
     abortRef.current = true;
     setState(INITIAL_STATE);
-    // Allow future swaps
-    setTimeout(() => { abortRef.current = false; }, 100);
+    setTimeout(() => {
+      abortRef.current = false;
+    }, 100);
   }, []);
+
+  /**
+   * Get unspent privacy pool balance for a token.
+   */
+  const getPrivacyPoolBalance = useCallback(
+    async (tokenSymbol: string = "SAGE"): Promise<number> => {
+      if (!address) return 0;
+      const notes = await getUnspentNotes(address);
+      return notes
+        .filter((n) => (n.tokenSymbol || "SAGE") === tokenSymbol)
+        .reduce((sum, n) => sum + n.denomination, 0);
+    },
+    [address]
+  );
 
   /**
    * Estimate swap output for a given input.
@@ -144,14 +268,19 @@ export function useShieldedSwap(): UseShieldedSwapResult {
   );
 
   /**
-   * Execute a full shielded swap:
-   * 1. Generate withdrawal proof (STWO)
-   * 2. Generate deposit commitment
-   * 3. Build and submit transaction
-   * 4. Wait for confirmation
+   * Execute a full shielded swap with real cryptographic operations:
+   * 0. Validate prerequisites
+   * 1. Select note from IndexedDB
+   * 2. Derive nullifier & fetch Merkle proof
+   * 3. Create output deposit note with Pedersen commitment + ElGamal encryption
+   * 4. Build and submit transaction
+   * 5. Confirm and store output note
    */
   const executeSwap = useCallback(
     async (params: SwapParams) => {
+      // ================================================================
+      // Stage 0: Validate (0-5%)
+      // ================================================================
       if (!address || !account) {
         setState((prev) => ({
           ...prev,
@@ -170,17 +299,58 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         return;
       }
 
+      const inputSymbol =
+        params.inputSymbol ||
+        getTokenSymbolFromAddress(
+          params.inputToken,
+          network as NetworkType
+        ) ||
+        "SAGE";
+      const outputSymbol =
+        params.outputSymbol ||
+        getTokenSymbolFromAddress(
+          params.outputToken,
+          network as NetworkType
+        ) ||
+        "SAGE";
+
+      // Validate pools are deployed
+      const poolValidation = validateSwapPrerequisites(
+        inputSymbol,
+        outputSymbol,
+        network
+      );
+      if (!poolValidation.valid) {
+        setState((prev) => ({
+          ...prev,
+          stage: "error",
+          error: poolValidation.error || "Pool validation failed",
+        }));
+        return;
+      }
+
+      // Ensure privacy keys exist
+      if (!hasKeys) {
+        try {
+          await initializeKeys();
+        } catch {
+          setState((prev) => ({
+            ...prev,
+            stage: "error",
+            error: "Privacy keys required. Please initialize keys first.",
+          }));
+          return;
+        }
+      }
+
       abortRef.current = false;
 
       try {
-        // ================================================================
-        // Stage 1: Generate proofs (30%)
-        // ================================================================
         setState({
           ...INITIAL_STATE,
           stage: "generating-proofs",
-          message: "Generating withdrawal proof and deposit commitment...",
-          progress: 10,
+          message: "Validating swap prerequisites...",
+          progress: 2,
           inputAmount: params.inputAmount,
           outputAmount: "",
         });
@@ -194,6 +364,139 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           )
         );
 
+        const routerAddress =
+          SHIELDED_SWAP_ROUTER[
+            network as keyof typeof SHIELDED_SWAP_ROUTER
+          ] || SHIELDED_SWAP_ROUTER.sepolia;
+
+        const sourcePool = getPrivacyPoolForToken(
+          network as NetworkType,
+          inputSymbol
+        );
+        const destPool = getPrivacyPoolForToken(
+          network as NetworkType,
+          outputSymbol
+        );
+
+        // ================================================================
+        // Stage 1: Note Selection (5-15%)
+        // ================================================================
+        setState((prev) => ({
+          ...prev,
+          progress: 5,
+          message: "Selecting privacy pool note...",
+        }));
+
+        const unspentNotes = await getUnspentNotes(address);
+        const inputDenomination = parseFloat(params.inputAmount);
+
+        const selectedNote = selectNoteForSwap(
+          unspentNotes,
+          inputDenomination,
+          inputSymbol
+        );
+
+        if (!selectedNote) {
+          const tokenNotes = unspentNotes.filter(
+            (n) => (n.tokenSymbol || "SAGE") === inputSymbol
+          );
+          if (tokenNotes.length === 0) {
+            throw new Error(
+              `No privacy pool notes found for ${inputSymbol}. Deposit first.`
+            );
+          }
+          const largest = Math.max(...tokenNotes.map((n) => n.denomination));
+          throw new Error(
+            `Insufficient balance. Largest note: ${largest} ${inputSymbol}`
+          );
+        }
+
+        if (abortRef.current) return;
+
+        console.log("[ShieldedSwap] Selected note:", {
+          commitment: selectedNote.commitment.slice(0, 16) + "...",
+          denomination: selectedNote.denomination,
+          leafIndex: selectedNote.leafIndex,
+        });
+
+        setState((prev) => ({
+          ...prev,
+          progress: 15,
+          message: "Deriving nullifier and fetching Merkle proof...",
+        }));
+
+        // ================================================================
+        // Stage 2: Withdrawal Proof (15-45%)
+        // ================================================================
+
+        // Validate leafIndex
+        if (
+          selectedNote.leafIndex === 0 &&
+          !selectedNote.depositTxHash
+        ) {
+          throw new Error(
+            "Note leaf index not yet available. Wait for deposit confirmation."
+          );
+        }
+
+        // Derive nullifier: H(nullifierSecret, leafIndex)
+        const nullifier = deriveNullifier(
+          BigInt(selectedNote.nullifierSecret),
+          selectedNote.leafIndex
+        );
+
+        console.log(
+          "[ShieldedSwap] Nullifier derived:",
+          nullifierToFelt(nullifier).slice(0, 16) + "...",
+          "for leafIndex:",
+          selectedNote.leafIndex
+        );
+
+        if (abortRef.current) return;
+
+        setState((prev) => ({
+          ...prev,
+          progress: 25,
+          message: "Fetching Merkle inclusion proof...",
+        }));
+
+        // Fetch Merkle proof from coordinator
+        const merkleProof = await fetchMerkleProofForSwap(
+          selectedNote.commitment
+        );
+
+        if (!merkleProof) {
+          throw new Error(
+            "Could not fetch Merkle proof. Deposit may not be indexed yet. Wait for indexing."
+          );
+        }
+
+        // Update note's leafIndex if it was 0 but proof returned a real index
+        if (
+          selectedNote.leafIndex === 0 &&
+          merkleProof.leafIndex > 0
+        ) {
+          await updateNoteLeafIndex(
+            selectedNote.commitment,
+            merkleProof.leafIndex
+          );
+          selectedNote.leafIndex = merkleProof.leafIndex;
+        }
+
+        console.log("[ShieldedSwap] Merkle proof fetched:", {
+          root: merkleProof.root.slice(0, 16) + "...",
+          siblings: merkleProof.siblings.length,
+          leafIndex: merkleProof.leafIndex,
+        });
+
+        if (abortRef.current) return;
+
+        setState((prev) => ({
+          ...prev,
+          progress: 35,
+          message: "Estimating swap output...",
+        }));
+
         // Estimate output
         const estimate = await estimateSwapOutput(
           params.inputToken,
@@ -206,84 +509,80 @@ export function useShieldedSwap(): UseShieldedSwapResult {
 
         setState((prev) => ({
           ...prev,
-          progress: 20,
-          message: "Generating STWO withdrawal proof...",
+          progress: 40,
+          message: "Building withdrawal proof...",
           outputAmount: formatTokenAmount(
             estimate.expectedOutput,
             params.outputSymbol
           ),
         }));
 
-        // Generate withdrawal proof via STWO prover
-        const withdrawalProofResult = await prove("transfer", {
-          senderBalanceBefore: {
-            c1: { x: 0n, y: 0n },
-            c2: { x: 0n, y: 0n },
+        // Build real withdrawal proof (matching Cairo PPWithdrawalProof)
+        const withdrawalProof = {
+          global_tree_proof: {
+            siblings: merkleProof.siblings,
+            path_indices: merkleProof.path_indices.map(
+              (p: number) => p === 1
+            ),
+            leaf: selectedNote.commitment,
+            root: merkleProof.root,
+            tree_size: merkleProof.siblings.length * 2,
           },
-          senderBalanceAfter: {
-            c1: { x: 0n, y: 0n },
-            c2: { x: 0n, y: 0n },
-          },
-          receiverEncryptedAmount: {
-            c1: { x: 0n, y: 0n },
-            c2: { x: 0n, y: 0n },
-          },
-          amountCommitment: { x: 0n, y: 0n },
-          nullifier: "0x" + Math.random().toString(16).slice(2),
-          balanceProofFactHash:
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-          rangeProofFactHash:
-            "0x0000000000000000000000000000000000000000000000000000000000000000",
-        });
-
-        if (abortRef.current) return;
+          deposit_commitment: selectedNote.commitment,
+          association_set_id: null,
+          association_proof: null,
+          exclusion_set_id: null,
+          exclusion_proof: null,
+          nullifier: nullifierToFelt(nullifier),
+          amount: inputAmountWei.toString(),
+          recipient: routerAddress,
+          range_proof_data: [] as string[], // Empty = optional per contract
+        };
 
         const provingTimeMs = Date.now() - provingStart;
 
+        // ================================================================
+        // Stage 3: Output Deposit Note (45-55%)
+        // ================================================================
         setState((prev) => ({
           ...prev,
-          progress: 30,
-          message: "Proof generated. Preparing deposit commitment...",
+          progress: 45,
+          message: "Creating output deposit commitment...",
           provingTimeMs,
         }));
 
-        // Get router address for withdrawal recipient
-        const routerAddress =
-          SHIELDED_SWAP_ROUTER[
-            network as keyof typeof SHIELDED_SWAP_ROUTER
-          ] || SHIELDED_SWAP_ROUTER.sepolia;
+        // Create a new Pedersen commitment for the output amount
+        const outputDecimals =
+          TOKEN_METADATA[
+            outputSymbol as keyof typeof TOKEN_METADATA
+          ]?.decimals ?? 18;
+        const estimatedOutputWei = estimate.expectedOutput;
+        const outputNoteData: NoteData = createNote(estimatedOutputWei);
 
-        // Look up privacy pools
-        const inputSymbol =
-          params.inputSymbol ||
-          getTokenSymbolFromAddress(params.inputToken, network as NetworkType) ||
-          "SAGE";
-        const outputSymbol =
-          params.outputSymbol ||
-          getTokenSymbolFromAddress(
-            params.outputToken,
-            network as NetworkType
-          ) ||
-          "SAGE";
-
-        const sourcePool = getPrivacyPoolForToken(
-          network as NetworkType,
-          inputSymbol
+        // Convert commitment to felt for on-chain storage
+        const outputCommitmentFelt = commitmentToFelt(
+          outputNoteData.commitment
         );
-        const destPool = getPrivacyPoolForToken(
-          network as NetworkType,
-          outputSymbol
+        const outputCommitmentContract = commitmentToContractFormat(
+          outputNoteData.commitment
         );
 
-        // Generate deposit commitment for output token
-        const depositCommitment =
-          "0x" +
-          BigInt(
-            "0x" +
-              Array.from(crypto.getRandomValues(new Uint8Array(31)))
-                .map((b) => b.toString(16).padStart(2, "0"))
-                .join("")
-          ).toString(16);
+        // ElGamal encrypt the output amount for the user's public key
+        let currentPublicKey = publicKey;
+        if (!currentPublicKey) {
+          const keyPair = await unlockKeys();
+          if (!keyPair) {
+            throw new Error("Failed to unlock privacy keys for encryption");
+          }
+          currentPublicKey = keyPair.publicKey;
+        }
+
+        const encryptionRandomness = randomScalar();
+        const encryptedAmount = elgamalEncrypt(
+          estimatedOutputWei,
+          currentPublicKey,
+          encryptionRandomness
+        );
 
         // Calculate slippage-adjusted minimum output
         const minOutputAmount = getMinOutputWithSlippage(
@@ -291,37 +590,17 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           params.slippageBps
         );
 
+        if (abortRef.current) return;
+
         // ================================================================
-        // Stage 2: Submit transaction (60%)
+        // Stage 4: Submit Transaction (55-75%)
         // ================================================================
         setState((prev) => ({
           ...prev,
           stage: "submitting",
-          progress: 50,
+          progress: 55,
           message: "Building shielded swap transaction...",
         }));
-
-        // Build the withdrawal proof structure
-        const withdrawalProof = {
-          global_tree_proof: {
-            siblings: ["0x1", "0x2", "0x3"],
-            path_indices: [false, true, false],
-            leaf: "0x12345",
-            root: "0xABCDE",
-            tree_size: 8,
-          },
-          deposit_commitment: "0x12345",
-          association_set_id: null,
-          association_proof: null,
-          exclusion_set_id: null,
-          exclusion_proof: null,
-          nullifier: "0x" + Date.now().toString(16),
-          amount: inputAmountWei.toString(),
-          recipient: routerAddress,
-          range_proof_data: withdrawalProofResult?.proofData
-            ? [withdrawalProofResult.proofData]
-            : ["0x1", "0x2", "0x3", "0x4"],
-        };
 
         const swapParams: ShieldedSwapParams = {
           inputToken: params.inputToken,
@@ -329,20 +608,13 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           inputAmount: inputAmountWei.toString(),
           minOutputAmount: minOutputAmount.toString(),
           withdrawalProof,
-          depositCommitment,
+          depositCommitment: outputCommitmentFelt,
           depositAmountCommitment: {
-            x: publicKey?.x?.toString() || "0x0",
-            y: publicKey?.y?.toString() || "0x0",
+            x: outputCommitmentContract.x,
+            y: outputCommitmentContract.y,
           },
-          depositAssetId:
-            outputSymbol === "SAGE"
-              ? "0x0"
-              : outputSymbol === "USDC"
-                ? "0x1"
-                : outputSymbol === "ETH"
-                  ? "0x2"
-                  : "0x3",
-          depositRangeProof: ["0x1", "0x2", "0x3", "0x4"],
+          depositAssetId: getAssetIdForToken(outputSymbol),
+          depositRangeProof: [], // Empty = optional per contract
           sourcePool,
           destPool,
         };
@@ -356,40 +628,71 @@ export function useShieldedSwap(): UseShieldedSwapResult {
 
         setState((prev) => ({
           ...prev,
-          progress: 60,
+          progress: 65,
           message: "Submitting transaction to Starknet...",
         }));
 
-        // Send the transaction
         const txResponse = await sendAsync(calls);
+        const txHash = txResponse.transaction_hash;
 
         // ================================================================
-        // Stage 3: Wait for confirmation (80%)
+        // Stage 5: Confirm & Store (75-100%)
         // ================================================================
         setState((prev) => ({
           ...prev,
           stage: "confirming",
-          progress: 80,
+          progress: 75,
           message: "Waiting for transaction confirmation...",
-          txHash: txResponse.transaction_hash,
+          txHash,
         }));
 
         // Poll for transaction receipt
         const rpcUrl =
           NETWORK_CONFIG[network as keyof typeof NETWORK_CONFIG]?.rpcUrl;
+        let confirmed = false;
+
         if (rpcUrl) {
           const { RpcProvider } = await import("starknet");
           const provider = new RpcProvider({ nodeUrl: rpcUrl });
 
-          let confirmed = false;
           let attempts = 0;
           while (!confirmed && attempts < 60 && !abortRef.current) {
             try {
-              const receipt = await provider.getTransactionReceipt(
-                txResponse.transaction_hash
-              );
+              const receipt =
+                await provider.getTransactionReceipt(txHash);
               if (receipt) {
                 confirmed = true;
+
+                // Try to parse leafIndex from events
+                if ("events" in receipt && Array.isArray(receipt.events)) {
+                  for (const event of receipt.events) {
+                    // Look for deposit event with global_index
+                    if (
+                      event.data &&
+                      event.data.length >= 2 &&
+                      event.keys?.[0]
+                    ) {
+                      try {
+                        const leafIndex = parseInt(
+                          event.data[0],
+                          16
+                        );
+                        if (leafIndex > 0 && leafIndex < 2 ** 32) {
+                          await updateNoteLeafIndex(
+                            outputCommitmentFelt,
+                            leafIndex
+                          );
+                          console.log(
+                            "[ShieldedSwap] Output note leafIndex:",
+                            leafIndex
+                          );
+                        }
+                      } catch {
+                        // Not the right event, continue
+                      }
+                    }
+                  }
+                }
                 break;
               }
             } catch {
@@ -400,20 +703,53 @@ export function useShieldedSwap(): UseShieldedSwapResult {
 
             setState((prev) => ({
               ...prev,
-              progress: Math.min(95, 80 + attempts),
+              progress: Math.min(95, 75 + attempts),
               message: `Confirming... (attempt ${attempts}/60)`,
             }));
           }
         }
 
+        if (confirmed) {
+          // Mark input note as spent ONLY after on-chain confirmation
+          await markNoteSpent(selectedNote.commitment, txHash);
+
+          // Save the output note to IndexedDB
+          const outputNote: PrivacyNote = {
+            denomination:
+              Number(estimatedOutputWei) / 10 ** outputDecimals,
+            commitment: outputCommitmentFelt,
+            nullifierSecret:
+              outputNoteData.nullifierSecret.toString(),
+            blinding: outputNoteData.blinding.toString(),
+            leafIndex: 0, // Updated from events above or via indexer later
+            depositTxHash: txHash,
+            createdAt: Date.now(),
+            spent: false,
+            tokenSymbol: outputSymbol,
+            encryptedAmount,
+            encryptionRandomness: encryptionRandomness.toString(),
+          };
+          await saveNote(address, outputNote);
+
+          console.log(
+            "[ShieldedSwap] Swap confirmed. Input note spent, output note saved."
+          );
+        } else {
+          console.warn(
+            "[ShieldedSwap] Tx submitted but not yet confirmed. Input note NOT marked spent."
+          );
+        }
+
         // ================================================================
-        // Stage 4: Confirmed (100%)
+        // Done
         // ================================================================
         setState((prev) => ({
           ...prev,
           stage: "confirmed",
           progress: 100,
-          message: "Shielded swap completed successfully!",
+          message: confirmed
+            ? "Shielded swap completed successfully!"
+            : "Transaction submitted. Confirmation pending.",
           outputAmount: formatTokenAmount(
             estimate.expectedOutput,
             params.outputSymbol
@@ -435,9 +771,11 @@ export function useShieldedSwap(): UseShieldedSwapResult {
       account,
       network,
       isRouterDeployed,
-      sendAsync,
-      prove,
+      hasKeys,
       publicKey,
+      sendAsync,
+      initializeKeys,
+      unlockKeys,
     ]
   );
 
@@ -447,5 +785,6 @@ export function useShieldedSwap(): UseShieldedSwapResult {
     estimateOutput,
     reset,
     isRouterDeployed,
+    getPrivacyPoolBalance,
   };
 }

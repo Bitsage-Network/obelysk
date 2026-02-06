@@ -82,6 +82,9 @@ export interface PrivacyNote {
   createdAt: number;
   spent: boolean;
   spentTxHash?: string;
+  // Which token this note represents (SAGE, ETH, STRK, USDC, wBTC)
+  // Omitted = SAGE (backward-compatible with existing notes)
+  tokenSymbol?: string;
   // ElGamal encrypted amount - for homomorphic reveal
   encryptedAmount?: ElGamalCiphertext;
   // Encryption randomness (needed for re-encryption proofs)
