@@ -51,6 +51,8 @@ import {
 import type { PrivacyNote } from "../crypto/constants";
 
 import { usePrivacyKeys } from "./usePrivacyKeys";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { fetchMerkleProofWithFallback, invalidateMerkleCache } from "@/lib/crypto/localMerkleProof";
 
 // Contract ABIs (minimal)
 const ERC20_ABI = [
@@ -161,47 +163,8 @@ const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
  * Fetch the leafIndex from a deposit transaction receipt
  * The contract emits PPDepositExecuted event with global_index
  */
-// API base URL for backend requests
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
-/**
- * Fetch Merkle proof from backend for a deposit commitment
- * Returns the proof needed for withdrawal verification
- */
-async function fetchMerkleProof(
-  commitment: string
-): Promise<{
-  siblings: string[];
-  path_indices: number[];
-  root: string;
-  leafIndex: number;
-} | null> {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/privacy/proof/${commitment}`);
-
-    if (!response.ok) {
-      console.warn("Failed to fetch Merkle proof:", response.status);
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.found) {
-      console.warn("Deposit not found in indexed data");
-      return null;
-    }
-
-    return {
-      siblings: data.siblings,
-      path_indices: data.path_indices.map((p: number) => p),
-      root: data.current_root || data.root,
-      leafIndex: data.leaf_index,
-    };
-  } catch (error) {
-    console.error("Error fetching Merkle proof:", error);
-    return null;
-  }
-}
+// Merkle proof fetching is now handled by @/lib/crypto/localMerkleProof
+// which tries the coordinator API first, then falls back to local tree reconstruction.
 
 async function fetchLeafIndexFromReceipt(
   txHash: string,
@@ -348,6 +311,7 @@ interface UsePrivacyPoolReturn {
 
 export function usePrivacyPool(): UsePrivacyPoolReturn {
   const { address, account } = useAccount();
+  const { network } = useNetwork();
 
   // Privacy keys hook
   const {
@@ -790,6 +754,9 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         console.log("🎉 [Confirmed] Deposit complete!");
 
+        // Invalidate local Merkle tree cache so next withdrawal picks up this deposit
+        invalidateMerkleCache();
+
         await refreshStats();
         return txHash;
 
@@ -890,8 +857,8 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 40 }));
 
-        // Fetch actual Merkle proof from indexer/backend
-        const merkleProof = await fetchMerkleProof(noteCommitment);
+        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
+        const merkleProof = await fetchMerkleProofWithFallback(noteCommitment, network as any);
 
         if (!merkleProof) {
           throw new Error(
@@ -1007,7 +974,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         throw error;
       }
     },
-    [account, address, privateKey, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats]
+    [account, address, privateKey, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats, network]
   );
 
   // Auto-refresh on mount
