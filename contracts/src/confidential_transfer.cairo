@@ -8,7 +8,7 @@
 /// - Transfers update balances homomorphically without decryption
 /// - ZK proofs ensure validity (range, ownership, balance sufficiency)
 ///
-/// Upgradeable via OpenZeppelin pattern.
+/// Upgradeable via timelocked schedule → execute pattern (5-minute default delay).
 
 use starknet::ContractAddress;
 
@@ -130,8 +130,12 @@ pub trait IConfidentialTransfer<TContractState> {
     fn pause(ref self: TContractState);
     fn unpause(ref self: TContractState);
 
-    // === Upgradeable ===
-    fn upgrade(ref self: TContractState, new_class_hash: starknet::ClassHash);
+    // === Timelocked Upgrade ===
+    fn schedule_upgrade(ref self: TContractState, new_class_hash: starknet::ClassHash);
+    fn execute_upgrade(ref self: TContractState);
+    fn cancel_upgrade(ref self: TContractState);
+    fn get_upgrade_info(self: @TContractState) -> (starknet::ClassHash, u64, u64, u64);
+    fn set_upgrade_delay(ref self: TContractState, new_delay: u64);
 }
 
 #[starknet::contract]
@@ -140,17 +144,18 @@ pub mod ConfidentialTransfer {
         ElGamalCiphertext, EncryptedBalance, AEHint, TransferProof, PublicKey,
         IConfidentialTransfer
     };
-    use starknet::{ContractAddress, get_caller_address, get_contract_address, ClassHash};
+    use starknet::{
+        ContractAddress, ClassHash, get_caller_address, get_contract_address, get_block_timestamp,
+        syscalls::replace_class_syscall, SyscallResultTrait,
+    };
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
     use core::poseidon::poseidon_hash_span;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
-    use openzeppelin::upgrades::UpgradeableComponent;
 
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
     component!(path: PausableComponent, storage: pausable, event: PausableEvent);
-    component!(path: UpgradeableComponent, storage: upgradeable, event: UpgradeableEvent);
 
     #[abi(embed_v0)]
     impl OwnableImpl = OwnableComponent::OwnableImpl<ContractState>;
@@ -159,8 +164,6 @@ pub mod ConfidentialTransfer {
     #[abi(embed_v0)]
     impl PausableImpl = PausableComponent::PausableImpl<ContractState>;
     impl PausableInternalImpl = PausableComponent::InternalImpl<ContractState>;
-
-    impl UpgradeableInternalImpl = UpgradeableComponent::InternalImpl<ContractState>;
 
     // STARK curve generator
     const G_X: felt252 = 0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca;
@@ -200,8 +203,11 @@ pub mod ConfidentialTransfer {
         ownable: OwnableComponent::Storage,
         #[substorage(v0)]
         pausable: PausableComponent::Storage,
-        #[substorage(v0)]
-        upgradeable: UpgradeableComponent::Storage,
+
+        // ================ Timelocked Upgrade ================
+        pending_upgrade: ClassHash,
+        upgrade_scheduled_at: u64,
+        upgrade_delay: u64,
     }
 
     #[event]
@@ -212,12 +218,34 @@ pub mod ConfidentialTransfer {
         ConfidentialTransfer: ConfidentialTransferEvent,
         Rollover: RolloverEvent,
         Withdrawal: Withdrawal,
+        UpgradeScheduled: UpgradeScheduled,
+        UpgradeExecuted: UpgradeExecuted,
+        UpgradeCancelled: UpgradeCancelled,
         #[flat]
         OwnableEvent: OwnableComponent::Event,
         #[flat]
         PausableEvent: PausableComponent::Event,
-        #[flat]
-        UpgradeableEvent: UpgradeableComponent::Event,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct UpgradeScheduled {
+        pub new_class_hash: ClassHash,
+        pub scheduled_at: u64,
+        pub execute_after: u64,
+        pub scheduler: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct UpgradeExecuted {
+        pub old_class_hash: ClassHash,
+        pub new_class_hash: ClassHash,
+        pub executor: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct UpgradeCancelled {
+        pub cancelled_class_hash: ClassHash,
+        pub canceller: ContractAddress,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -267,6 +295,9 @@ pub mod ConfidentialTransfer {
     fn constructor(ref self: ContractState, owner: ContractAddress, auditor_key: PublicKey) {
         self.ownable.initializer(owner);
         self.auditor_key.write(auditor_key);
+
+        // Default 5-minute upgrade delay (for testnet; increase for mainnet)
+        self.upgrade_delay.write(300);
     }
 
     #[abi(embed_v0)]
@@ -498,11 +529,100 @@ pub mod ConfidentialTransfer {
             self.pausable.unpause();
         }
 
-        // === Upgradeable ===
+        // === Timelocked Upgrade ===
 
-        fn upgrade(ref self: ContractState, new_class_hash: ClassHash) {
+        /// Schedule an upgrade — must wait `upgrade_delay` seconds before executing
+        fn schedule_upgrade(ref self: ContractState, new_class_hash: ClassHash) {
             self.ownable.assert_only_owner();
-            self.upgradeable.upgrade(new_class_hash);
+
+            // Ensure no pending upgrade
+            let pending = self.pending_upgrade.read();
+            assert!(pending.is_zero(), "Another upgrade is already pending");
+
+            // Ensure new class hash is valid
+            assert!(!new_class_hash.is_zero(), "Invalid class hash");
+
+            let current_time = get_block_timestamp();
+            let delay = self.upgrade_delay.read();
+            let execute_after = current_time + delay;
+
+            self.pending_upgrade.write(new_class_hash);
+            self.upgrade_scheduled_at.write(current_time);
+
+            self.emit(UpgradeScheduled {
+                new_class_hash,
+                scheduled_at: current_time,
+                execute_after,
+                scheduler: get_caller_address(),
+            });
+        }
+
+        /// Execute a previously scheduled upgrade after the timelock has elapsed
+        fn execute_upgrade(ref self: ContractState) {
+            self.ownable.assert_only_owner();
+
+            let pending = self.pending_upgrade.read();
+            assert!(!pending.is_zero(), "No pending upgrade");
+
+            let scheduled_at = self.upgrade_scheduled_at.read();
+            let delay = self.upgrade_delay.read();
+            let current_time = get_block_timestamp();
+
+            assert!(current_time >= scheduled_at + delay, "Timelock not expired");
+
+            // Clear pending upgrade before executing
+            let zero_class: ClassHash = 0.try_into().unwrap();
+            self.pending_upgrade.write(zero_class);
+            self.upgrade_scheduled_at.write(0);
+
+            // Execute the upgrade via syscall
+            replace_class_syscall(pending).unwrap_syscall();
+
+            self.emit(UpgradeExecuted {
+                old_class_hash: pending,
+                new_class_hash: pending,
+                executor: get_caller_address(),
+            });
+        }
+
+        /// Cancel a pending upgrade before it executes
+        fn cancel_upgrade(ref self: ContractState) {
+            self.ownable.assert_only_owner();
+
+            let pending = self.pending_upgrade.read();
+            assert!(!pending.is_zero(), "No pending upgrade to cancel");
+
+            let zero_class: ClassHash = 0.try_into().unwrap();
+            self.pending_upgrade.write(zero_class);
+            self.upgrade_scheduled_at.write(0);
+
+            self.emit(UpgradeCancelled {
+                cancelled_class_hash: pending,
+                canceller: get_caller_address(),
+            });
+        }
+
+        /// View: get pending upgrade info
+        fn get_upgrade_info(self: @ContractState) -> (ClassHash, u64, u64, u64) {
+            let pending = self.pending_upgrade.read();
+            let scheduled_at = self.upgrade_scheduled_at.read();
+            let delay = self.upgrade_delay.read();
+            let execute_after = if scheduled_at > 0 { scheduled_at + delay } else { 0 };
+
+            (pending, scheduled_at, execute_after, delay)
+        }
+
+        /// Admin: update upgrade delay (minimum 5 min, maximum 30 days)
+        fn set_upgrade_delay(ref self: ContractState, new_delay: u64) {
+            self.ownable.assert_only_owner();
+
+            let pending = self.pending_upgrade.read();
+            assert!(pending.is_zero(), "Cannot change delay with pending upgrade");
+
+            // Minimum 5 minutes (300s), maximum 30 days (2592000s)
+            assert!(new_delay >= 300 && new_delay <= 2592000, "Invalid delay range");
+
+            self.upgrade_delay.write(new_delay);
         }
     }
 

@@ -9,5 +9,6 @@ mod confidential_swap;
 mod confidential_transfer;
 mod privacy_pools;
 mod privacy_router;
+mod shielded_swap_router;
 mod stealth_payments;
 mod stealth_registry;
