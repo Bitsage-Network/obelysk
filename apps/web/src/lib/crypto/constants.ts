@@ -23,13 +23,16 @@ export const GENERATOR_Y = BigInt(
   "0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f"
 );
 
-// Second generator H for Pedersen commitments (nothing-up-my-sleeve point)
-// H = hash_to_curve("BitSage_Pedersen_H")
+// Second generator H for Pedersen commitments
+// Derived via hash-to-curve (try-and-increment) with Poseidon
+// Domain: "OBELYSK_PEDERSEN_H_V1" | Counter: 0
+// Derivation script: scripts/deriveH.ts
+// Nobody knows dlog_G(H) — binding property holds
 export const PEDERSEN_H_X = BigInt(
-  "0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804"
+  "0x73bd2c9434c955f80b06d2847f8384a226d6cc2557a5735fd9f84d632f576be"
 );
 export const PEDERSEN_H_Y = BigInt(
-  "0x3ca0cfe4b3bc6ddf346d49d06ea0ed34e621062c0e056c1d0405d266e10268a"
+  "0x1bd58ea52858154de69bf90e446ff200f173d49da444c4f462652ce6b93457e"
 );
 
 // Curve parameter A (Stark curve: y^2 = x^3 + A*x + B)
