@@ -1,0 +1,356 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================================
+   CSS Custom Properties - Obelysk Theme
+   ============================================================================ */
+
+:root {
+  /* Core colors */
+  --background: #0a0a0f;
+  --foreground: #ffffff;
+
+  /* Brand colors */
+  --violet-500: #8b5cf6;
+  --violet-400: #a78bfa;
+  --violet-600: #7c3aed;
+  --fuchsia-500: #d946ef;
+  --fuchsia-400: #e879f9;
+
+  /* Surface colors */
+  --surface-dark: #0a0a0f;
+  --surface-card: #12121a;
+  --surface-elevated: #1a1a24;
+  --surface-border: #2a2a3a;
+
+  /* Semantic colors */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+/* ============================================================================
+   Base Styles
+   ============================================================================ */
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-feature-settings: "rlig" 1, "calt" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   Glassmorphism Utilities
+   ============================================================================ */
+
+.glass {
+  @apply bg-surface-card/80 backdrop-blur-md border border-surface-border/50;
+}
+
+.glass-strong {
+  @apply bg-surface-card/90 backdrop-blur-xl border border-surface-border;
+}
+
+.cosmic-glass {
+  @apply bg-gradient-to-br from-surface-card/90 to-surface-elevated/80 backdrop-blur-xl border border-brand-500/20;
+}
+
+/* Glass card effect */
+.glass-card {
+  @apply bg-surface-card/90 border border-surface-border/60 rounded-2xl backdrop-blur-md;
+}
+
+/* ============================================================================
+   Glow Effects
+   ============================================================================ */
+
+.glow-violet {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
+}
+
+.glow-violet-sm {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
+}
+
+.glow-violet-lg {
+  box-shadow: 0 0 40px rgba(139, 92, 246, 0.4);
+}
+
+.glow-fuchsia {
+  box-shadow: 0 0 20px rgba(217, 70, 239, 0.3);
+}
+
+.glow-fuchsia-sm {
+  box-shadow: 0 0 10px rgba(217, 70, 239, 0.2);
+}
+
+.glow-fuchsia-lg {
+  box-shadow: 0 0 40px rgba(217, 70, 239, 0.4);
+}
+
+/* Privacy glow - violet themed */
+.privacy-glow {
+  box-shadow: 0 0 30px rgba(139, 92, 246, 0.3);
+}
+
+/* ============================================================================
+   Gradient Text Utilities
+   ============================================================================ */
+
+.gradient-text-violet {
+  @apply bg-gradient-to-r from-brand-400 to-brand-500 bg-clip-text text-transparent;
+}
+
+.gradient-text-fuchsia {
+  @apply bg-gradient-to-r from-accent-fuchsia to-purple-400 bg-clip-text text-transparent;
+}
+
+.gradient-text-violet-fuchsia {
+  @apply bg-gradient-to-r from-brand-400 via-brand-500 to-accent-fuchsia bg-clip-text text-transparent;
+}
+
+/* ============================================================================
+   Navigation Styles
+   ============================================================================ */
+
+.nav-item {
+  @apply flex items-center gap-3 px-4 py-3 rounded-xl text-gray-400 hover:text-white hover:bg-surface-elevated transition-all duration-200;
+}
+
+.nav-item.active {
+  @apply text-white bg-brand-600/20 border border-brand-500/30;
+}
+
+/* ============================================================================
+   Button Styles
+   ============================================================================ */
+
+.btn-glow {
+  @apply bg-gradient-to-r from-brand-600 to-brand-500 text-white font-semibold rounded-xl px-6 py-3;
+  @apply hover:shadow-lg hover:shadow-brand-500/25 transition-all duration-200;
+  @apply disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply bg-gradient-to-r from-brand-600 to-brand-500 text-white font-semibold rounded-xl;
+  @apply hover:shadow-lg hover:shadow-brand-500/25 transition-all duration-200;
+  @apply focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:ring-offset-2 focus:ring-offset-surface-dark;
+}
+
+.btn-secondary {
+  @apply bg-surface-elevated border border-surface-border text-gray-300 font-medium rounded-xl;
+  @apply hover:border-brand-500/50 hover:text-white transition-all duration-200;
+}
+
+.btn-ghost {
+  @apply bg-transparent text-gray-400 hover:text-white hover:bg-surface-elevated transition-all duration-200;
+}
+
+.btn-fuchsia {
+  @apply bg-gradient-to-r from-accent-fuchsia to-purple-500 text-white font-semibold rounded-xl;
+  @apply hover:shadow-lg hover:shadow-accent-fuchsia/25 transition-all duration-200;
+}
+
+/* ============================================================================
+   Badge Styles
+   ============================================================================ */
+
+.badge {
+  @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border;
+}
+
+.badge-brand {
+  @apply bg-brand-500/20 text-brand-400 border-brand-500/30;
+}
+
+.badge-fuchsia {
+  @apply bg-accent-fuchsia/20 text-accent-fuchsia border-accent-fuchsia/30;
+}
+
+.badge-success {
+  @apply bg-emerald-500/20 text-emerald-400 border-emerald-500/30;
+}
+
+.badge-warning {
+  @apply bg-amber-500/20 text-amber-400 border-amber-500/30;
+}
+
+.badge-error {
+  @apply bg-red-500/20 text-red-400 border-red-500/30;
+}
+
+/* ============================================================================
+   Input Styles
+   ============================================================================ */
+
+.input-base {
+  @apply w-full bg-surface-dark border border-surface-border rounded-xl px-4 py-3;
+  @apply text-white placeholder-gray-500;
+  @apply focus:outline-none focus:border-brand-500/50 focus:ring-2 focus:ring-brand-500/20;
+  @apply transition-all duration-200;
+}
+
+/* ============================================================================
+   Scrollbar Styling
+   ============================================================================ */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-surface-dark;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-surface-border rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-600;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2a3a #0a0a0f;
+}
+
+/* ============================================================================
+   Background Patterns
+   ============================================================================ */
+
+/* Grid pattern - violet tinted */
+.bg-grid {
+  background-image:
+    linear-gradient(rgba(139, 92, 246, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+.bg-grid-dense {
+  background-image:
+    linear-gradient(rgba(139, 92, 246, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(139, 92, 246, 0.02) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+
+/* Dot pattern */
+.bg-dots {
+  background-image: radial-gradient(rgba(139, 92, 246, 0.15) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* ============================================================================
+   Gradient Orbs (Background Effects)
+   ============================================================================ */
+
+.gradient-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.gradient-orb-violet {
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+}
+
+.gradient-orb-fuchsia {
+  background: radial-gradient(circle, rgba(217, 70, 239, 0.3) 0%, transparent 70%);
+}
+
+/* ============================================================================
+   Skeleton Loading
+   ============================================================================ */
+
+.skeleton {
+  @apply bg-surface-elevated rounded animate-pulse;
+}
+
+.skeleton-text {
+  @apply skeleton h-4 rounded;
+}
+
+.skeleton-circle {
+  @apply skeleton rounded-full;
+}
+
+/* ============================================================================
+   Responsive Optimizations
+   ============================================================================ */
+
+@media (max-width: 384px) {
+  .xs\:text-xs {
+    font-size: 0.75rem;
+  }
+
+  .xs\:p-2 {
+    padding: 0.5rem;
+  }
+
+  .xs\:gap-2 {
+    gap: 0.5rem;
+  }
+}
+
+/* ============================================================================
+   Animation Utilities
+   ============================================================================ */
+
+.animate-fade-up {
+  animation: fadeUp 0.5s ease-out forwards;
+}
+
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Stagger animation delay utilities */
+.stagger-1 { animation-delay: 0.1s; }
+.stagger-2 { animation-delay: 0.2s; }
+.stagger-3 { animation-delay: 0.3s; }
+.stagger-4 { animation-delay: 0.4s; }
+.stagger-5 { animation-delay: 0.5s; }
+
+/* ============================================================================
+   Selection Styling
+   ============================================================================ */
+
+::selection {
+  background-color: rgba(139, 92, 246, 0.3);
+  color: white;
+}
+
+/* ============================================================================
+   Focus Visible Styling
+   ============================================================================ */
+
+:focus-visible {
+  outline: 2px solid rgba(139, 92, 246, 0.5);
+  outline-offset: 2px;
+}
