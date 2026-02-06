@@ -277,8 +277,8 @@ export function buildGaslessDepositCall(
       amountCommitment.x.toString(),
       amountCommitment.y.toString(),
       assetId,
-      amount.toString(),
-      "0", // u256 high
+      "0x" + (amount % (2n ** 128n)).toString(16), // u256 low
+      "0x" + (amount / (2n ** 128n)).toString(16), // u256 high
       rangeProofData.length.toString(),
       ...rangeProofData,
     ],

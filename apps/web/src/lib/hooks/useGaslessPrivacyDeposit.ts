@@ -313,7 +313,7 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
       }));
 
       const provider = new RpcProvider({ nodeUrl: RPC_URL });
-      const tokenContract = new Contract(ERC20_ABI, addresses.SAGE_TOKEN, provider);
+      const tokenContract = new Contract({ abi: ERC20_ABI, address: addresses.SAGE_TOKEN, providerOrAccount: provider });
 
       let needsApproval = true;
       const BLANKET_APPROVAL = 10n ** 24n; // 1M SAGE
