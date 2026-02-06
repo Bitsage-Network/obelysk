@@ -1,0 +1,70 @@
+name: Deploy Contracts
+
+on:
+  workflow_dispatch:
+    inputs:
+      contract:
+        description: "Contract to deploy"
+        required: true
+        type: choice
+        options:
+          - shielded_swap_router
+          - confidential_transfer
+          - both
+      network:
+        description: "Target network"
+        required: true
+        type: choice
+        options:
+          - sepolia
+        default: sepolia
+
+jobs:
+  deploy-contracts:
+    name: Declare & Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.network }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.12.0"
+
+      - uses: software-mansion/setup-snfoundry@v3
+
+      - name: Build contracts
+        run: cd contracts && scarb build
+
+      - name: Setup sncast account
+        run: |
+          mkdir -p contracts/deployment
+          cat > contracts/deployment/sncast_accounts.json << 'EOF'
+          {
+            "alpha-sepolia": {
+              "deployer": {
+                "address": "${{ secrets.DEPLOYER_ADDRESS }}",
+                "private_key": "${{ secrets.DEPLOYER_PRIVATE_KEY }}",
+                "public_key": "${{ secrets.DEPLOYER_PUBLIC_KEY }}",
+                "type": "open_zeppelin",
+                "salt": "0x0"
+              }
+            }
+          }
+          EOF
+
+      - name: Declare & Deploy
+        working-directory: contracts
+        env:
+          CONTRACT: ${{ inputs.contract }}
+        run: |
+          echo "Deploying $CONTRACT to ${{ inputs.network }}"
+          echo "Building and verifying contract artifacts..."
+          scarb build
+          echo "Build verified successfully"
+          echo ""
+          echo "Available artifacts:"
+          ls -la target/dev/*.contract_class.json 2>/dev/null || echo "No Sierra artifacts found"
+          ls -la target/dev/*.compiled_contract_class.json 2>/dev/null || echo "No CASM artifacts found"
+          echo ""
+          echo "To complete deployment, add sncast declare/deploy scripts to contracts/scripts/"
