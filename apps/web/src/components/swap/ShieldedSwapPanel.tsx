@@ -330,13 +330,13 @@ export function ShieldedSwapPanel({
     };
 
     try {
-      await executeSwap(params);
-      if (state.txHash) onSuccess?.(state.txHash);
+      const txHash = await executeSwap(params);
+      if (txHash) onSuccess?.(txHash);
     } catch (error) {
       const message = error instanceof Error ? error.message : "Swap failed";
       onError?.(message);
     }
-  }, [inputToken, outputToken, inputAmount, slippageBps, customSlippage, showCustomSlippage, executeSwap, onSuccess, onError, state.txHash]);
+  }, [inputToken, outputToken, inputAmount, slippageBps, customSlippage, showCustomSlippage, executeSwap, onSuccess, onError]);
 
   // Computed state
   const isSwapping = state.stage !== "idle" && state.stage !== "confirmed" && state.stage !== "error";
@@ -538,9 +538,20 @@ export function ShieldedSwapPanel({
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs text-gray-500">From (Privacy Pool)</span>
                 {inputToken && (
-                  <span className="text-[10px] text-gray-600">
-                    Balance: {privacyBalance !== null ? `${privacyBalance.toFixed(4)} ${inputToken.symbol}` : "--"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] text-gray-600">
+                      Balance: {privacyBalance !== null ? `${privacyBalance.toFixed(4)} ${inputToken.symbol}` : "--"}
+                    </span>
+                    {privacyBalance !== null && privacyBalance > 0 && (
+                      <button
+                        onClick={() => setInputAmount(privacyBalance.toString())}
+                        disabled={isSwapping}
+                        className="text-[10px] font-semibold text-violet-400 hover:text-violet-300 transition-colors disabled:opacity-50"
+                      >
+                        Max
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
               <div className="flex items-center gap-3">
