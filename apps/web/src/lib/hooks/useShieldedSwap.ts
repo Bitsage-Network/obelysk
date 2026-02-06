@@ -38,7 +38,7 @@ import {
   updateNoteLeafIndex,
 } from "@/lib/crypto/keyStore";
 import type { PrivacyNote } from "@/lib/crypto/constants";
-import { generateMerkleProofOnChain } from "@/lib/crypto/onChainMerkleProof";
+
 import {
   type SwapStage,
   type ShieldedSwapParams,
@@ -58,6 +58,7 @@ import {
   TOKEN_METADATA,
   type NetworkType,
 } from "@/lib/contracts/addresses";
+import { fetchMerkleProofWithFallback } from "@/lib/crypto/localMerkleProof";
 
 // ============================================================================
 // Types
@@ -151,6 +152,8 @@ function selectNoteForSwap(
   return null;
 }
 
+// Merkle proof fetching is now handled by @/lib/crypto/localMerkleProof
+// which tries the coordinator API first, then falls back to local tree reconstruction.
 // ============================================================================
 // Hook
 // ============================================================================
@@ -383,8 +386,39 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         // Stage 2: Merkle Proof → Nullifier → Withdrawal Proof (15-45%)
         // ================================================================
 
-        // Step 2a: Generate Merkle proof on-chain (must come before nullifier)
-        const merkleProof = await generateMerkleProofOnChain(
+        // Validate leafIndex
+        if (
+          selectedNote.leafIndex === 0 &&
+          !selectedNote.depositTxHash
+        ) {
+          throw new Error(
+            "Note leaf index not yet available. Wait for deposit confirmation."
+          );
+        }
+
+        // Derive nullifier: H(nullifierSecret, leafIndex)
+        const nullifier = deriveNullifier(
+          BigInt(selectedNote.nullifierSecret),
+          selectedNote.leafIndex
+        );
+
+        console.log(
+          "[ShieldedSwap] Nullifier derived:",
+          nullifierToFelt(nullifier).slice(0, 16) + "...",
+          "for leafIndex:",
+          selectedNote.leafIndex
+        );
+
+        if (abortRef.current) return;
+
+        setState((prev) => ({
+          ...prev,
+          progress: 25,
+          message: "Fetching Merkle inclusion proof...",
+        }));
+
+        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
+        const merkleProof = await fetchMerkleProofWithFallback(
           selectedNote.commitment,
           network as NetworkType
         );

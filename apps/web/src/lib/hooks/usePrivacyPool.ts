@@ -50,7 +50,7 @@ import {
 
 import type { PrivacyNote } from "../crypto/constants";
 
-import { generateMerkleProofOnChain } from "../crypto/onChainMerkleProof";
+
 import {
   PRIVACY_POOL_FOR_TOKEN,
   ASSET_ID_FOR_TOKEN,
@@ -61,6 +61,8 @@ import {
 } from "../contracts/addresses";
 
 import { usePrivacyKeys } from "./usePrivacyKeys";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { fetchMerkleProofWithFallback, invalidateMerkleCache } from "@/lib/crypto/localMerkleProof";
 
 // Contract ABIs (minimal)
 const ERC20_ABI = [
@@ -171,6 +173,8 @@ const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
  * Fetch the leafIndex from a deposit transaction receipt
  * The contract emits PPDepositExecuted event with global_index
  */
+// Merkle proof fetching is now handled by @/lib/crypto/localMerkleProof
+// which tries the coordinator API first, then falls back to local tree reconstruction.
 async function fetchLeafIndexFromReceipt(
   txHash: string,
   commitment: string,
@@ -317,6 +321,7 @@ interface UsePrivacyPoolReturn {
 
 export function usePrivacyPool(): UsePrivacyPoolReturn {
   const { address, account } = useAccount();
+  const { network } = useNetwork();
 
   // Privacy keys hook
   const {
@@ -772,6 +777,9 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         console.log("🎉 [Confirmed] Deposit complete!");
 
+        // Invalidate local Merkle tree cache so next withdrawal picks up this deposit
+        invalidateMerkleCache();
+
         await refreshStats();
         return txHash;
 
@@ -858,8 +866,28 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 20 }));
 
-        // Generate Merkle proof from on-chain events (no backend needed)
-        const merkleProof = await generateMerkleProofOnChain(noteCommitment, DEFAULT_NETWORK, poolAddress);
+        // CRITICAL: Nullifier = H(nullifier_secret, leaf_index)
+        // NOT H(nullifier_secret, commitment)!
+        // The leaf_index is returned by pp_deposit and stored in the note
+        if (note.leafIndex === 0 && note.depositTxHash) {
+          // TODO: Fetch leafIndex from transaction receipt or indexer
+          console.warn("Warning: leafIndex is 0, may need to fetch from chain");
+        }
+
+        const nullifier = deriveNullifier(
+          BigInt(note.nullifierSecret),
+          note.leafIndex
+        );
+
+        console.log("Withdrawal nullifier:", nullifier, "for leafIndex:", note.leafIndex);
+
+        // ==============================
+        // Step 2: Fetch Merkle proof (API first, local tree fallback)
+        // ==============================
+        setWithdrawState((prev) => ({ ...prev, proofProgress: 40 }));
+
+        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
+        const merkleProof = await fetchMerkleProofWithFallback(noteCommitment, network as any);
 
         if (!merkleProof) {
           throw new Error(
@@ -1021,7 +1049,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         throw error;
       }
     },
-    [account, address, privateKey, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats]
+    [account, address, privateKey, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats, network]
   );
 
   // Auto-refresh on mount
