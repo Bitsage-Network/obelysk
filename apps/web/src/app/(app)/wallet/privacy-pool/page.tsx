@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   Shield,
   Lock,
@@ -52,7 +52,8 @@ import { useASPRegistry, type ASPInfo } from "@/lib/hooks/useASPRegistry";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination, type PrivacyNote } from "@/lib/crypto";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
-import { EXTERNAL_TOKENS, CONTRACTS } from "@/lib/contracts/addresses";
+import { EXTERNAL_TOKENS, CONTRACTS, NETWORK_CONFIG } from "@/lib/contracts/addresses";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { useGaslessPrivacyDeposit } from "@/lib/hooks/useGaslessPrivacyDeposit";
 
 // Supported assets for privacy pools
@@ -97,6 +98,8 @@ type TabType = "deposit" | "withdraw" | "ragequit";
 
 export default function PrivacyPoolPage() {
   const { address, isConnected } = useAccount();
+  const { network } = useNetwork();
+  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "https://sepolia.starkscan.co";
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
   const [selectedAsset, setSelectedAsset] = useState(POOL_ASSETS[0]);
   const [selectedDenomination, setSelectedDenomination] = useState<PrivacyDenomination>(10);
@@ -166,9 +169,10 @@ export default function PrivacyPoolPage() {
   const [showRagequitWarning, setShowRagequitWarning] = useState(false);
   const [poolDataLastUpdated, setPoolDataLastUpdated] = useState<number | null>(null);
 
-  // Proof progress state for withdrawal
+  // Proof progress state for withdrawal — maps to actual on-chain withdrawal stages
   const [proofPhase, setProofPhase] = useState<"connecting" | "encrypting" | "loading" | "witness" | "commit" | "fri" | "query" | "finalizing" | "done">("connecting");
   const [proofPhaseProgress, setProofPhaseProgress] = useState(0);
+  const withdrawProgressRef = useRef(0);
 
   // Privacy key management
   const {
@@ -216,6 +220,34 @@ export default function PrivacyPoolPage() {
   const { data: isInitialized } = usePrivacyPoolsIsInitialized();
   const { data: contractPoolStats, isLoading: isLoadingStats } = usePrivacyPoolsPoolStats();
   const { data: userDeposits, refetch: refetchDeposits } = usePrivacyPoolsUserDeposits(address);
+
+  // Keep withdraw progress ref in sync and map to proof phases
+  useEffect(() => {
+    withdrawProgressRef.current = withdrawState.proofProgress;
+    // Map actual withdrawal stages to UI phases:
+    // 0-20: Merkle proof from chain  → "loading"
+    // 20-40: Nullifier derivation    → "witness"
+    // 40-60: Building calldata       → "commit"
+    // 60-80: Submitting tx           → "finalizing"
+    // 80-100: Confirmed              → "done"
+    if (withdrawState.isWithdrawing) {
+      const p = withdrawState.proofProgress;
+      if (p >= 100) {
+        setProofPhase("done");
+      } else if (p >= 80) {
+        setProofPhase("finalizing");
+      } else if (p >= 60) {
+        setProofPhase("commit");
+      } else if (p >= 40) {
+        setProofPhase("witness");
+      } else if (p >= 20) {
+        setProofPhase("loading");
+      } else {
+        setProofPhase("connecting");
+      }
+      setProofPhaseProgress(p);
+    }
+  }, [withdrawState.proofProgress, withdrawState.isWithdrawing]);
 
   // Load spendable notes
   useEffect(() => {
@@ -322,47 +354,6 @@ export default function PrivacyPoolPage() {
     }
   }, []);
 
-  // Track proof progress - prefer real STWO prover progress over simulation
-  // The usePrivacyPool hook provides real progress via depositState.proofProgress
-  // This function provides fallback visual feedback when no progress is available
-  const trackProofProgress = useCallback(async (
-    getProgress: () => number | undefined,
-    abortSignal?: AbortSignal
-  ) => {
-    const phases: Array<"connecting" | "encrypting" | "loading" | "witness" | "commit" | "fri" | "query" | "finalizing" | "done"> = [
-      "connecting", "encrypting", "loading", "witness", "commit", "fri", "query", "finalizing", "done"
-    ];
-
-    // Monitor real progress from the prover
-    let lastProgress = 0;
-    const pollInterval = setInterval(() => {
-      const currentProgress = getProgress();
-      if (currentProgress !== undefined && currentProgress > lastProgress) {
-        lastProgress = currentProgress;
-        // Map progress (0-100) to phases
-        const phaseIndex = Math.min(Math.floor((currentProgress / 100) * (phases.length - 1)), phases.length - 2);
-        setProofPhase(phases[phaseIndex]);
-        setProofPhaseProgress(currentProgress);
-      }
-    }, 100);
-
-    // Wait for completion or abort
-    return new Promise<void>((resolve) => {
-      const checkComplete = setInterval(() => {
-        const progress = getProgress();
-        if (progress === undefined || progress >= 100 || abortSignal?.aborted) {
-          clearInterval(pollInterval);
-          clearInterval(checkComplete);
-          if (!abortSignal?.aborted) {
-            setProofPhase("done");
-            setProofPhaseProgress(100);
-          }
-          resolve();
-        }
-      }, 200);
-    });
-  }, []);
-
   const handleDepositClick = () => {
     if (!isConnected || !hasKeys) return;
     setShowDepositConfirm(true);
@@ -400,14 +391,11 @@ export default function PrivacyPoolPage() {
     setShowWithdrawConfirm(false);
     if (!selectedNote || !isConnected) return;
 
-    try {
-      // Track real proof progress from the withdrawal operation
-      const abortController = new AbortController();
-      const proofProgressPromise = trackProofProgress(
-        () => withdrawState.proofProgress,
-        abortController.signal
-      );
+    // Reset proof phase display
+    setProofPhase("connecting");
+    setProofPhaseProgress(0);
 
+    try {
       // Build compliance options based on user selection
       const complianceOptions: WithdrawComplianceOptions = {
         complianceLevel: complianceLevel.id as ComplianceLevelId,
@@ -415,23 +403,9 @@ export default function PrivacyPoolPage() {
         auditKey: complianceLevel.id === "auditable" && auditKey ? auditKey : undefined,
       };
 
-      // Use the proper hook which handles:
-      // - Poseidon nullifier derivation
-      // - Merkle proof generation
-      // - ZK proof generation via STWO prover
-      // - Note spending
-      // - Compliance proof generation based on selected level
-      const withdrawPromise = withdraw(selectedNote, undefined, complianceOptions);
-
-      // Run withdrawal with real progress tracking
-      await Promise.race([
-        Promise.all([withdrawPromise, proofProgressPromise]),
-        // Timeout after 5 minutes
-        new Promise((_, reject) => setTimeout(() => {
-          abortController.abort();
-          reject(new Error("Withdrawal timed out"));
-        }, 300000))
-      ]);
+      // withdraw() sets withdrawState.proofProgress at each stage (0→20→40→60→80→100)
+      // The useEffect above maps proofProgress to UI phases automatically
+      await withdraw(selectedNote, undefined, complianceOptions);
 
       setSelectedNote(null);
       await refetchDeposits();
@@ -1175,7 +1149,7 @@ export default function PrivacyPoolPage() {
                           )}>Confirmed</p>
                           {depositState.txHash && depositState.phase === "confirmed" && (
                             <a
-                              href={`https://sepolia.starkscan.co/tx/${depositState.txHash}`}
+                              href={`${explorerUrl}/tx/${depositState.txHash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-sm text-brand-400 hover:underline"
@@ -1372,13 +1346,23 @@ export default function PrivacyPoolPage() {
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                       <span className="text-sm text-emerald-300">Withdrawal successful!</span>
                       <a
-                        href={`https://sepolia.starkscan.co/tx/${withdrawState.txHash}`}
+                        href={`${explorerUrl}/tx/${withdrawState.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-brand-400 hover:underline ml-auto"
                       >
                         View tx →
                       </a>
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Message */}
+                {withdrawState.error && !withdrawState.isWithdrawing && (
+                  <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/30">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                      <span className="text-sm text-red-300">{withdrawState.error}</span>
                     </div>
                   </div>
                 )}
@@ -1843,7 +1827,7 @@ export default function PrivacyPoolPage() {
                       <div>
                         <p className="text-sm text-emerald-300">Ragequit cancelled successfully!</p>
                         <a
-                          href={`https://sepolia.starkscan.co/tx/${cancelTxHash}`}
+                          href={`${explorerUrl}/tx/${cancelTxHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-emerald-400 hover:underline mt-1 inline-block"

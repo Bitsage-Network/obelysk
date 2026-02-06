@@ -116,9 +116,10 @@ export const PRIVACY_POOL_REGISTRY: Record<string, Record<string, string>> = {
   sepolia: {
     // SAGE pool is the primary deployed pool
     SAGE: CONTRACTS.sepolia.PRIVACY_POOLS,
-    // Additional per-token pools (deploy and fill in)
-    ETH: "0x0",
-    STRK: "0x0",
+    // Per-token pools (deployed 2026-02-06)
+    ETH: "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
+    STRK: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
+    // Not yet deployed
     USDC: "0x0",
     wBTC: "0x0",
   },
