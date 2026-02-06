@@ -105,9 +105,9 @@ export const EKUBO_CORE = {
   mainnet: "0x00000005dd3d2f4429af886cd1a3b08289dbcea99a294197e9eb43b0e0325b4b",
 } as const;
 
-// Shielded swap router — deployed per network (update after deployment)
+// Shielded swap router — deployed per network
 export const SHIELDED_SWAP_ROUTER = {
-  sepolia: "0x0", // To be deployed
+  sepolia: "0x056b76b42487b943a0d33f5787437ee08af9fd61e1926de9602b3cfb5392f1d6",
   mainnet: "0x0",
 } as const;
 

@@ -2,11 +2,10 @@
 name = "obelysk_contracts"
 version = "0.1.0"
 edition = "2024_07"
-cairo-version = "2.7.0"
 
 [dependencies]
-starknet = "2.7.0"
-
-[lib]
+starknet = "2.12.0"
+openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts", tag = "v0.20.0" }
 
 [[target.starknet-contract]]
+casm = true

@@ -1,0 +1,530 @@
+[
+  {
+    "type": "impl",
+    "name": "ShieldedSwapRouterImpl",
+    "interface_name": "obelysk_contracts::shielded_swap_router::IShieldedSwapRouter"
+  },
+  {
+    "type": "struct",
+    "name": "core::integer::u256",
+    "members": [
+      {
+        "name": "low",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "high",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::array::Span::<core::felt252>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<core::felt252>"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::PPWithdrawalProof",
+    "members": [
+      {
+        "name": "nullifier",
+        "type": "core::felt252"
+      },
+      {
+        "name": "root",
+        "type": "core::felt252"
+      },
+      {
+        "name": "recipient",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "amount",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252"
+      },
+      {
+        "name": "proof_data",
+        "type": "core::array::Span::<core::felt252>"
+      },
+      {
+        "name": "exclusion_proof",
+        "type": "core::array::Span::<core::felt252>"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::PoolKey",
+    "members": [
+      {
+        "name": "token0",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "token1",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "fee",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "tick_spacing",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "extension",
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ]
+  },
+  {
+    "type": "enum",
+    "name": "core::bool",
+    "variants": [
+      {
+        "name": "False",
+        "type": "()"
+      },
+      {
+        "name": "True",
+        "type": "()"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::i129",
+    "members": [
+      {
+        "name": "mag",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "sign",
+        "type": "core::bool"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::SwapParameters",
+    "members": [
+      {
+        "name": "amount",
+        "type": "obelysk_contracts::shielded_swap_router::i129"
+      },
+      {
+        "name": "is_token1",
+        "type": "core::bool"
+      },
+      {
+        "name": "sqrt_ratio_limit",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "skip_ahead",
+        "type": "core::integer::u32"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::ECPoint",
+    "members": [
+      {
+        "name": "x",
+        "type": "core::felt252"
+      },
+      {
+        "name": "y",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::shielded_swap_router::ShieldedSwapRequest",
+    "members": [
+      {
+        "name": "source_pool",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "withdrawal_proof",
+        "type": "obelysk_contracts::shielded_swap_router::PPWithdrawalProof"
+      },
+      {
+        "name": "pool_key",
+        "type": "obelysk_contracts::shielded_swap_router::PoolKey"
+      },
+      {
+        "name": "swap_params",
+        "type": "obelysk_contracts::shielded_swap_router::SwapParameters"
+      },
+      {
+        "name": "min_amount_out",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "dest_pool",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "deposit_commitment",
+        "type": "core::felt252"
+      },
+      {
+        "name": "deposit_amount_commitment",
+        "type": "obelysk_contracts::shielded_swap_router::ECPoint"
+      },
+      {
+        "name": "deposit_asset_id",
+        "type": "core::felt252"
+      },
+      {
+        "name": "deposit_range_proof",
+        "type": "core::array::Span::<core::felt252>"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "obelysk_contracts::shielded_swap_router::IShieldedSwapRouter",
+    "items": [
+      {
+        "type": "function",
+        "name": "shielded_swap",
+        "inputs": [
+          {
+            "name": "request",
+            "type": "obelysk_contracts::shielded_swap_router::ShieldedSwapRequest"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "locked",
+        "inputs": [
+          {
+            "name": "id",
+            "type": "core::integer::u32"
+          },
+          {
+            "name": "data",
+            "type": "core::array::Span::<core::felt252>"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::array::Span::<core::felt252>"
+          }
+        ],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "register_pool",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "pool",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "set_ekubo_core",
+        "inputs": [
+          {
+            "name": "core",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_pool",
+        "inputs": [
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "get_swap_count",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::integer::u64"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "get_ekubo_core",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "schedule_upgrade",
+        "inputs": [
+          {
+            "name": "new_class_hash",
+            "type": "core::starknet::class_hash::ClassHash"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "execute_upgrade",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "cancel_upgrade",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_upgrade_info",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "(core::starknet::class_hash::ClassHash, core::integer::u64, core::integer::u64, core::integer::u64)"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "set_upgrade_delay",
+        "inputs": [
+          {
+            "name": "new_delay",
+            "type": "core::integer::u64"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      }
+    ]
+  },
+  {
+    "type": "constructor",
+    "name": "constructor",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "ekubo_core",
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::ShieldedSwapExecuted",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "swap_id",
+        "type": "core::integer::u64",
+        "kind": "key"
+      },
+      {
+        "name": "source_pool",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "dest_pool",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "input_token",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "output_token",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "input_amount",
+        "type": "core::integer::u256",
+        "kind": "data"
+      },
+      {
+        "name": "output_amount",
+        "type": "core::integer::u256",
+        "kind": "data"
+      },
+      {
+        "name": "timestamp",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::PoolRegistered",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "token",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "pool",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::UpgradeScheduled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "scheduled_at",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "execute_after",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "scheduler",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::UpgradeExecuted",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "old_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "executor",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::UpgradeCancelled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "cancelled_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "canceller",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::shielded_swap_router::ShieldedSwapRouter::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "ShieldedSwapExecuted",
+        "type": "obelysk_contracts::shielded_swap_router::ShieldedSwapExecuted",
+        "kind": "nested"
+      },
+      {
+        "name": "PoolRegistered",
+        "type": "obelysk_contracts::shielded_swap_router::PoolRegistered",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeScheduled",
+        "type": "obelysk_contracts::shielded_swap_router::UpgradeScheduled",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeExecuted",
+        "type": "obelysk_contracts::shielded_swap_router::UpgradeExecuted",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeCancelled",
+        "type": "obelysk_contracts::shielded_swap_router::UpgradeCancelled",
+        "kind": "nested"
+      }
+    ]
+  }
+]

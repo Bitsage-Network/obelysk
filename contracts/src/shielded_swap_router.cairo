@@ -387,10 +387,10 @@ pub mod ShieldedSwapRouter {
             let source_pool = IPrivacyPoolDispatcher {
                 contract_address: request.source_pool
             };
+            let input_amount = request.withdrawal_proof.amount;
+
             let withdraw_success = source_pool.pp_withdraw(request.withdrawal_proof);
             assert!(withdraw_success, "Privacy pool withdrawal failed");
-
-            let input_amount = request.withdrawal_proof.amount;
 
             // Determine input/output tokens from pool key
             let (input_token, output_token) = if request.swap_params.is_token1 {
