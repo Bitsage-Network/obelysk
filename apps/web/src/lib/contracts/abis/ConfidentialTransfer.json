@@ -1,0 +1,866 @@
+[
+  {
+    "type": "impl",
+    "name": "ConfidentialTransferImpl",
+    "interface_name": "obelysk_contracts::confidential_transfer::IConfidentialTransfer"
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::PublicKey",
+    "members": [
+      {
+        "name": "x",
+        "type": "core::felt252"
+      },
+      {
+        "name": "y",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::ElGamalCiphertext",
+    "members": [
+      {
+        "name": "l_x",
+        "type": "core::felt252"
+      },
+      {
+        "name": "l_y",
+        "type": "core::felt252"
+      },
+      {
+        "name": "r_x",
+        "type": "core::felt252"
+      },
+      {
+        "name": "r_y",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::EncryptedBalance",
+    "members": [
+      {
+        "name": "ciphertext",
+        "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+      },
+      {
+        "name": "pending_in",
+        "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+      },
+      {
+        "name": "pending_out",
+        "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+      },
+      {
+        "name": "nonce",
+        "type": "core::integer::u64"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "core::integer::u256",
+    "members": [
+      {
+        "name": "low",
+        "type": "core::integer::u128"
+      },
+      {
+        "name": "high",
+        "type": "core::integer::u128"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::AEHint",
+    "members": [
+      {
+        "name": "encrypted_amount",
+        "type": "core::felt252"
+      },
+      {
+        "name": "nonce",
+        "type": "core::felt252"
+      },
+      {
+        "name": "mac",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::ECPointFelt",
+    "members": [
+      {
+        "name": "x",
+        "type": "core::felt252"
+      },
+      {
+        "name": "y",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "obelysk_contracts::confidential_transfer::TransferProof",
+    "members": [
+      {
+        "name": "ownership_a",
+        "type": "obelysk_contracts::confidential_transfer::ECPointFelt"
+      },
+      {
+        "name": "ownership_s",
+        "type": "core::felt252"
+      },
+      {
+        "name": "ownership_c",
+        "type": "core::felt252"
+      },
+      {
+        "name": "blinding_a",
+        "type": "obelysk_contracts::confidential_transfer::ECPointFelt"
+      },
+      {
+        "name": "blinding_s",
+        "type": "core::felt252"
+      },
+      {
+        "name": "enc_a_l",
+        "type": "obelysk_contracts::confidential_transfer::ECPointFelt"
+      },
+      {
+        "name": "enc_s_b",
+        "type": "core::felt252"
+      },
+      {
+        "name": "enc_s_r",
+        "type": "core::felt252"
+      },
+      {
+        "name": "range_commitment",
+        "type": "obelysk_contracts::confidential_transfer::ECPointFelt"
+      },
+      {
+        "name": "range_challenge",
+        "type": "core::felt252"
+      },
+      {
+        "name": "range_response_l",
+        "type": "core::felt252"
+      },
+      {
+        "name": "range_response_r",
+        "type": "core::felt252"
+      },
+      {
+        "name": "balance_commitment",
+        "type": "obelysk_contracts::confidential_transfer::ECPointFelt"
+      },
+      {
+        "name": "balance_response",
+        "type": "core::felt252"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "obelysk_contracts::confidential_transfer::IConfidentialTransfer",
+    "items": [
+      {
+        "type": "function",
+        "name": "register",
+        "inputs": [
+          {
+            "name": "public_key",
+            "type": "obelysk_contracts::confidential_transfer::PublicKey"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_public_key",
+        "inputs": [
+          {
+            "name": "account",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "obelysk_contracts::confidential_transfer::PublicKey"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "get_encrypted_balance",
+        "inputs": [
+          {
+            "name": "account",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "obelysk_contracts::confidential_transfer::EncryptedBalance"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "fund",
+        "inputs": [
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "amount",
+            "type": "core::integer::u256"
+          },
+          {
+            "name": "encryption_randomness",
+            "type": "core::felt252"
+          },
+          {
+            "name": "ae_hint",
+            "type": "obelysk_contracts::confidential_transfer::AEHint"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "transfer",
+        "inputs": [
+          {
+            "name": "to",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "sender_cipher",
+            "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+          },
+          {
+            "name": "receiver_cipher",
+            "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+          },
+          {
+            "name": "auditor_cipher",
+            "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext"
+          },
+          {
+            "name": "proof",
+            "type": "obelysk_contracts::confidential_transfer::TransferProof"
+          },
+          {
+            "name": "sender_ae_hint",
+            "type": "obelysk_contracts::confidential_transfer::AEHint"
+          },
+          {
+            "name": "receiver_ae_hint",
+            "type": "obelysk_contracts::confidential_transfer::AEHint"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "rollover",
+        "inputs": [
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "withdraw",
+        "inputs": [
+          {
+            "name": "to",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "amount",
+            "type": "core::integer::u256"
+          },
+          {
+            "name": "proof",
+            "type": "obelysk_contracts::confidential_transfer::TransferProof"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "set_auditor",
+        "inputs": [
+          {
+            "name": "auditor_key",
+            "type": "obelysk_contracts::confidential_transfer::PublicKey"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_auditor",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "obelysk_contracts::confidential_transfer::PublicKey"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "add_asset",
+        "inputs": [
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "token",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_asset",
+        "inputs": [
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "pause",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "unpause",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "schedule_upgrade",
+        "inputs": [
+          {
+            "name": "new_class_hash",
+            "type": "core::starknet::class_hash::ClassHash"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "execute_upgrade",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "cancel_upgrade",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "get_upgrade_info",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "(core::starknet::class_hash::ClassHash, core::integer::u64, core::integer::u64, core::integer::u64)"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "set_upgrade_delay",
+        "inputs": [
+          {
+            "name": "new_delay",
+            "type": "core::integer::u64"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      }
+    ]
+  },
+  {
+    "type": "impl",
+    "name": "OwnableImpl",
+    "interface_name": "openzeppelin_access::ownable::interface::IOwnable"
+  },
+  {
+    "type": "interface",
+    "name": "openzeppelin_access::ownable::interface::IOwnable",
+    "items": [
+      {
+        "type": "function",
+        "name": "owner",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "transfer_ownership",
+        "inputs": [
+          {
+            "name": "new_owner",
+            "type": "core::starknet::contract_address::ContractAddress"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "renounce_ownership",
+        "inputs": [],
+        "outputs": [],
+        "state_mutability": "external"
+      }
+    ]
+  },
+  {
+    "type": "impl",
+    "name": "PausableImpl",
+    "interface_name": "openzeppelin_security::interface::IPausable"
+  },
+  {
+    "type": "enum",
+    "name": "core::bool",
+    "variants": [
+      {
+        "name": "False",
+        "type": "()"
+      },
+      {
+        "name": "True",
+        "type": "()"
+      }
+    ]
+  },
+  {
+    "type": "interface",
+    "name": "openzeppelin_security::interface::IPausable",
+    "items": [
+      {
+        "type": "function",
+        "name": "is_paused",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "core::bool"
+          }
+        ],
+        "state_mutability": "view"
+      }
+    ]
+  },
+  {
+    "type": "constructor",
+    "name": "constructor",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "auditor_key",
+        "type": "obelysk_contracts::confidential_transfer::PublicKey"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::AccountRegistered",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "public_key",
+        "type": "obelysk_contracts::confidential_transfer::PublicKey",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::Funded",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "encrypted_amount",
+        "type": "obelysk_contracts::confidential_transfer::ElGamalCiphertext",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::ConfidentialTransferEvent",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "from",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "to",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "sender_cipher_hash",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "receiver_cipher_hash",
+        "type": "core::felt252",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::RolloverEvent",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::Withdrawal",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "to",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "amount",
+        "type": "core::integer::u256",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeScheduled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "scheduled_at",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "execute_after",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "scheduler",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeExecuted",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "old_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "executor",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeCancelled",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "cancelled_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "canceller",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_access::ownable::ownable::OwnableComponent::OwnershipTransferred",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "previous_owner",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "new_owner",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_access::ownable::ownable::OwnableComponent::OwnershipTransferStarted",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "previous_owner",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "new_owner",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_access::ownable::ownable::OwnableComponent::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "OwnershipTransferred",
+        "type": "openzeppelin_access::ownable::ownable::OwnableComponent::OwnershipTransferred",
+        "kind": "nested"
+      },
+      {
+        "name": "OwnershipTransferStarted",
+        "type": "openzeppelin_access::ownable::ownable::OwnableComponent::OwnershipTransferStarted",
+        "kind": "nested"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_security::pausable::PausableComponent::Paused",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_security::pausable::PausableComponent::Unpaused",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "account",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "openzeppelin_security::pausable::PausableComponent::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "Paused",
+        "type": "openzeppelin_security::pausable::PausableComponent::Paused",
+        "kind": "nested"
+      },
+      {
+        "name": "Unpaused",
+        "type": "openzeppelin_security::pausable::PausableComponent::Unpaused",
+        "kind": "nested"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::Event",
+    "kind": "enum",
+    "variants": [
+      {
+        "name": "AccountRegistered",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::AccountRegistered",
+        "kind": "nested"
+      },
+      {
+        "name": "Funded",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::Funded",
+        "kind": "nested"
+      },
+      {
+        "name": "ConfidentialTransfer",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::ConfidentialTransferEvent",
+        "kind": "nested"
+      },
+      {
+        "name": "Rollover",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::RolloverEvent",
+        "kind": "nested"
+      },
+      {
+        "name": "Withdrawal",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::Withdrawal",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeScheduled",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeScheduled",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeExecuted",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeExecuted",
+        "kind": "nested"
+      },
+      {
+        "name": "UpgradeCancelled",
+        "type": "obelysk_contracts::confidential_transfer::ConfidentialTransfer::UpgradeCancelled",
+        "kind": "nested"
+      },
+      {
+        "name": "OwnableEvent",
+        "type": "openzeppelin_access::ownable::ownable::OwnableComponent::Event",
+        "kind": "flat"
+      },
+      {
+        "name": "PausableEvent",
+        "type": "openzeppelin_security::pausable::PausableComponent::Event",
+        "kind": "flat"
+      }
+    ]
+  }
+]
