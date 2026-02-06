@@ -21,9 +21,17 @@ jobs:
           node-version: 20
           cache: npm
 
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.12.0"
+
       - run: npm ci
       - run: npx turbo build
+      - run: cd contracts && scarb build
 
       - uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          files: |
+            contracts/target/dev/*.contract_class.json
+            contracts/target/dev/*.compiled_contract_class.json
