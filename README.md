@@ -13,7 +13,7 @@
     <img src="https://github.com/Bitsage-Network/obelysk/actions/workflows/ci.yml/badge.svg" alt="CI" />
   </a>
   <a href="https://github.com/Bitsage-Network/obelysk/blob/main/LICENSE">
-    <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License" />
+    <img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License" />
   </a>
   <img src="https://img.shields.io/badge/starknet-sepolia-purple" alt="Network" />
   <img src="https://img.shields.io/badge/contracts-37%20deployed-green" alt="Contracts" />
@@ -265,7 +265,7 @@ cp .env.example .env.local
 
 ## License
 
-MIT
+Apache 2.0 — see [LICENSE](LICENSE).
 
 ---
 
