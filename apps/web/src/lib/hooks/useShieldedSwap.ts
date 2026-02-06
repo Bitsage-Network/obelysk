@@ -6,7 +6,7 @@
  * - Pedersen commitments for deposit note creation
  * - Poseidon-based nullifier derivation
  * - ElGamal encryption for amount hiding
- * - Merkle proof fetch from coordinator API
+ * - On-chain Merkle proof generation via storage reads
  * - IndexedDB note storage via keyStore
  *
  * Privacy model:
@@ -38,6 +38,7 @@ import {
   updateNoteLeafIndex,
 } from "@/lib/crypto/keyStore";
 import type { PrivacyNote } from "@/lib/crypto/constants";
+import { generateMerkleProofOnChain } from "@/lib/crypto/onChainMerkleProof";
 import {
   type SwapStage,
   type ShieldedSwapParams,
@@ -86,7 +87,7 @@ export interface SwapParams {
 
 export interface UseShieldedSwapResult {
   state: ShieldedSwapState;
-  executeSwap: (params: SwapParams) => Promise<void>;
+  executeSwap: (params: SwapParams) => Promise<string | null>;
   estimateOutput: (
     inputToken: string,
     outputToken: string,
@@ -112,9 +113,6 @@ const INITIAL_STATE: ShieldedSwapState = {
   inputAmount: "",
   outputAmount: "",
 };
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 // ============================================================================
 // Helpers
@@ -151,50 +149,6 @@ function selectNoteForSwap(
   if (sufficient) return sufficient;
 
   return null;
-}
-
-/**
- * Fetch Merkle proof from coordinator API for a deposit commitment.
- * Same pattern as usePrivacyPool.ts:171-213.
- */
-async function fetchMerkleProofForSwap(
-  commitment: string
-): Promise<{
-  siblings: string[];
-  path_indices: number[];
-  root: string;
-  leafIndex: number;
-} | null> {
-  try {
-    const response = await fetch(
-      `${API_BASE_URL}/api/privacy/proof/${commitment}`
-    );
-
-    if (!response.ok) {
-      console.warn(
-        "[ShieldedSwap] Failed to fetch Merkle proof:",
-        response.status
-      );
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data.found) {
-      console.warn("[ShieldedSwap] Deposit not found in indexed data");
-      return null;
-    }
-
-    return {
-      siblings: data.siblings,
-      path_indices: data.path_indices.map((p: number) => p),
-      root: data.current_root || data.root,
-      leafIndex: data.leaf_index,
-    };
-  } catch (error) {
-    console.error("[ShieldedSwap] Error fetching Merkle proof:", error);
-    return null;
-  }
 }
 
 // ============================================================================
@@ -287,7 +241,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           stage: "error",
           error: "Wallet not connected",
         }));
-        return;
+        return null;
       }
 
       if (!isRouterDeployed) {
@@ -296,7 +250,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           stage: "error",
           error: "Shielded swap router not yet deployed on this network",
         }));
-        return;
+        return null;
       }
 
       const inputSymbol =
@@ -326,7 +280,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           stage: "error",
           error: poolValidation.error || "Pool validation failed",
         }));
-        return;
+        return null;
       }
 
       // Ensure privacy keys exist
@@ -339,7 +293,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
             stage: "error",
             error: "Privacy keys required. Please initialize keys first.",
           }));
-          return;
+          return null;
         }
       }
 
@@ -411,7 +365,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           );
         }
 
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
 
         console.log("[ShieldedSwap] Selected note:", {
           commitment: selectedNote.commitment.slice(0, 16) + "...",
@@ -422,56 +376,27 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         setState((prev) => ({
           ...prev,
           progress: 15,
-          message: "Deriving nullifier and fetching Merkle proof...",
+          message: "Generating Merkle proof from on-chain data...",
         }));
 
         // ================================================================
-        // Stage 2: Withdrawal Proof (15-45%)
+        // Stage 2: Merkle Proof → Nullifier → Withdrawal Proof (15-45%)
         // ================================================================
 
-        // Validate leafIndex
-        if (
-          selectedNote.leafIndex === 0 &&
-          !selectedNote.depositTxHash
-        ) {
-          throw new Error(
-            "Note leaf index not yet available. Wait for deposit confirmation."
-          );
-        }
-
-        // Derive nullifier: H(nullifierSecret, leafIndex)
-        const nullifier = deriveNullifier(
-          BigInt(selectedNote.nullifierSecret),
-          selectedNote.leafIndex
-        );
-
-        console.log(
-          "[ShieldedSwap] Nullifier derived:",
-          nullifierToFelt(nullifier).slice(0, 16) + "...",
-          "for leafIndex:",
-          selectedNote.leafIndex
-        );
-
-        if (abortRef.current) return;
-
-        setState((prev) => ({
-          ...prev,
-          progress: 25,
-          message: "Fetching Merkle inclusion proof...",
-        }));
-
-        // Fetch Merkle proof from coordinator
-        const merkleProof = await fetchMerkleProofForSwap(
-          selectedNote.commitment
+        // Step 2a: Generate Merkle proof on-chain (must come before nullifier)
+        const merkleProof = await generateMerkleProofOnChain(
+          selectedNote.commitment,
+          "sepolia"
         );
 
         if (!merkleProof) {
           throw new Error(
-            "Could not fetch Merkle proof. Deposit may not be indexed yet. Wait for indexing."
+            "Could not generate Merkle proof. Deposit commitment not found on-chain. " +
+            "Please wait for the deposit to be confirmed."
           );
         }
 
-        // Update note's leafIndex if it was 0 but proof returned a real index
+        // Update note's leafIndex from on-chain data
         if (
           selectedNote.leafIndex === 0 &&
           merkleProof.leafIndex > 0
@@ -483,13 +408,36 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           selectedNote.leafIndex = merkleProof.leafIndex;
         }
 
-        console.log("[ShieldedSwap] Merkle proof fetched:", {
+        console.log("[ShieldedSwap] Merkle proof generated:", {
           root: merkleProof.root.slice(0, 16) + "...",
           siblings: merkleProof.siblings.length,
           leafIndex: merkleProof.leafIndex,
+          treeSize: merkleProof.tree_size,
         });
 
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
+
+        setState((prev) => ({
+          ...prev,
+          progress: 25,
+          message: "Deriving nullifier...",
+        }));
+
+        // Step 2b: Derive nullifier using leafIndex from proof
+        const effectiveLeafIndex = merkleProof.leafIndex;
+        const nullifier = deriveNullifier(
+          BigInt(selectedNote.nullifierSecret),
+          effectiveLeafIndex
+        );
+
+        console.log(
+          "[ShieldedSwap] Nullifier derived:",
+          nullifierToFelt(nullifier).slice(0, 16) + "...",
+          "for leafIndex:",
+          effectiveLeafIndex
+        );
+
+        if (abortRef.current) return null;
 
         setState((prev) => ({
           ...prev,
@@ -505,7 +453,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           network as NetworkType
         );
 
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
 
         setState((prev) => ({
           ...prev,
@@ -526,7 +474,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
             ),
             leaf: selectedNote.commitment,
             root: merkleProof.root,
-            tree_size: merkleProof.siblings.length * 2,
+            tree_size: merkleProof.tree_size,
           },
           deposit_commitment: selectedNote.commitment,
           association_set_id: null,
@@ -590,7 +538,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           params.slippageBps
         );
 
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
 
         // ================================================================
         // Stage 4: Submit Transaction (55-75%)
@@ -624,7 +572,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           network as NetworkType
         );
 
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
 
         setState((prev) => ({
           ...prev,
@@ -755,6 +703,8 @@ export function useShieldedSwap(): UseShieldedSwapResult {
             params.outputSymbol
           ),
         }));
+
+        return txHash;
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Unknown error";
@@ -764,6 +714,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           error: message,
           message: `Swap failed: ${message}`,
         }));
+        return null;
       }
     },
     [
