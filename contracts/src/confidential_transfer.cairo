@@ -171,8 +171,12 @@ pub mod ConfidentialTransfer {
     const G_Y: felt252 = 0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f;
 
     // Pedersen H point (for commitments)
-    const H_X: felt252 = 0x234287dcbaffe7f969c748655fca9e58fa8120b6d56eb0c1080d17957ebe47b;
-    const H_Y: felt252 = 0x3b056f100f96fb21e889527d41f4e39940135dd7a6c94cc6ed0268ee89e5615;
+    // Derived via hash-to-curve: try-and-increment with Poseidon
+    // Domain: "OBELYSK_PEDERSEN_H_V1", Counter: 0
+    // Nobody knows dlog_G(H) — binding property holds
+    // See: apps/web/scripts/deriveH.ts
+    const H_X: felt252 = 0x73bd2c9434c955f80b06d2847f8384a226d6cc2557a5735fd9f84d632f576be;
+    const H_Y: felt252 = 0x1bd58ea52858154de69bf90e446ff200f173d49da444c4f462652ce6b93457e;
 
     // Zero ciphertext (identity for homomorphic ops)
     const ZERO_CIPHER: ElGamalCiphertext = ElGamalCiphertext {
