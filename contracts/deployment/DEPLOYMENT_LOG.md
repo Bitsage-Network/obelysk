@@ -25,3 +25,36 @@
 ### Tools
 - scarb 2.12.0 (Scarb.toml: starknet=2.12.0, openzeppelin git v0.20.0)
 - sncast 0.54.1
+
+---
+
+## Sepolia Testnet — 2026-02-06 (H Generator Upgrade)
+
+Unified Pedersen H generator across all contracts.
+H is now derived via hash-to-curve (Poseidon, domain "OBELYSK_PEDERSEN_H_V1")
+with provably unknown discrete log. Previously used 2*G (known dlog).
+
+### PrivacyPools (Upgrade)
+- **Contract Address**: `0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7`
+- **Old Class Hash**: (deployed from BitSage-Cairo-Smart-Contracts repo)
+- **New Class Hash**: `0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5`
+- **Declare TX**: `0x006cdb84ea7eda5ce291acd6e6344d15cd90a99cda64ec05561a8c7c1404e662`
+- **Schedule TX**: `0x00032dd5f02c16425657c1541c0e64bbb13d8a313d2d5daf2e2881ddc86d38e6`
+- **Execute TX**: `0x01c1286ea5a7e45cdb56f905617fd365ddc265deb5cf85004d4f626af2f58905`
+- **Changes**: Unified H generator + STARK verification + World ID stubs
+
+### PrivacyRouter (Upgrade)
+- **Contract Address**: `0x7d1a6c242a4f0573696e117790f431fd60518a000b85fe5ee507456049ffc53`
+- **Old Class Hash**: (deployed from BitSage-Cairo-Smart-Contracts repo)
+- **New Class Hash**: `0x33818db1b729f9257d648afc175bbae92d31cf46489781642087962d15ba3d3`
+- **Declare TX**: `0x0317062b361f6074f0c5d65726f7fb12a3b05bd6892c0c19dd624932c1201679`
+- **Schedule TX**: `0x020ffc7dae96ad4d44ccfb26f2165bdcc7ddce8156fb4838d1280fc7fbec96b6`
+- **Execute TX**: `0x0282b1b1ee3239f780f137d76b9480c1dd6bc040e047d46a248b5ce3b7e3689d`
+- **Changes**: Unified H generator (via elgamal module dependency)
+
+### ShieldedSwapRouter — No upgrade needed
+- Does not use elgamal module or H generator
+
+### ConfidentialTransfer — No upgrade needed (source-only fix)
+- Had unused H_X/H_Y constants (dead code, not referenced in function bodies)
+- Source updated for consistency but compiled artifact unchanged

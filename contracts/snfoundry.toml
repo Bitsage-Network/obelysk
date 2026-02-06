@@ -1,0 +1,4 @@
+[sncast.default]
+account = "deployer"
+accounts-file = "deployment/sncast_accounts.json"
+url = "https://api.cartridge.gg/x/starknet/sepolia"
