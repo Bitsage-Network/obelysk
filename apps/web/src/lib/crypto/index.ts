@@ -107,7 +107,7 @@ export {
   type KeyImage,
 } from "./nullifier";
 
-// Merkle tree
+// Merkle tree (legacy — types only, do NOT use functions for privacy pool proofs)
 export {
   EMPTY_LEAF,
   TREE_DEPTH,
@@ -130,6 +130,14 @@ export {
   type SparseMerkleProof,
   type PrivacyPoolMerkleState,
 } from "./merkle";
+
+// On-chain Merkle proof (Cairo-compatible LeanIMT — use this for privacy pool proofs)
+export {
+  generateMerkleProofOnChain,
+  verifyRootAgainstChain,
+  clearMerkleCache,
+  type OnChainMerkleProofResult,
+} from "./onChainMerkleProof";
 
 // Key storage
 export {
