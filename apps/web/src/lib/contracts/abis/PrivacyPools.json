@@ -206,6 +206,16 @@
   },
   {
     "type": "struct",
+    "name": "core::array::Span::<core::integer::u256>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<core::integer::u256>"
+      }
+    ]
+  },
+  {
+    "type": "struct",
     "name": "sage_contracts::obelysk::lean_imt::LeanIMTBatchResult",
     "members": [
       {
@@ -797,6 +807,10 @@
             "type": "core::felt252"
           },
           {
+            "name": "amount",
+            "type": "core::integer::u256"
+          },
+          {
             "name": "range_proof_data",
             "type": "core::array::Span::<core::felt252>"
           }
@@ -823,6 +837,10 @@
           {
             "name": "asset_ids",
             "type": "core::array::Span::<core::felt252>"
+          },
+          {
+            "name": "amounts",
+            "type": "core::array::Span::<core::integer::u256>"
           },
           {
             "name": "range_proof_data",
@@ -1084,6 +1102,168 @@
         ],
         "outputs": [],
         "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "configure_stark_verification",
+        "inputs": [
+          {
+            "name": "integrity_verifier",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "range_proof_program_hash",
+            "type": "core::felt252"
+          },
+          {
+            "name": "balance_proof_program_hash",
+            "type": "core::felt252"
+          },
+          {
+            "name": "transfer_proof_program_hash",
+            "type": "core::felt252"
+          },
+          {
+            "name": "min_security_bits",
+            "type": "core::integer::u32"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "set_stark_proofs_required",
+        "inputs": [
+          {
+            "name": "required",
+            "type": "core::bool"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "verify_stark_proof",
+        "inputs": [
+          {
+            "name": "fact_hash",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::bool"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "get_stark_config",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "(core::starknet::contract_address::ContractAddress, core::felt252, core::felt252, core::felt252, core::integer::u32, core::bool)"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "configure_world_id",
+        "inputs": [
+          {
+            "name": "world_id_bridge",
+            "type": "core::starknet::contract_address::ContractAddress"
+          },
+          {
+            "name": "required",
+            "type": "core::bool"
+          }
+        ],
+        "outputs": [],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "pp_deposit_verified",
+        "inputs": [
+          {
+            "name": "commitment",
+            "type": "core::felt252"
+          },
+          {
+            "name": "amount_commitment",
+            "type": "sage_contracts::obelysk::elgamal::ECPoint"
+          },
+          {
+            "name": "asset_id",
+            "type": "core::felt252"
+          },
+          {
+            "name": "amount",
+            "type": "core::integer::u256"
+          },
+          {
+            "name": "range_proof_data",
+            "type": "core::array::Span::<core::felt252>"
+          },
+          {
+            "name": "world_id_proof",
+            "type": "core::array::Span::<core::felt252>"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::integer::u64"
+          }
+        ],
+        "state_mutability": "external"
+      },
+      {
+        "type": "function",
+        "name": "is_human_verified_deposit",
+        "inputs": [
+          {
+            "name": "commitment",
+            "type": "core::felt252"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::bool"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "is_world_id_nullifier_used",
+        "inputs": [
+          {
+            "name": "nullifier",
+            "type": "core::integer::u256"
+          }
+        ],
+        "outputs": [
+          {
+            "type": "core::bool"
+          }
+        ],
+        "state_mutability": "view"
+      },
+      {
+        "type": "function",
+        "name": "get_world_id_config",
+        "inputs": [],
+        "outputs": [
+          {
+            "type": "(core::starknet::contract_address::ContractAddress, core::bool, core::integer::u64)"
+          }
+        ],
+        "state_mutability": "view"
       }
     ]
   },
@@ -1676,6 +1856,144 @@
   },
   {
     "type": "event",
+    "name": "sage_contracts::obelysk::privacy_pools::PrivacyPools::StarkVerificationConfigured",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "integrity_verifier",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "range_proof_program_hash",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "balance_proof_program_hash",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "transfer_proof_program_hash",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "min_security_bits",
+        "type": "core::integer::u32",
+        "kind": "data"
+      },
+      {
+        "name": "configured_by",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "timestamp",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "sage_contracts::obelysk::privacy_pools::PrivacyPools::StarkProofVerified",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "fact_hash",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "proof_type",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "security_bits",
+        "type": "core::integer::u32",
+        "kind": "data"
+      },
+      {
+        "name": "verifier_used",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "timestamp",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "sage_contracts::obelysk::privacy_pools::PrivacyPools::WorldIDConfigured",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "world_id_bridge",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "required",
+        "type": "core::bool",
+        "kind": "data"
+      },
+      {
+        "name": "configured_by",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "timestamp",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "sage_contracts::obelysk::privacy_pools::PrivacyPools::HumanVerifiedDeposit",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "commitment",
+        "type": "core::felt252",
+        "kind": "key"
+      },
+      {
+        "name": "world_id_nullifier",
+        "type": "core::integer::u256",
+        "kind": "key"
+      },
+      {
+        "name": "depositor",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "asset_id",
+        "type": "core::felt252",
+        "kind": "data"
+      },
+      {
+        "name": "global_index",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
+        "name": "timestamp",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
     "name": "sage_contracts::obelysk::privacy_pools::PrivacyPools::Event",
     "kind": "enum",
     "variants": [
@@ -1782,6 +2100,26 @@
       {
         "name": "UpgradeCancelled",
         "type": "sage_contracts::obelysk::privacy_pools::PrivacyPools::UpgradeCancelled",
+        "kind": "nested"
+      },
+      {
+        "name": "StarkVerificationConfigured",
+        "type": "sage_contracts::obelysk::privacy_pools::PrivacyPools::StarkVerificationConfigured",
+        "kind": "nested"
+      },
+      {
+        "name": "StarkProofVerified",
+        "type": "sage_contracts::obelysk::privacy_pools::PrivacyPools::StarkProofVerified",
+        "kind": "nested"
+      },
+      {
+        "name": "WorldIDConfigured",
+        "type": "sage_contracts::obelysk::privacy_pools::PrivacyPools::WorldIDConfigured",
+        "kind": "nested"
+      },
+      {
+        "name": "HumanVerifiedDeposit",
+        "type": "sage_contracts::obelysk::privacy_pools::PrivacyPools::HumanVerifiedDeposit",
         "kind": "nested"
       }
     ]
