@@ -35,6 +35,7 @@ import {
 } from "@/lib/hooks/useShieldedSwap";
 import {
   getSupportedSwapTokens,
+  validateSwapPrerequisites,
   type SwapEstimate,
 } from "@/lib/swap/shieldedSwap";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
@@ -214,6 +215,7 @@ export function ShieldedSwapPanel({
     estimateOutput,
     reset,
     isRouterDeployed,
+    getPrivacyPoolBalance,
   } = useShieldedSwap();
 
   // Token selection
@@ -228,6 +230,12 @@ export function ShieldedSwapPanel({
   const [inputAmount, setInputAmount] = useState("");
   const [estimate, setEstimate] = useState<SwapEstimate | null>(null);
   const [isEstimating, setIsEstimating] = useState(false);
+
+  // Privacy pool balance for input token
+  const [privacyBalance, setPrivacyBalance] = useState<number | null>(null);
+
+  // Pool validation
+  const [poolValidationError, setPoolValidationError] = useState<string | null>(null);
 
   // Slippage
   const [slippageBps, setSlippageBps] = useState(100); // 1% default
@@ -246,6 +254,29 @@ export function ShieldedSwapPanel({
       if (eth) setOutputToken(eth);
     }
   }, [supportedTokens, inputToken]);
+
+  // Fetch privacy pool balance when input token changes
+  useEffect(() => {
+    if (!address || !inputToken) {
+      setPrivacyBalance(null);
+      return;
+    }
+    let cancelled = false;
+    getPrivacyPoolBalance(inputToken.symbol).then((bal) => {
+      if (!cancelled) setPrivacyBalance(bal);
+    });
+    return () => { cancelled = true; };
+  }, [address, inputToken, getPrivacyPoolBalance, state.stage]);
+
+  // Validate pool prerequisites when tokens change
+  useEffect(() => {
+    if (!inputToken || !outputToken || inputToken.symbol === outputToken.symbol) {
+      setPoolValidationError(null);
+      return;
+    }
+    const result = validateSwapPrerequisites(inputToken.symbol, outputToken.symbol, network);
+    setPoolValidationError(result.valid ? null : (result.error || null));
+  }, [inputToken, outputToken, network]);
 
   // Debounced estimation
   useEffect(() => {
@@ -320,13 +351,15 @@ export function ShieldedSwapPanel({
     ? (Number(estimate.expectedOutput) / 10 ** outputDecimals).toFixed(6)
     : "";
 
+  const poolsValid = !poolValidationError;
   const canSwap =
     isConnected &&
     inputToken &&
     outputToken &&
     inputToken.symbol !== outputToken.symbol &&
     parseFloat(inputAmount) > 0 &&
-    !isSwapping;
+    !isSwapping &&
+    poolsValid;
 
   return (
     <div className={cn("space-y-4", className)}>
@@ -506,7 +539,7 @@ export function ShieldedSwapPanel({
                 <span className="text-xs text-gray-500">From (Privacy Pool)</span>
                 {inputToken && (
                   <span className="text-[10px] text-gray-600">
-                    Balance: --
+                    Balance: {privacyBalance !== null ? `${privacyBalance.toFixed(4)} ${inputToken.symbol}` : "--"}
                   </span>
                 )}
               </div>
@@ -663,6 +696,14 @@ export function ShieldedSwapPanel({
                 />
                 <span className="text-xs text-gray-500">bps</span>
               </motion.div>
+            )}
+
+            {/* ── Pool Validation Warning ─────────────────── */}
+            {poolValidationError && (
+              <div className="p-3 rounded-xl bg-yellow-500/[0.06] border border-yellow-500/15 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                <span className="text-xs text-yellow-400/90">{poolValidationError}</span>
+              </div>
             )}
 
             {/* ── Privacy Info Banner ──────────────────────── */}

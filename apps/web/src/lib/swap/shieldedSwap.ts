@@ -294,15 +294,9 @@ export async function estimateSwapOutput(
       route: `${inputToken} → Ekubo → ${outputToken}`,
     };
   } catch {
-    // If quote fails (pool doesn't exist, etc.), return a simulated estimate
-    // This allows the UI to still function during development
-    const simulated = (amountIn * 95n) / 100n; // 5% simulated slippage
-    return {
-      expectedOutput: simulated,
-      priceImpact: 5.0,
-      fee: (amountIn * 5n) / 10000n,
-      route: `${inputToken} → Ekubo → ${outputToken} (estimated)`,
-    };
+    throw new Error(
+      "Failed to estimate swap output. Pool may not exist for this pair."
+    );
   }
 }
 
@@ -535,6 +529,55 @@ export function getSupportedSwapTokens(
   }
 
   return result;
+}
+
+/**
+ * Validate that both source and destination privacy pools are deployed
+ * for a given token pair on the specified network.
+ */
+export function validateSwapPrerequisites(
+  inputSymbol: string,
+  outputSymbol: string,
+  network: string
+): { valid: boolean; error?: string } {
+  const sourcePool = getPrivacyPoolForToken(network as NetworkType, inputSymbol);
+  const destPool = getPrivacyPoolForToken(network as NetworkType, outputSymbol);
+
+  if (sourcePool === "0x0" && destPool === "0x0") {
+    return {
+      valid: false,
+      error: `No privacy pool deployed for ${inputSymbol} or ${outputSymbol}`,
+    };
+  }
+  if (sourcePool === "0x0") {
+    return {
+      valid: false,
+      error: `No privacy pool deployed for ${inputSymbol}`,
+    };
+  }
+  if (destPool === "0x0") {
+    return {
+      valid: false,
+      error: `No privacy pool deployed for ${outputSymbol}`,
+    };
+  }
+
+  return { valid: true };
+}
+
+/**
+ * Get the on-chain asset ID for a token symbol.
+ * Used for deposit_asset_id in shielded swap calldata.
+ */
+export function getAssetIdForToken(tokenSymbol: string): string {
+  const assetIds: Record<string, string> = {
+    SAGE: "0x0",
+    ETH: "0x1",
+    STRK: "0x2",
+    USDC: "0x3",
+    wBTC: "0x4",
+  };
+  return assetIds[tokenSymbol] || "0x0";
 }
 
 /**
