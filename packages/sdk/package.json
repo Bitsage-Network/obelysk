@@ -1,0 +1,10 @@
+{
+  "name": "@obelysk/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "dependencies": {
+    "starknet": "^6.17.0"
+  }
+}
