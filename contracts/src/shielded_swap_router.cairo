@@ -73,16 +73,37 @@ pub struct ECPoint {
     pub y: felt252,
 }
 
-/// Privacy pool withdrawal proof
+/// LeanIMT membership proof (must match sage_contracts::obelysk::lean_imt::LeanIMTProof)
+#[derive(Drop, Serde)]
+pub struct LeanIMTProof {
+    pub siblings: Array<felt252>,
+    pub path_indices: Array<bool>,
+    pub leaf: felt252,
+    pub root: felt252,
+    pub tree_size: u64,
+}
+
+/// Exclusion proof data (must match privacy_pools::ExclusionProofData)
+#[derive(Drop, Serde)]
+pub struct ExclusionProofData {
+    pub non_membership_proof: LeanIMTProof,
+    pub boundary_left: felt252,
+    pub boundary_right: felt252,
+}
+
+/// Privacy pool withdrawal proof (must match privacy_pools::PPWithdrawalProof exactly)
 #[derive(Drop, Serde)]
 pub struct PPWithdrawalProof {
+    pub global_tree_proof: LeanIMTProof,
+    pub deposit_commitment: felt252,
+    pub association_set_id: Option<felt252>,
+    pub association_proof: Option<LeanIMTProof>,
+    pub exclusion_set_id: Option<felt252>,
+    pub exclusion_proof: Option<ExclusionProofData>,
     pub nullifier: felt252,
-    pub root: felt252,
-    pub recipient: ContractAddress,
     pub amount: u256,
-    pub asset_id: felt252,
-    pub proof_data: Span<felt252>,
-    pub exclusion_proof: Span<felt252>,
+    pub recipient: ContractAddress,
+    pub range_proof_data: Span<felt252>,
 }
 
 /// Complete parameters for an atomic private swap
@@ -389,11 +410,15 @@ pub mod ShieldedSwapRouter {
             let withdraw_success = source_pool.pp_withdraw(request.withdrawal_proof);
             assert!(withdraw_success, "Privacy pool withdrawal failed");
 
-            // Determine input/output tokens from pool key
+            // Determine input/output tokens from pool key.
+            // Shielded swaps always use exact-input (sign=true, negative amount).
+            // is_token1 indicates WHICH token we are selling.
             let (input_token, output_token) = if request.swap_params.is_token1 {
-                (request.pool_key.token0, request.pool_key.token1)
-            } else {
+                // Selling token1 → receiving token0
                 (request.pool_key.token1, request.pool_key.token0)
+            } else {
+                // Selling token0 → receiving token1
+                (request.pool_key.token0, request.pool_key.token1)
             };
 
             // ================================================================
@@ -413,10 +438,13 @@ pub mod ShieldedSwapRouter {
             // ================================================================
             core.pay(input_token);
 
+            // Get output amount: the token we're receiving (negative delta = Ekubo pays us)
             let output_amount_i129 = if request.swap_params.is_token1 {
-                delta.amount1
-            } else {
+                // Sold token1 → output is token0
                 delta.amount0
+            } else {
+                // Sold token0 → output is token1
+                delta.amount1
             };
 
             assert!(output_amount_i129.sign, "Expected negative delta for output");

@@ -407,19 +407,24 @@ export function buildShieldedSwapCalls(
   //   amount: i129 { mag: u128, sign: bool }
   const swapAmount = BigInt(params.inputAmount);
   calldata.push(formatHex(swapAmount)); // mag
-  calldata.push("0x0"); // sign = false (positive, exact input)
+  calldata.push("0x0"); // sign = false (positive = exact input, selling this amount)
   //   is_token1
   calldata.push(isToken1 ? "0x1" : "0x0");
   //   sqrt_ratio_limit: u256
-  // Use max/min ratio limits based on direction
+  // Ekubo SDK MIN/MAX sqrt ratio limits
+  // sqrt_ratio = sqrt(token1/token0). Selling token1 → sqrt_ratio INCREASES → MAX.
+  // Selling token0 → sqrt_ratio DECREASES → MIN.
+  // Ekubo sqrt_ratio limits (from ekubo starknet-typescript-sdk tick.ts)
+  const MIN_SQRT_RATIO = 18446748437148339061n;
+  const MAX_SQRT_RATIO = 6277100250585753475930931601400621808602321654880405518632n;
   if (isToken1) {
-    // Swapping token1 → token0: limit is MIN_SQRT_RATIO
-    calldata.push("0x1"); // low
-    calldata.push("0x0"); // high
+    // Selling token1: sqrt_ratio increases → MAX_SQRT_RATIO
+    calldata.push(formatHex(MAX_SQRT_RATIO % TWO_POW_128)); // low
+    calldata.push(formatHex(MAX_SQRT_RATIO / TWO_POW_128)); // high
   } else {
-    // Swapping token0 → token1: limit is MAX_SQRT_RATIO
-    calldata.push(formatHex(2n ** 128n - 1n)); // low
-    calldata.push(formatHex(2n ** 128n - 1n)); // high
+    // Selling token0: sqrt_ratio decreases → MIN_SQRT_RATIO
+    calldata.push(formatHex(MIN_SQRT_RATIO)); // low
+    calldata.push("0x0"); // high
   }
   //   skip_ahead
   calldata.push("0x0");
