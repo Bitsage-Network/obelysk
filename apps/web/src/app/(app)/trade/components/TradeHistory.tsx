@@ -11,7 +11,7 @@ import { useMemo, useRef, useEffect } from "react";
 import { Loader2, Info, ShieldCheck, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOTCTradeHistory, useOTCLastTrade } from "@/lib/contracts";
-import { useTradingWebSocket } from "@/lib/hooks/useWebSocket";
+import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
 
 interface TradingPair {
   id: string;
@@ -56,8 +56,8 @@ export function TradeHistory({ pairId, pair }: TradeHistoryProps) {
   // Also get last trade for faster initial display
   const { data: lastTradeData } = useOTCLastTrade(numericPairId);
 
-  // WebSocket for real-time trade updates
-  const { isConnected: wsConnected, recentTrades: wsTrades } = useTradingWebSocket(numericPairId);
+  // On-chain polling for real-time trade updates
+  const { isConnected: wsConnected, recentTrades: wsTrades } = useTradingEvents(numericPairId);
 
   // Accumulate trades during session
   const accumulatedTradesRef = useRef<Trade[]>([]);

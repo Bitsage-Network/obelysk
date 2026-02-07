@@ -11,7 +11,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Wifi, Radio, ShieldCheck, DollarSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOTCOrderbookDepth, useOTCLastTrade } from "@/lib/contracts";
-import { useTradingWebSocket } from "@/lib/hooks/useWebSocket";
+import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
 import { usePragmaPrice } from "@/lib/hooks/usePragmaOracle";
 
 interface TradingPair {
@@ -52,8 +52,8 @@ export function OrderBook({ pairId, pair, onOrderClick }: OrderBookProps) {
   const { data: depthData, isLoading, isFetching } = useOTCOrderbookDepth(numericPairId, 15);
   const { data: lastTradeData } = useOTCLastTrade(numericPairId);
 
-  // WebSocket for real-time trade notifications
-  const { isConnected: wsConnected } = useTradingWebSocket(numericPairId, {});
+  // On-chain polling for real-time trade notifications
+  const { isConnected: wsConnected } = useTradingEvents(numericPairId);
 
   // Fetch STRK/USD price from Pragma Oracle for USD conversion
   // Fallback to ~$0.084 if oracle not available (Jan 2026 approximate rate)

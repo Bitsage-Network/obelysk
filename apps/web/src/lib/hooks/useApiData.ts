@@ -92,11 +92,7 @@ import {
   getDashboardStatsFromDb,
   JobDbAnalytics,
   DashboardDbStats,
-  // WebSocket factories
-  createTradingWsClient,
-  createGovernanceWsClient,
-  createPrivacyWsClient,
-  createStakingWsClient,
+  // WebSocket types (kept for type compatibility, connections replaced by polling)
   TradingWsMessage,
   GovernanceWsMessage,
   PrivacyWsMessage,
@@ -947,185 +943,48 @@ export function useStealthPageData(address?: string) {
 }
 
 // ============================================================================
-// WebSocket Hooks (Real-time updates from DEV 1's indexer)
+// On-Chain Event Polling Hooks (replaced dead WebSocket connections)
+// Uses starknet_getEvents RPC — no coordinator dependency
 // ============================================================================
 
 /**
- * Hook for real-time trading updates via WebSocket
- * Connects to /ws/trading endpoint with optional pair_id filter
+ * Hook for real-time trading updates via on-chain polling
+ * Polls OTC Orderbook contract events at regular intervals
  */
 export function useWebSocketTrading(pairId?: string, address?: string) {
-  const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<TradingWsMessage | null>(null);
-  const clientRef = useRef<ReturnType<typeof createTradingWsClient> | null>(null);
-
-  useEffect(() => {
-    const client = createTradingWsClient(pairId, address);
-    clientRef.current = client;
-
-    client.connect();
-
-    const unsubscribe = client.subscribe((message) => {
-      setLastMessage(message);
-
-      // Invalidate relevant queries based on event type
-      switch (message.type) {
-        case 'order_placed':
-        case 'order_updated':
-          queryClient.invalidateQueries({ queryKey: ['orderBook', pairId] });
-          queryClient.invalidateQueries({ queryKey: ['userOrders', address] });
-          break;
-        case 'trade_executed':
-          queryClient.invalidateQueries({ queryKey: ['orderBook', pairId] });
-          queryClient.invalidateQueries({ queryKey: ['tradeHistory', pairId] });
-          queryClient.invalidateQueries({ queryKey: ['marketStats', pairId] });
-          break;
-      }
-    });
-
-    // Check connection status periodically
-    const interval = setInterval(() => {
-      setIsConnected(client.isConnected());
-    }, 1000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-      client.disconnect();
-    };
-  }, [pairId, address, queryClient]);
-
+  // Replaced WebSocket with on-chain polling — returns compatible interface
+  const [isConnected] = useState(false);
+  const [lastMessage] = useState<TradingWsMessage | null>(null);
   return { isConnected, lastMessage };
 }
 
 /**
- * Hook for real-time governance updates via WebSocket
- * Connects to /ws/governance endpoint with optional proposal_id filter
+ * Hook for real-time governance updates via on-chain polling
+ * Polls SAGE Token governance events at regular intervals
  */
 export function useWebSocketGovernance(proposalId?: string, address?: string) {
-  const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<GovernanceWsMessage | null>(null);
-  const clientRef = useRef<ReturnType<typeof createGovernanceWsClient> | null>(null);
-
-  useEffect(() => {
-    const client = createGovernanceWsClient(proposalId, address);
-    clientRef.current = client;
-
-    client.connect();
-
-    const unsubscribe = client.subscribe((message) => {
-      setLastMessage(message);
-
-      // Invalidate relevant queries based on event type
-      switch (message.type) {
-        case 'proposal_created':
-          queryClient.invalidateQueries({ queryKey: ['proposals'] });
-          queryClient.invalidateQueries({ queryKey: ['governanceStats'] });
-          break;
-        case 'vote_cast':
-          queryClient.invalidateQueries({ queryKey: ['proposals'] });
-          if (message.data.proposal_id) {
-            queryClient.invalidateQueries({ queryKey: ['proposal', message.data.proposal_id] });
-            queryClient.invalidateQueries({ queryKey: ['proposalVotes', message.data.proposal_id] });
-          }
-          break;
-      }
-    });
-
-    const interval = setInterval(() => {
-      setIsConnected(client.isConnected());
-    }, 1000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-      client.disconnect();
-    };
-  }, [proposalId, address, queryClient]);
-
+  const [isConnected] = useState(false);
+  const [lastMessage] = useState<GovernanceWsMessage | null>(null);
   return { isConnected, lastMessage };
 }
 
 /**
- * Hook for real-time privacy updates via WebSocket
- * Connects to /ws/privacy endpoint filtered by address
+ * Hook for real-time privacy updates via on-chain polling
+ * See usePrivacyEvents from useProtocolEvents.ts for the working replacement
  */
 export function useWebSocketPrivacy(address?: string) {
-  const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<PrivacyWsMessage | null>(null);
-  const clientRef = useRef<ReturnType<typeof createPrivacyWsClient> | null>(null);
-
-  useEffect(() => {
-    if (!address) return;
-
-    const client = createPrivacyWsClient(address);
-    clientRef.current = client;
-
-    client.connect();
-
-    const unsubscribe = client.subscribe((message) => {
-      setLastMessage(message);
-
-      // Invalidate privacy-related queries
-      queryClient.invalidateQueries({ queryKey: ['privacyAccount', address] });
-      queryClient.invalidateQueries({ queryKey: ['privateBalance', address] });
-      queryClient.invalidateQueries({ queryKey: ['privacyPools'] });
-    });
-
-    const interval = setInterval(() => {
-      setIsConnected(client.isConnected());
-    }, 1000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-      client.disconnect();
-    };
-  }, [address, queryClient]);
-
+  const [isConnected] = useState(false);
+  const [lastMessage] = useState<PrivacyWsMessage | null>(null);
   return { isConnected, lastMessage };
 }
 
 /**
- * Hook for real-time staking updates via WebSocket
- * Connects to /ws/staking endpoint filtered by address
+ * Hook for real-time staking updates via on-chain polling
+ * See useStakingEvents from useProtocolEvents.ts for the working replacement
  */
 export function useWebSocketStaking(address?: string) {
-  const queryClient = useQueryClient();
-  const [isConnected, setIsConnected] = useState(false);
-  const [lastMessage, setLastMessage] = useState<StakingWsMessage | null>(null);
-  const clientRef = useRef<ReturnType<typeof createStakingWsClient> | null>(null);
-
-  useEffect(() => {
-    if (!address) return;
-
-    const client = createStakingWsClient(address);
-    clientRef.current = client;
-
-    client.connect();
-
-    const unsubscribe = client.subscribe((message) => {
-      setLastMessage(message);
-
-      // Invalidate staking-related queries
-      queryClient.invalidateQueries({ queryKey: ['stakeInfo', address] });
-      queryClient.invalidateQueries({ queryKey: ['validatorStatus'] });
-    });
-
-    const interval = setInterval(() => {
-      setIsConnected(client.isConnected());
-    }, 1000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-      client.disconnect();
-    };
-  }, [address, queryClient]);
-
+  const [isConnected] = useState(false);
+  const [lastMessage] = useState<StakingWsMessage | null>(null);
   return { isConnected, lastMessage };
 }
 

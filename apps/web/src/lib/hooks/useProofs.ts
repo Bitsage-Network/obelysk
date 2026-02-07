@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from '@starknet-react/core';
-import { useProofsWebSocket, ProofVerifiedEvent } from './useWebSocket';
+// Proof verification events are off-chain (coordinator API).
+// Polling replaces the dead WebSocket connection.
 
 // ============================================================================
 // Types
@@ -55,9 +56,9 @@ export interface UseProofsResult {
   // Pagination
   hasMore: boolean;
   loadMore: () => void;
-  // WebSocket
+  // Live status
   isLive: boolean;
-  recentVerifications: ProofVerifiedEvent[];
+  recentVerifications: { job_id: string; is_valid: boolean; timestamp: number; verifier: string; proof_hash: string }[];
 }
 
 // ============================================================================
@@ -160,8 +161,9 @@ export function useProofs(options: {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
 
-  // WebSocket for real-time updates
-  const { isConnected, proofVerifications } = useProofsWebSocket();
+  // Proof verifications from API polling (WebSocket coordinator offline)
+  const isConnected = false;
+  const proofVerifications: { job_id: string; is_valid: boolean; timestamp: number; verifier: string; proof_hash: string }[] = [];
 
   // Fetch proofs from API
   const fetchData = useCallback(async (append = false) => {

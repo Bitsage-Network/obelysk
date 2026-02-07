@@ -132,12 +132,12 @@ export const PRIVACY_POOL_REGISTRY: Record<string, Record<string, string>> = {
   },
 };
 
-// Default Ekubo fee tiers (basis points → Ekubo's fee encoding)
-// Ekubo uses fee as a fraction of 2^128
+// Default Ekubo fee tiers: fee = fraction * 2^128 (0.128 fixed-point)
+// e.g. 0.05% fee → 0.0005 * 2^128 = 170141183460469231731687303715884105
 const EKUBO_FEE_TIERS = {
-  low: "170141183460469231731687303715884105728", // 0.01% → 2^128 * 0.0001
-  medium: "850705917302346158658436518579420528640", // 0.05%
-  high: "1701411834604692317316873037158841057280", // 0.1%
+  low: "34028236692093846346337460743176821",       // 0.01%
+  medium: "170141183460469231731687303715884105",    // 0.05%
+  high: "1020847100762815390390123822295304634",     // 0.30%
 } as const;
 
 const EKUBO_TICK_SPACINGS: Record<string, string> = {
