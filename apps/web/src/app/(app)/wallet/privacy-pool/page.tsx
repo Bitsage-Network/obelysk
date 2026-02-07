@@ -114,7 +114,6 @@ export default function PrivacyPoolPage() {
     error: aspError,
     refresh: refreshASPs,
   } = useASPRegistry({ network: "sepolia" });
-  const [isAssetDropdownOpen, setIsAssetDropdownOpen] = useState(false);
   const [showNullifier, setShowNullifier] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [ragequitStatus, setRagequitStatus] = useState<"none" | "pending" | "ready">("none");
@@ -1673,7 +1672,7 @@ export default function PrivacyPoolPage() {
           { label: "Privacy Level", value: complianceLevel.name },
           { label: "Anonymity Set", value: `${poolStats.anonymitySet.toLocaleString()} deposits` },
         ]}
-        estimatedGas="~0.001 ETH"
+        estimatedGas="~0.001 STRK"
         isLoading={depositState.isDepositing}
         variant="privacy"
       />
@@ -1689,7 +1688,7 @@ export default function PrivacyPoolPage() {
           { label: "Proof Type", value: "TEE-Assisted STWO" },
           { label: "Nullifier", value: selectedNote?.commitment.slice(0, 16) || "...", isAddress: true },
         ]}
-        estimatedGas="~0.002 ETH"
+        estimatedGas="~0.002 STRK"
         isLoading={withdrawState.isWithdrawing}
         variant="privacy"
       />
