@@ -1769,6 +1769,11 @@ class SpecializedWebSocketClient<T extends IndexedWebSocketMessage> {
 }
 
 // Factory functions for specialized WebSocket clients
+// DEPRECATED: These connect to the offline coordinator API (localhost:3030).
+// Use on-chain event polling from useProtocolEvents.ts instead.
+// Kept for backward compatibility — will not auto-connect.
+
+/** @deprecated Use useTradingEvents from useProtocolEvents.ts */
 export function createTradingWsClient(pairId?: string, address?: string) {
   return new SpecializedWebSocketClient<TradingWsMessage>({
     endpoint: 'trading',
@@ -1776,6 +1781,7 @@ export function createTradingWsClient(pairId?: string, address?: string) {
   });
 }
 
+/** @deprecated Use useGovernanceEvents from useProtocolEvents.ts */
 export function createGovernanceWsClient(proposalId?: string, address?: string) {
   return new SpecializedWebSocketClient<GovernanceWsMessage>({
     endpoint: 'governance',
@@ -1783,6 +1789,7 @@ export function createGovernanceWsClient(proposalId?: string, address?: string) 
   });
 }
 
+/** @deprecated Use usePrivacyEvents from useProtocolEvents.ts */
 export function createPrivacyWsClient(address?: string) {
   return new SpecializedWebSocketClient<PrivacyWsMessage>({
     endpoint: 'privacy',
@@ -1790,6 +1797,7 @@ export function createPrivacyWsClient(address?: string) {
   });
 }
 
+/** @deprecated Use useStakingEvents from useProtocolEvents.ts */
 export function createStakingWsClient(address?: string) {
   return new SpecializedWebSocketClient<StakingWsMessage>({
     endpoint: 'staking',
@@ -1797,6 +1805,7 @@ export function createStakingWsClient(address?: string) {
   });
 }
 
+/** @deprecated Use on-chain event polling instead */
 export function createProofsWsClient() {
   return new SpecializedWebSocketClient<IndexedWebSocketMessage>({
     endpoint: 'proofs',

@@ -10,8 +10,15 @@
  * implementation, use the hooks from './useWebSocket' directly.
  */
 
-// WebSocket hooks (real-time updates) - preferred WebSocket implementation
-// These take priority over legacy WebSocket hooks in useApiData
+// On-chain event polling hooks (replaced dead WebSocket connections)
+export {
+  useTradingEvents,
+  useGovernanceEvents,
+  useStakingEvents,
+  usePrivacyEvents as usePrivacyPollingEvents,
+} from './useProtocolEvents';
+
+// Legacy WebSocket hooks (coordinator API offline — kept for type compat)
 export * from './useWebSocket';
 
 // Proofs hooks (STWO proof data)

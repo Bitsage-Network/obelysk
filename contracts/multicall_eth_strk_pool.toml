@@ -1,0 +1,52 @@
+# Create ETH/STRK Ekubo pool with initial liquidity
+# token0 = STRK (0x04718...) < token1 = ETH (0x049d...)
+# Price: ~14045 STRK per ETH (from AVNU)
+# Fee: 0.05%, tick_spacing: 50
+# Amounts: 28 STRK + 0.002 ETH (full-range)
+
+# Step 1: Transfer 28 STRK to Ekubo Positions
+[[call]]
+call_type = "invoke"
+contract_address = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+function = "transfer"
+inputs = ["0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5", "28000000000000000000", "0"]
+
+# Step 2: Transfer 0.002 ETH to Ekubo Positions
+[[call]]
+call_type = "invoke"
+contract_address = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
+function = "transfer"
+inputs = ["0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5", "2000000000000000", "0"]
+
+# Step 3: mint_and_deposit
+# pool_key: (token0=STRK, token1=ETH, fee=0.05%, tick_spacing=50, extension=0x0)
+# bounds: full-range = i129{mag:88722850, sign:true}, i129{mag:88722850, sign:false}
+# min_liquidity: 0 (first LP)
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "mint_and_deposit"
+inputs = [
+  "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+  "170141183460469231731687303715884105",
+  "50",
+  "0x0",
+  "88722850", "1",
+  "88722850", "0",
+  "0"
+]
+
+# Step 4: Clear excess STRK
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "clear"
+inputs = ["0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"]
+
+# Step 5: Clear excess ETH
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "clear"
+inputs = ["0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"]

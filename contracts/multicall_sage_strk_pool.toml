@@ -1,0 +1,57 @@
+# Create SAGE/STRK Ekubo pool with initial liquidity
+# token0 = STRK (0x04718...) < token1 = SAGE (0x07234...)
+# Price: 1 SAGE ≈ 10 STRK (testnet)
+# Fee: 0.05% (medium), tick_spacing: 50
+# Amounts: 50 STRK + 5 SAGE (full-range position)
+
+# Step 1: Transfer 50 STRK to Ekubo Positions
+[[call]]
+call_type = "invoke"
+contract_address = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
+function = "transfer"
+inputs = ["0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5", "50000000000000000000", "0"]
+
+# Step 2: Transfer 5 SAGE to Ekubo Positions
+[[call]]
+call_type = "invoke"
+contract_address = "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850"
+function = "transfer"
+inputs = ["0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5", "5000000000000000000", "0"]
+
+# Step 3: mint_and_deposit
+# pool_key: (token0, token1, fee, tick_spacing, extension)
+# bounds: (lower: i129{mag, sign}, upper: i129{mag, sign})
+# min_liquidity: u128
+#
+# Fee 0.05% = 170141183460469231731687303715884105
+# tick_spacing = 50
+# Full-range: mag = floor(88722883/50)*50 = 88722850
+# i129 sign: 0=positive, 1=negative
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "mint_and_deposit"
+inputs = [
+  "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850",
+  "170141183460469231731687303715884105",
+  "50",
+  "0x0",
+  "88722850", "1",
+  "88722850", "0",
+  "0"
+]
+
+# Step 4: Clear excess STRK
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "clear"
+inputs = ["0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"]
+
+# Step 5: Clear excess SAGE
+[[call]]
+call_type = "invoke"
+contract_address = "0x06a2aee84bb0ed5dded4384ddd0e40e9c1372b818668375ab8e3ec08807417e5"
+function = "clear"
+inputs = ["0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850"]

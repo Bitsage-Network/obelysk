@@ -29,7 +29,7 @@ import {
   useSDKMounted,
 } from "@/lib/providers/BitSageSDKProvider";
 import { useStakingHistoryDb, useStakingLeaderboard } from "@/lib/hooks/useApiData";
-import { useStakingWebSocket } from "@/lib/hooks/useWebSocket";
+import { useStakingEvents } from "@/lib/hooks/useProtocolEvents";
 import {
   buildStakeCall,
   buildUnstakeCall,
@@ -202,8 +202,8 @@ function StakePageInner({
   // Transaction hook for on-chain staking
   const { send: sendTransaction, isPending: txPending, data: txData } = useSendTransaction({});
 
-  // WebSocket for real-time staking events
-  const { stakingEvents, isConnected: wsConnected } = useStakingWebSocket(address);
+  // On-chain polling for real-time staking events
+  const { stakingEvents, isConnected: wsConnected } = useStakingEvents(address);
 
   // Privacy Pool hook for wrap/unwrap operations
   const {
@@ -220,6 +220,15 @@ function StakePageInner({
       const latest = stakingEvents[0];
       const notificationId = `${latest.tx_hash}-${Date.now()}`;
 
+      // Map on-chain event types to notification types
+      const typeMap: Record<string, 'stake' | 'unstake' | 'slashed'> = {
+        staked: 'stake',
+        unstake_requested: 'unstake',
+        unstake_completed: 'unstake',
+        slashed: 'slashed',
+        rewards_claimed: 'stake',
+      };
+
       // Check if we already have this notification
       setNotifications(prev => {
         if (prev.some(n => n.id.startsWith(latest.tx_hash))) {
@@ -228,7 +237,7 @@ function StakePageInner({
 
         const notification = {
           id: notificationId,
-          type: latest.event_type,
+          type: typeMap[latest.event_type] || 'stake' as const,
           amount: latest.amount,
           timestamp: Date.now(),
         };

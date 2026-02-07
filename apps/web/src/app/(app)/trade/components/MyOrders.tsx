@@ -12,7 +12,7 @@ import { X, Loader2, Clock, CheckCircle2, XCircle, ExternalLink, AlertTriangle, 
 import { cn } from "@/lib/utils";
 import { useAccount, useProvider } from "@starknet-react/core";
 import { useOTCUserOrders, buildCancelOrderCall, useBitSageTransaction, getContractAddresses } from "@/lib/contracts";
-import { useTradingWebSocket } from "@/lib/hooks/useWebSocket";
+import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
 import { useToast } from "@/lib/providers/ToastProvider";
 
 interface TradingPair {
@@ -202,49 +202,42 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
 
   const isLoading = idsLoading || detailsLoading;
 
-  // WebSocket for real-time order status updates with fill notifications
-  const lastEventRef = useRef<string | null>(null);
-  const { isConnected: wsConnected } = useTradingWebSocket(undefined, {
-    onEvent: (event) => {
-      const eventId = `${event.type}-${JSON.stringify(event.data)}`;
-      if (lastEventRef.current === eventId) return;
-      lastEventRef.current = eventId;
+  // On-chain polling for real-time order status updates with fill notifications
+  const lastTradeCountRef = useRef<number>(0);
+  const { isConnected: wsConnected, recentTrades } = useTradingEvents();
 
-      // Handle trade executed events (order fills)
-      if (event.type === 'TradeExecuted' && address) {
-        const data = event.data as {
-          maker?: string;
-          taker?: string;
-          price?: string;
-          amount?: string;
-        };
-        const makerAddr = data.maker?.toLowerCase();
-        const takerAddr = data.taker?.toLowerCase();
-        const userAddr = address.toLowerCase();
+  // Watch for new trades that involve the current user
+  useEffect(() => {
+    if (!address || recentTrades.length === 0) return;
+    if (recentTrades.length === lastTradeCountRef.current) return;
 
-        // Check if user is maker or taker
-        if (makerAddr === userAddr || takerAddr === userAddr) {
-          const priceFormatted = data.price
-            ? (Number(data.price) / Math.pow(10, pair.decimals.quote)).toFixed(4)
-            : "?";
-          const amountFormatted = data.amount
-            ? (Number(data.amount) / Math.pow(10, pair.decimals.base)).toFixed(2)
-            : "?";
-          const role = makerAddr === userAddr ? "Maker" : "Taker";
+    const newTrades = recentTrades.slice(0, recentTrades.length - lastTradeCountRef.current);
+    lastTradeCountRef.current = recentTrades.length;
 
-          toastSuccess(
-            "Order Filled",
-            `${role}: ${amountFormatted} ${pair.base} @ ${priceFormatted} ${pair.quote}`
-          );
-        }
-      }
+    for (const trade of newTrades) {
+      const makerAddr = trade.maker?.toLowerCase();
+      const takerAddr = trade.taker?.toLowerCase();
+      const userAddr = address.toLowerCase();
 
-      // Refetch when order is updated (filled, cancelled, etc.)
-      if (event.type === 'OrderUpdated' || event.type === 'OrderPlaced' || event.type === 'TradeExecuted') {
-        refetch();
+      if (makerAddr === userAddr || takerAddr === userAddr) {
+        const priceFormatted = trade.price
+          ? (Number(trade.price) / Math.pow(10, pair.decimals.quote)).toFixed(4)
+          : "?";
+        const amountFormatted = trade.amount
+          ? (Number(trade.amount) / Math.pow(10, pair.decimals.base)).toFixed(2)
+          : "?";
+        const role = makerAddr === userAddr ? "Maker" : "Taker";
+
+        toastSuccess(
+          "Order Filled",
+          `${role}: ${amountFormatted} ${pair.base} @ ${priceFormatted} ${pair.quote}`
+        );
       }
     }
-  });
+
+    // Refetch orders when new trades come in
+    if (newTrades.length > 0) refetch();
+  }, [recentTrades, address, pair, toastSuccess, refetch]);
 
   // Transform on-chain order data to display format
   const orders = useMemo(() => {
