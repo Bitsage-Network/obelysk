@@ -71,6 +71,12 @@ export const CONTRACTS = {
 
     // Session Management (Wallet-Agnostic AA)
     SESSION_MANAGER: "0x0",
+
+    // Per-token Privacy Pools
+    SAGE_PRIVACY_POOL: "0x0",
+    ETH_PRIVACY_POOL: "0x0",
+    STRK_PRIVACY_POOL: "0x0",
+    WBTC_PRIVACY_POOL: "0x0",
   },
 
   // Sepolia Testnet - ALL 37 CONTRACTS DEPLOYED
@@ -154,6 +160,13 @@ export const CONTRACTS = {
     // Redeployed 2025-12-31 with upgradability
     // Class hash: 0x05e7b97b3eb3045c07c27993d20a1be6b11e0d86f9f0fce320523ce1d342324b
     SESSION_MANAGER: "0x058aac71e4ac202c6d89bce205eca6669c4d2c4d37d67a87e72cf435a077601e",
+
+    // Per-token Privacy Pools (deployed 2026-02-06)
+    SAGE_PRIVACY_POOL: "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7",
+    ETH_PRIVACY_POOL: "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
+    STRK_PRIVACY_POOL: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
+    // Deployed: 2026-02-07 via sncast — class hash 0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5
+    WBTC_PRIVACY_POOL: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
   },
   // Mainnet - Not yet deployed
   mainnet: {
@@ -200,6 +213,12 @@ export const CONTRACTS = {
 
     // Session Management (Wallet-Agnostic AA)
     SESSION_MANAGER: "0x0",
+
+    // Per-token Privacy Pools
+    SAGE_PRIVACY_POOL: "0x0",
+    ETH_PRIVACY_POOL: "0x0",
+    STRK_PRIVACY_POOL: "0x0",
+    WBTC_PRIVACY_POOL: "0x0",
   },
 } as const;
 
@@ -458,3 +477,55 @@ export const APP_URLS = {
   governance: "https://governance.bitsage.network",
   faucet: "https://faucet.bitsage.network",
 };
+
+// ============================================
+// Per-Token Privacy Pool Mapping
+// Centralized mapping: token symbol → privacy pool contract address
+// ============================================
+
+export const PRIVACY_POOL_FOR_TOKEN: Record<string, Record<string, string>> = {
+  sepolia: {
+    SAGE: CONTRACTS.sepolia.SAGE_PRIVACY_POOL,
+    ETH: CONTRACTS.sepolia.ETH_PRIVACY_POOL,
+    STRK: CONTRACTS.sepolia.STRK_PRIVACY_POOL,
+    wBTC: CONTRACTS.sepolia.WBTC_PRIVACY_POOL,
+    USDC: "0x0", // Not yet deployed
+  },
+  mainnet: {
+    SAGE: "0x0",
+    ETH: "0x0",
+    STRK: "0x0",
+    wBTC: "0x0",
+    USDC: "0x0",
+  },
+};
+
+// On-chain asset IDs used in privacy pool deposit calldata
+export const ASSET_ID_FOR_TOKEN: Record<string, string> = {
+  SAGE: "0x0",
+  ETH: "0x1",
+  STRK: "0x2",
+  USDC: "0x3",
+  wBTC: "0x4",
+};
+
+/**
+ * Get the privacy pool address for a given token on a network.
+ */
+export function getPrivacyPoolAddress(
+  network: NetworkType,
+  tokenSymbol: string,
+): string {
+  return PRIVACY_POOL_FOR_TOKEN[network]?.[tokenSymbol] || "0x0";
+}
+
+/**
+ * Get the token address for a symbol (including SAGE).
+ */
+export function getTokenAddressForSymbol(
+  network: NetworkType,
+  tokenSymbol: string,
+): string {
+  if (tokenSymbol === "SAGE") return CONTRACTS[network]?.SAGE_TOKEN || "0x0";
+  return EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]] || "0x0";
+}

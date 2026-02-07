@@ -51,6 +51,14 @@ import {
 import type { PrivacyNote } from "../crypto/constants";
 
 import { generateMerkleProofOnChain } from "../crypto/onChainMerkleProof";
+import {
+  PRIVACY_POOL_FOR_TOKEN,
+  ASSET_ID_FOR_TOKEN,
+  getPrivacyPoolAddress,
+  getTokenAddressForSymbol,
+  TOKEN_METADATA,
+  type NetworkType,
+} from "../contracts/addresses";
 
 import { usePrivacyKeys } from "./usePrivacyKeys";
 
@@ -146,15 +154,15 @@ const PRIVACY_POOLS_ABI = [
   },
 ];
 
-// Contract addresses from environment
+// Default contract addresses from environment (SAGE pool — backward compat)
 const SAGE_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_SAGE_TOKEN_ADDRESS || "0x0") as `0x${string}`;
 const PRIVACY_POOLS_ADDRESS = (process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS || "0x0") as `0x${string}`;
 
-// Asset IDs
-const ASSET_SAGE = "0x0"; // SAGE token
-
 // RPC URL for fetching transaction receipts
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.starknet-testnet.lava.build";
+
+// Default network for pool lookups
+const DEFAULT_NETWORK: NetworkType = "sepolia";
 
 // PPDepositExecuted event selector (keccak hash of event name)
 const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
@@ -165,7 +173,8 @@ const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
  */
 async function fetchLeafIndexFromReceipt(
   txHash: string,
-  commitment: string
+  commitment: string,
+  poolAddress: string = PRIVACY_POOLS_ADDRESS,
 ): Promise<number | null> {
   try {
     const provider = new RpcProvider({ nodeUrl: RPC_URL });
@@ -187,7 +196,7 @@ async function fetchLeafIndexFromReceipt(
       for (const event of receipt.events) {
         // Check if this is a PPDepositExecuted event from our contract
         if (
-          event.from_address.toLowerCase() === PRIVACY_POOLS_ADDRESS.toLowerCase() &&
+          event.from_address.toLowerCase() === poolAddress.toLowerCase() &&
           event.keys && event.keys.length > 0
         ) {
           // Event structure: keys[0] = event selector, keys[1] = indexed commitment
@@ -223,9 +232,9 @@ export const PRIVACY_DENOMINATIONS = [
 
 export type PrivacyDenomination = (typeof PRIVACY_DENOMINATIONS)[number];
 
-// Convert denomination to wei
-function toWei(amount: number): bigint {
-  return BigInt(Math.floor(amount * 1e18));
+// Convert denomination to wei, accounting for token decimals
+function toWei(amount: number, decimals: number = 18): bigint {
+  return BigInt(Math.floor(amount * 10 ** decimals));
 }
 
 // Deposit phases (Tongo-style UX)
@@ -295,7 +304,7 @@ interface UsePrivacyPoolReturn {
 
   // Operations
   derivePrivacyKeys: () => Promise<void>;
-  deposit: (denomination: PrivacyDenomination) => Promise<string>;
+  deposit: (denomination: PrivacyDenomination, tokenSymbol?: string) => Promise<string>;
   withdraw: (note: PrivacyNote, recipient?: string, complianceOptions?: WithdrawComplianceOptions) => Promise<string>;
   refreshStats: () => Promise<void>;
   refreshPoolStats: () => Promise<void>; // Alias for refreshStats
@@ -451,12 +460,22 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
   // Deposit operation
   const deposit = useCallback(
-    async (denomination: PrivacyDenomination): Promise<string> => {
+    async (denomination: PrivacyDenomination, tokenSymbol: string = "SAGE"): Promise<string> => {
       if (!account || !address) {
         throw new Error("Wallet not connected");
       }
-      if (PRIVACY_POOLS_ADDRESS === "0x0") {
-        throw new Error("Privacy Pools contract not configured");
+
+      // Resolve per-token pool and token addresses
+      const poolAddress = getPrivacyPoolAddress(DEFAULT_NETWORK, tokenSymbol) as `0x${string}`;
+      const tokenAddress = getTokenAddressForSymbol(DEFAULT_NETWORK, tokenSymbol) as `0x${string}`;
+      const assetId = ASSET_ID_FOR_TOKEN[tokenSymbol] || "0x0";
+      const decimals = TOKEN_METADATA[tokenSymbol as keyof typeof TOKEN_METADATA]?.decimals ?? 18;
+
+      if (poolAddress === "0x0") {
+        throw new Error(`Privacy pool not deployed for ${tokenSymbol}`);
+      }
+      if (tokenAddress === "0x0") {
+        throw new Error(`Token address not configured for ${tokenSymbol}`);
       }
 
       // Get keys - unlock if needed
@@ -488,7 +507,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         console.log("Keys unlocked and ready");
       }
 
-      const amountWei = toWei(denomination);
+      const amountWei = toWei(denomination, decimals);
 
       // ==============================
       // PHASE 1: PROVING (client-side cryptography)
@@ -507,7 +526,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
       });
 
       try {
-        console.log("🔐 [Proving] Generating privacy note for amount:", denomination, "SAGE");
+        console.log(`🔐 [Proving] Generating privacy note for amount: ${denomination} ${tokenSymbol}`);
 
         // Create Pedersen commitment note
         // H(secret || nullifier_seed || amount || asset_id)
@@ -578,8 +597,8 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           const provider = new RpcProvider({
             nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/CrJvEXftXMfkXvyJfunp3mQVEfDU2D81",
           });
-          const tokenContract = new Contract({ abi: ERC20_ABI, address: SAGE_TOKEN_ADDRESS, providerOrAccount: provider });
-          const allowanceResult = await tokenContract.allowance(address, PRIVACY_POOLS_ADDRESS);
+          const tokenContract = new Contract({ abi: ERC20_ABI, address: tokenAddress, providerOrAccount: provider });
+          const allowanceResult = await tokenContract.allowance(address, poolAddress);
 
           // Convert u256 result to bigint
           const currentAllowance = BigInt(allowanceResult.toString());
@@ -597,12 +616,12 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         }
 
         if (needsApproval) {
-          console.log("📋 [Privacy] Using blanket approval (1M SAGE) to hide deposit amount");
+          console.log(`📋 [Privacy] Using blanket approval to hide deposit amount for ${tokenSymbol}`);
           const approveCall = {
-            contractAddress: SAGE_TOKEN_ADDRESS,
+            contractAddress: tokenAddress,
             entrypoint: "approve",
             calldata: CallData.compile({
-              spender: PRIVACY_POOLS_ADDRESS,
+              spender: poolAddress,
               // Blanket approval - doesn't reveal individual deposit amounts
               amount: cairo.uint256(BLANKET_APPROVAL),
             }),
@@ -617,8 +636,10 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         console.log("Building pp_deposit call:", {
           commitment: commitmentFelt,
           amount_commitment: amountCommitment,
-          asset_id: ASSET_SAGE,
+          asset_id: assetId,
           amount: amountWei.toString(),
+          pool: poolAddress,
+          token: tokenSymbol,
         });
 
         // Build raw calldata to ensure exact serialization
@@ -641,7 +662,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           commitmentFelt,                           // 1. commitment
           amountCommitment.x,                       // 2. ECPoint.x
           amountCommitment.y,                       // 3. ECPoint.y
-          ASSET_SAGE,                               // 4. asset_id
+          assetId,                                  // 4. asset_id
           formatHex(amountLow),                     // 5. u256.low
           formatHex(amountHigh),                    // 6. u256.high
           formatHex(BigInt(rangeProofData.length)), // 7. Span length
@@ -652,7 +673,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         console.log("u256 - low:", amountLow.toString(), "high:", amountHigh.toString());
 
         const depositCall = {
-          contractAddress: PRIVACY_POOLS_ADDRESS,
+          contractAddress: poolAddress,
           entrypoint: "pp_deposit",
           calldata: rawCalldata,
         };
@@ -707,6 +728,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           depositTxHash: txHash,
           createdAt: Date.now(),
           spent: false,
+          tokenSymbol,
         };
 
         await saveNote(address, privacyNote);
@@ -733,7 +755,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         }));
 
         // Fetch leafIndex in background and update proofData
-        fetchLeafIndexFromReceipt(txHash, commitmentFelt).then(async (leafIndex) => {
+        fetchLeafIndexFromReceipt(txHash, commitmentFelt, poolAddress).then(async (leafIndex) => {
           if (leafIndex !== null) {
             await updateNoteLeafIndex(commitmentFelt, leafIndex);
             console.log("Note leafIndex updated:", leafIndex);
@@ -779,8 +801,14 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
       if (!account || !address) {
         throw new Error("Wallet not connected");
       }
-      if (PRIVACY_POOLS_ADDRESS === "0x0") {
-        throw new Error("Privacy Pools contract not configured");
+
+      // Resolve pool address from note's tokenSymbol
+      const noteToken = note.tokenSymbol || "SAGE";
+      const poolAddress = getPrivacyPoolAddress(DEFAULT_NETWORK, noteToken) as `0x${string}`;
+      const decimals = TOKEN_METADATA[noteToken as keyof typeof TOKEN_METADATA]?.decimals ?? 18;
+
+      if (poolAddress === "0x0") {
+        throw new Error(`Privacy pool not deployed for ${noteToken}`);
       }
 
       // Get keys - unlock if needed
@@ -831,7 +859,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         setWithdrawState((prev) => ({ ...prev, proofProgress: 20 }));
 
         // Generate Merkle proof from on-chain events (no backend needed)
-        const merkleProof = await generateMerkleProofOnChain(noteCommitment, "sepolia");
+        const merkleProof = await generateMerkleProofOnChain(noteCommitment, DEFAULT_NETWORK, poolAddress);
 
         if (!merkleProof) {
           throw new Error(
@@ -881,7 +909,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 60 }));
 
-        const amountWei = toWei(note.denomination);
+        const amountWei = toWei(note.denomination, decimals);
 
         // Build withdrawal proof based on compliance level
         const complianceLevel = complianceOptions?.complianceLevel || "full_privacy";
@@ -955,7 +983,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         rawWithdrawCalldata.push("0x0"); // empty span length
 
         const withdrawCall = {
-          contractAddress: PRIVACY_POOLS_ADDRESS,
+          contractAddress: poolAddress,
           entrypoint: "pp_withdraw",
           calldata: rawWithdrawCalldata,
         };

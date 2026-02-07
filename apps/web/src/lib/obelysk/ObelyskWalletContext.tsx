@@ -21,6 +21,8 @@ import {
 import { useSendTransaction, useContract } from "@starknet-react/core";
 import { RpcProvider, CallData } from "starknet";
 import { getContractAddresses, useSageBalance, buildCompleteRagequitCall, type PPRagequitProof } from "@/lib/contracts";
+import { generateMerkleProofOnChain } from "@/lib/crypto/onChainMerkleProof";
+import { PRIVACY_POOL_FOR_TOKEN } from "@/lib/contracts/addresses";
 import { useOnChainSagePrice } from "@/lib/hooks/useOnChainData";
 import { useSession, useSessionStatus, Session, SessionConfig, SessionKeyPair, SESSION_PRESETS } from "@/lib/sessions";
 import { getUnspentBalance, getUnspentNotes, getNotes, deleteNote } from "@/lib/crypto/keyStore";
@@ -235,8 +237,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-
     const loadPrivacyPoolBalance = async () => {
       try {
         // Get unspent notes from IndexedDB
@@ -267,30 +267,27 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         setLocalNotesBalance(localTotal);
 
         // Verify each note on-chain by checking Merkle proof exists
-        let verifiedBalance = 0;
-        let staleCount = 0;
         const verificationPromises = notes.map(async (note) => {
           try {
-            // Call API to verify commitment exists in Merkle tree
-            const response = await fetch(`${API_BASE}/api/privacy/proof/${note.commitment}`);
-            if (response.ok) {
-              const data = await response.json();
-              if (data.found) {
-                return { verified: true, amount: note.denomination };
-              }
+            // Determine pool address from note's tokenSymbol (default SAGE for legacy notes)
+            const tokenSymbol = note.tokenSymbol || "SAGE";
+            const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
+            const proof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
+            if (proof !== null) {
+              return { verified: true, amount: note.denomination };
             }
             console.warn("[ObelyskWallet] Note not found on-chain:", note.commitment.slice(0, 16) + "...");
             return { verified: false, amount: note.denomination };
           } catch (err) {
-            // If API is down, trust local note (graceful degradation)
+            // If RPC fails, trust local note (graceful degradation)
             console.warn("[ObelyskWallet] Could not verify note on-chain, using local:", note.commitment.slice(0, 16) + "...");
-            return { verified: true, amount: note.denomination }; // Trust if API unavailable
+            return { verified: true, amount: note.denomination };
           }
         });
 
         const results = await Promise.all(verificationPromises);
-        verifiedBalance = results.filter(r => r.verified).reduce((sum, r) => sum + r.amount, 0);
-        staleCount = results.filter(r => !r.verified).length;
+        const verifiedBalance = results.filter(r => r.verified).reduce((sum, r) => sum + r.amount, 0);
+        const staleCount = results.filter(r => !r.verified).length;
 
         console.log("[ObelyskWallet] Privacy Pool balance (verified):", verifiedBalance, "from", notes.length, "notes,", staleCount, "stale");
         setPrivacyPoolBalance(verifiedBalance);
@@ -311,20 +308,21 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
   const clearStaleNotes = useCallback(async () => {
     if (!address) return;
 
-    const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     const notes = await getNotes(address);
 
     let cleared = 0;
     for (const note of notes) {
       try {
-        const response = await fetch(`${API_BASE}/api/privacy/proof/${note.commitment}`);
-        if (!response.ok || !(await response.json()).found) {
+        const tokenSymbol = note.tokenSymbol || "SAGE";
+        const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
+        const proof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
+        if (proof === null) {
           await deleteNote(note.commitment);
           cleared++;
           console.log("[ObelyskWallet] Cleared stale note:", note.commitment.slice(0, 16) + "...");
         }
       } catch {
-        // Keep note if API unavailable
+        // Keep note if RPC unavailable
       }
     }
 
@@ -633,7 +631,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       setProvingState("sending");
 
       const contractAddresses = getContractAddresses("sepolia");
-      const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
       // Calculate total amount
       const totalAmount = notes.reduce((sum, note) => sum + BigInt(Math.floor(note.denomination * 1e18)), 0n);
@@ -643,16 +640,10 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       const note = notes[0];
       console.log("[Ragequit] Processing note:", note.commitment);
 
-      // Fetch Merkle proof from backend indexer
-      let merkleProof: { siblings: string[]; path_indices: number[]; root: string; leafIndex: number } | null = null;
-      try {
-        const proofResponse = await fetch(`${API_BASE_URL}/api/privacy/proof/${note.commitment}`);
-        if (proofResponse.ok) {
-          merkleProof = await proofResponse.json();
-        }
-      } catch (err) {
-        console.warn("[Ragequit] Could not fetch Merkle proof from API:", err);
-      }
+      // Generate Merkle proof on-chain (no backend needed)
+      const tokenSymbol = note.tokenSymbol || "SAGE";
+      const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
+      const merkleProof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
 
       // Build the global tree proof (required for ragequit)
       const globalTreeProof = merkleProof ? {
@@ -660,7 +651,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         path_indices: merkleProof.path_indices.map((i: number) => i === 1),
         leaf: note.commitment,
         root: merkleProof.root,
-        tree_size: BigInt(merkleProof.leafIndex + 1),
+        tree_size: BigInt(merkleProof.tree_size),
       } : {
         // Fallback: minimal proof structure (may fail on-chain without proper proof)
         siblings: [],
