@@ -54,19 +54,25 @@ const CURVE_B = BigInt(
 const LEAN_IMT_DOMAIN = "0x4f42454c59534b5f4c45414e5f494d545f5631";
 
 // Contract addresses (Sepolia)
-const PRIVACY_POOLS = "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7";
+const SAGE_PRIVACY_POOL = "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7";
+const STRK_PRIVACY_POOL = "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b";
 const SAGE_TOKEN = "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850";
+const STRK_TOKEN = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const SHIELDED_SWAP_ROUTER = "0x056b76b42487b943a0d33f5787437ee08af9fd61e1926de9602b3cfb5392f1d6";
-const ETH_TOKEN = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 const DEPLOYER = "0x0759a4374389b0e3cfcc59d49310b6bc75bb12bbf8ce550eb5c2f026918bb344";
 
 const RPC_URL = "https://api.cartridge.gg/x/starknet/sepolia";
 const EXPLORER_URL = "https://sepolia.starkscan.co";
 const SNCAST_DIR = "/Users/vaamx/bitsage-network/Obelysk-Protocol/contracts";
 
-// Ekubo fee tier (medium: 0.05%)
-const EKUBO_FEE_MEDIUM = "850705917302346158658436518579420528640";
+// Ekubo fee tier (medium: 0.05% = 0.0005 * 2^128)
+const EKUBO_FEE_MEDIUM = "170141183460469231731687303715884105";
 const EKUBO_TICK_SPACING_MEDIUM = "50";
+
+// Ekubo sqrt_ratio limits (from ekubo starknet-typescript-sdk tick.ts)
+// Format: 64.128 fixed-point, sqrt(price) where price = token1/token0
+const EKUBO_MIN_SQRT_RATIO = 18446748437148339061n;
+const EKUBO_MAX_SQRT_RATIO = 6277100250585753475930931601400621808602321654880405518632n;
 
 // ============================================================================
 // Elliptic Curve Math (Stark curve)
@@ -285,7 +291,7 @@ async function main() {
   console.log("=== E2E Shielded Swap Test ===");
   console.log(`Network: Starknet Sepolia`);
   console.log(`Router:  ${SHIELDED_SWAP_ROUTER}`);
-  console.log(`Source:  Privacy Pools (SAGE) ${PRIVACY_POOLS}`);
+  console.log(`Source:  Privacy Pools (SAGE) ${SAGE_PRIVACY_POOL}`);
   console.log("");
 
   const provider = new RpcProvider({ nodeUrl: RPC_URL, blockIdentifier: "latest" });
@@ -358,12 +364,12 @@ async function main() {
 
   // Ensure allowance
   const allowOutput = sncast(
-    `call --contract-address ${SAGE_TOKEN} --function allowance --calldata ${DEPLOYER} ${PRIVACY_POOLS}`
+    `call --contract-address ${SAGE_TOKEN} --function allowance --calldata ${DEPLOYER} ${SAGE_PRIVACY_POOL}`
   );
   if (parseSncastU256(allowOutput) < depositAmount) {
     console.log("  Approving SAGE...");
     sncast(
-      `invoke --contract-address ${SAGE_TOKEN} --function approve --calldata ${PRIVACY_POOLS} 0xd3c21bcecceda1000000 0x0`
+      `invoke --contract-address ${SAGE_TOKEN} --function approve --calldata ${SAGE_PRIVACY_POOL} 0xd3c21bcecceda1000000 0x0`
     );
     await new Promise((r) => setTimeout(r, 8000));
   }
@@ -382,7 +388,7 @@ async function main() {
 
   console.log("  Submitting pp_deposit...");
   const depositOutput = sncast(
-    `invoke --contract-address ${PRIVACY_POOLS} --function pp_deposit --calldata ${depositCalldata}`
+    `invoke --contract-address ${SAGE_PRIVACY_POOL} --function pp_deposit --calldata ${depositCalldata}`
   );
   const depositTxHash = extractTxHash(depositOutput);
   console.log(`  TX: ${depositTxHash}`);
@@ -401,7 +407,7 @@ async function main() {
   console.log("--- Step 2: Rebuild LeanIMT from storage ---");
 
   const statsOutput = sncast(
-    `call --contract-address ${PRIVACY_POOLS} --function get_pp_stats`
+    `call --contract-address ${SAGE_PRIVACY_POOL} --function get_pp_stats`
   );
   const statsRaw = statsOutput.match(/Response Raw:\s*\[([^\]]+)\]/i);
   const totalDeposits = statsRaw ? Number(BigInt(statsRaw[1].split(",")[0].trim())) : 0;
@@ -409,7 +415,7 @@ async function main() {
 
   const commitments: string[] = [];
   for (let i = 0; i < totalDeposits; i++) {
-    const val = await readStorage(PRIVACY_POOLS, nodesStorageAddr(0, i));
+    const val = await readStorage(SAGE_PRIVACY_POOL, nodesStorageAddr(0, i));
     commitments.push(val);
   }
   console.log(`  Read ${commitments.length} commitments`);
@@ -457,7 +463,7 @@ async function main() {
 
   // Verify root
   const onChainRoot = parseSncastFelt(
-    sncast(`call --contract-address ${PRIVACY_POOLS} --function get_global_deposit_root`)
+    sncast(`call --contract-address ${SAGE_PRIVACY_POOL} --function get_global_deposit_root`)
   );
   const rootsMatch =
     num.toHex(num.toBigInt(localRoot)) === num.toHex(num.toBigInt(onChainRoot));
@@ -513,20 +519,17 @@ async function main() {
   console.log("--- Step 5: Build ShieldedSwapRequest calldata ---");
 
   // Determine Ekubo pool key ordering
-  const { token0, token1, isInputToken1 } = getEkuboPoolKey(SAGE_TOKEN, ETH_TOKEN);
+  const { token0, token1, isInputToken1 } = getEkuboPoolKey(SAGE_TOKEN, STRK_TOKEN);
   console.log(`  Pool: ${token0.slice(0, 16)}... / ${token1.slice(0, 16)}...`);
   console.log(`  SAGE is token${isInputToken1 ? "1" : "0"}`);
 
-  // For now, the dest pool is the same SAGE pool (since ETH pool isn't deployed).
-  // In production, this would be the ETH privacy pool.
-  // We'll attempt with SAGE → SAGE-pool as a self-test, which will fail at Ekubo
-  // since there's no Ekubo pool for SAGE/SAGE. But this validates calldata serialization.
-  const destPool = PRIVACY_POOLS; // TODO: Replace with ETH pool when deployed
+  // Output goes to the STRK privacy pool
+  const destPool = STRK_PRIVACY_POOL;
 
   const calldata: string[] = [];
 
   // source_pool: ContractAddress
-  calldata.push(PRIVACY_POOLS);
+  calldata.push(SAGE_PRIVACY_POOL);
 
   // withdrawal_proof: PPWithdrawalProof
   //   global_tree_proof: LeanIMTProof
@@ -568,20 +571,22 @@ async function main() {
   // swap_params: SwapParameters
   //   amount: i129 { mag: u128, sign: bool }
   calldata.push(formatHex(depositAmount)); // mag
-  calldata.push("0x0"); // sign = false (positive, exact input)
+  calldata.push("0x0"); // sign = false (positive = exact input, selling this amount)
   //   is_token1: bool
   calldata.push(isInputToken1 ? "0x1" : "0x0");
   //   sqrt_ratio_limit: u256
+  //   sqrt_ratio = sqrt(token1/token0). Selling token1 → sqrt_ratio INCREASES → use MAX.
+  //   Selling token0 → sqrt_ratio DECREASES → use MIN.
   if (isInputToken1) {
-    // Token1 → Token0: use MIN ratio
-    calldata.push("0x1"); // low
-    calldata.push("0x0"); // high
+    // Selling token1: sqrt_ratio increases → MAX_SQRT_RATIO
+    calldata.push(formatHex(EKUBO_MAX_SQRT_RATIO % TWO_POW_128)); // low
+    calldata.push(formatHex(EKUBO_MAX_SQRT_RATIO / TWO_POW_128)); // high
   } else {
-    // Token0 → Token1: use MAX ratio
-    calldata.push(formatHex(TWO_POW_128 - 1n)); // low
-    calldata.push(formatHex(TWO_POW_128 - 1n)); // high
+    // Selling token0: sqrt_ratio decreases → MIN_SQRT_RATIO
+    calldata.push(formatHex(EKUBO_MIN_SQRT_RATIO)); // low
+    calldata.push("0x0"); // high
   }
-  //   skip_ahead: u128
+  //   skip_ahead: u32
   calldata.push("0x0");
 
   // min_amount_out: u256 (0 = accept any output for testing)
@@ -598,7 +603,7 @@ async function main() {
   calldata.push("0x" + outputEncrypted.c2.x.toString(16));
   calldata.push("0x" + outputEncrypted.c2.y.toString(16));
 
-  // deposit_asset_id: felt252 (0 = SAGE for self-loop, 1 = ETH)
+  // deposit_asset_id: felt252 (0 = default)
   calldata.push("0x0");
 
   // deposit_range_proof: Span<felt252>
@@ -645,7 +650,7 @@ async function main() {
 
       // Check nullifier
       const nulOut = sncast(
-        `call --contract-address ${PRIVACY_POOLS} --function is_pp_nullifier_used --calldata ${nullifierHex}`
+        `call --contract-address ${SAGE_PRIVACY_POOL} --function is_pp_nullifier_used --calldata ${nullifierHex}`
       );
       console.log(`  Nullifier used: ${nulOut.includes("0x1") ? "TRUE" : nulOut}`);
 
