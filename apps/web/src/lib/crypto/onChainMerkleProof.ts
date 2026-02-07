@@ -79,24 +79,38 @@ function calculateDepth(n: number): number {
 }
 
 // ============================================================================
-// Module-level cache
+// Module-level cache — keyed by pool address for multi-pool support
 // ============================================================================
 
-/** Cached commitment strings in leaf-index order */
-let cachedCommitments: string[] = [];
-/** Cached tree nodes: Map<"level,index", hash> */
-let cachedNodes: Map<string, string> = new Map();
-let cachedRoot: string | null = null;
-let cachedNetwork: NetworkType | null = null;
+interface PoolCache {
+  commitments: string[];
+  nodes: Map<string, string>;
+  root: string | null;
+}
+
+/** Per-pool cache keyed by normalized pool address */
+const poolCaches = new Map<string, PoolCache>();
+
+function getPoolCache(poolAddr: string): PoolCache {
+  const key = poolAddr.toLowerCase();
+  let cache = poolCaches.get(key);
+  if (!cache) {
+    cache = { commitments: [], nodes: new Map(), root: null };
+    poolCaches.set(key, cache);
+  }
+  return cache;
+}
 
 /**
  * Clear the cached tree (useful for testing or after new deposits).
+ * If poolAddress is provided, only clears that pool's cache.
  */
-export function clearMerkleCache(): void {
-  cachedCommitments = [];
-  cachedNodes = new Map();
-  cachedRoot = null;
-  cachedNetwork = null;
+export function clearMerkleCache(poolAddress?: string): void {
+  if (poolAddress) {
+    poolCaches.delete(poolAddress.toLowerCase());
+  } else {
+    poolCaches.clear();
+  }
 }
 
 // ============================================================================
@@ -323,17 +337,19 @@ function verifyProof(
  *
  * @param commitment - The deposit commitment felt252 (hex string)
  * @param network - Which network to scan (default: "sepolia")
+ * @param poolAddress - Optional pool contract address (defaults to CONTRACTS[network].PRIVACY_POOLS)
  * @returns The Merkle proof data needed for pp_withdraw, or null if commitment not found
  */
 export async function generateMerkleProofOnChain(
   commitment: string,
   network: NetworkType = "sepolia",
+  poolAddress?: string,
 ): Promise<OnChainMerkleProofResult | null> {
   const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl;
   if (!rpcUrl) throw new Error(`No RPC URL for network: ${network}`);
 
   const contracts = CONTRACTS[network];
-  const privacyPoolsAddr = contracts.PRIVACY_POOLS;
+  const privacyPoolsAddr = poolAddress || contracts.PRIVACY_POOLS;
   if (!privacyPoolsAddr || privacyPoolsAddr === "0x0") {
     throw new Error(`PrivacyPools not deployed on ${network}`);
   }
@@ -341,23 +357,23 @@ export async function generateMerkleProofOnChain(
   const contractAddr = num.toHex(num.toBigInt(privacyPoolsAddr));
   const normalizedCommitment = num.toHex(num.toBigInt(commitment));
 
-  // Check if we can use cached data or need to re-fetch
-  const needsFetch = cachedNetwork !== network || cachedCommitments.length === 0;
+  // Per-pool cache
+  const cache = getPoolCache(contractAddr);
+  const needsFetch = cache.commitments.length === 0;
 
   if (needsFetch) {
-    console.log("[MerkleProof] Reading deposits from contract storage...");
+    console.log(`[MerkleProof] Reading deposits from pool ${contractAddr.slice(0, 12)}...`);
     const totalDeposits = await fetchTotalDeposits(rpcUrl, contractAddr);
     console.log(`[MerkleProof] Total deposits: ${totalDeposits}`);
 
-    cachedCommitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
-    cachedNetwork = network;
-    cachedNodes = new Map();
-    cachedRoot = null;
-    console.log(`[MerkleProof] Read ${cachedCommitments.length} commitments`);
+    cache.commitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
+    cache.nodes = new Map();
+    cache.root = null;
+    console.log(`[MerkleProof] Read ${cache.commitments.length} commitments`);
   }
 
   // Find our commitment
-  let leafIndex = cachedCommitments.findIndex(
+  let leafIndex = cache.commitments.findIndex(
     (c) => num.toHex(num.toBigInt(c)) === normalizedCommitment,
   );
 
@@ -365,11 +381,11 @@ export async function generateMerkleProofOnChain(
   if (leafIndex === -1 && !needsFetch) {
     console.log("[MerkleProof] Commitment not in cache, re-fetching...");
     const totalDeposits = await fetchTotalDeposits(rpcUrl, contractAddr);
-    cachedCommitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
-    cachedNodes = new Map();
-    cachedRoot = null;
+    cache.commitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
+    cache.nodes = new Map();
+    cache.root = null;
 
-    leafIndex = cachedCommitments.findIndex(
+    leafIndex = cache.commitments.findIndex(
       (c) => num.toHex(num.toBigInt(c)) === normalizedCommitment,
     );
   }
@@ -380,25 +396,25 @@ export async function generateMerkleProofOnChain(
   }
 
   // Rebuild tree if cache is stale
-  if (cachedNodes.size === 0 || !cachedRoot) {
+  if (cache.nodes.size === 0 || !cache.root) {
     console.log("[MerkleProof] Rebuilding LeanIMT...");
-    const { nodes, root, depth } = rebuildTree(cachedCommitments);
-    cachedNodes = nodes;
-    cachedRoot = root;
-    console.log(`[MerkleProof] Tree rebuilt: root=${root.slice(0, 20)}... depth=${depth} size=${cachedCommitments.length}`);
+    const { nodes, root, depth } = rebuildTree(cache.commitments);
+    cache.nodes = nodes;
+    cache.root = root;
+    console.log(`[MerkleProof] Tree rebuilt: root=${root.slice(0, 20)}... depth=${depth} size=${cache.commitments.length}`);
   }
 
   // Generate proof
-  const treeDepth = calculateDepth(cachedCommitments.length);
+  const treeDepth = calculateDepth(cache.commitments.length);
   const { siblings, pathIndices, root } = generateProof(
     leafIndex,
-    cachedCommitments,
-    cachedNodes,
+    cache.commitments,
+    cache.nodes,
     treeDepth,
   );
 
   // Verify locally
-  const leaf = cachedCommitments[leafIndex];
+  const leaf = cache.commitments[leafIndex];
   const isValid = verifyProof(leaf, siblings, pathIndices, root);
   if (!isValid) {
     console.error("[MerkleProof] Local proof verification FAILED");
@@ -412,7 +428,7 @@ export async function generateMerkleProofOnChain(
     path_indices: pathIndices.map((b) => (b ? 1 : 0)),
     root,
     leafIndex,
-    tree_size: cachedCommitments.length,
+    tree_size: cache.commitments.length,
   };
 }
 
@@ -421,14 +437,17 @@ export async function generateMerkleProofOnChain(
  */
 export async function verifyRootAgainstChain(
   network: NetworkType = "sepolia",
+  poolAddress?: string,
 ): Promise<{ match: boolean; localRoot: string | null; onChainRoot: string | null }> {
   const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl;
-  if (!rpcUrl || !cachedRoot) {
-    return { match: false, localRoot: cachedRoot, onChainRoot: null };
-  }
-
   const contracts = CONTRACTS[network];
-  const contractAddr = num.toHex(num.toBigInt(contracts.PRIVACY_POOLS));
+  const privacyPoolsAddr = poolAddress || contracts.PRIVACY_POOLS;
+  const contractAddr = num.toHex(num.toBigInt(privacyPoolsAddr));
+  const cache = getPoolCache(contractAddr);
+
+  if (!rpcUrl || !cache.root) {
+    return { match: false, localRoot: cache.root, onChainRoot: null };
+  }
 
   const result = await rpcCall(rpcUrl, "starknet_call", {
     request: {
@@ -441,10 +460,10 @@ export async function verifyRootAgainstChain(
 
   const onChainRoot = result?.[0] || null;
   if (!onChainRoot) {
-    return { match: false, localRoot: cachedRoot, onChainRoot: null };
+    return { match: false, localRoot: cache.root, onChainRoot: null };
   }
 
-  const normalizedLocal = num.toHex(num.toBigInt(cachedRoot));
+  const normalizedLocal = num.toHex(num.toBigInt(cache.root));
   const normalizedOnChain = num.toHex(num.toBigInt(onChainRoot));
   const match = normalizedLocal === normalizedOnChain;
 

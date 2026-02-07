@@ -119,9 +119,9 @@ export const PRIVACY_POOL_REGISTRY: Record<string, Record<string, string>> = {
     // Per-token pools (deployed 2026-02-06)
     ETH: "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
     STRK: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
-    // Not yet deployed
-    USDC: "0x0",
-    wBTC: "0x0",
+    USDC: "0x0", // Not yet deployed
+    // Deployed: 2026-02-07 via sncast
+    wBTC: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
   },
   mainnet: {
     SAGE: "0x0",

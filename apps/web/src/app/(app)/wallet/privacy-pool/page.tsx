@@ -52,16 +52,27 @@ import { useASPRegistry, type ASPInfo } from "@/lib/hooks/useASPRegistry";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination, type PrivacyNote } from "@/lib/crypto";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
-import { EXTERNAL_TOKENS, CONTRACTS, NETWORK_CONFIG } from "@/lib/contracts/addresses";
+import { EXTERNAL_TOKENS, CONTRACTS, NETWORK_CONFIG, PRIVACY_POOL_FOR_TOKEN } from "@/lib/contracts/addresses";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { useGaslessPrivacyDeposit } from "@/lib/hooks/useGaslessPrivacyDeposit";
 
 // Supported assets for privacy pools
 const POOL_ASSETS = [
-  { id: "SAGE", name: "SAGE Token", decimals: 18, icon: "🔮" },
-  { id: "USDC", name: "USD Coin", decimals: 6, icon: "💵" },
-  { id: "STRK", name: "Starknet Token", decimals: 18, icon: "⚡" },
+  { id: "SAGE", name: "SAGE Token", decimals: 18, icon: "🔮", status: "live" as const },
+  { id: "ETH", name: "Ether", decimals: 18, icon: "💎", status: "live" as const },
+  { id: "STRK", name: "Starknet Token", decimals: 18, icon: "⚡", status: "live" as const },
+  { id: "wBTC", name: "Wrapped Bitcoin", decimals: 8, icon: "₿", status: "live" as const },
+  { id: "USDC", name: "USD Coin", decimals: 6, icon: "💵", status: "coming_soon" as const },
 ];
+
+// Per-asset denomination presets
+const DENOMINATIONS_FOR_ASSET: Record<string, readonly number[]> = {
+  SAGE: [0.1, 1, 10, 100, 1000],
+  ETH: [0.001, 0.01, 0.1, 0.5, 1],
+  STRK: [1, 10, 100, 500, 1000],
+  wBTC: [0.0001, 0.001, 0.01, 0.05, 0.1],
+  USDC: [1, 10, 100, 500, 1000],
+};
 
 // Compliance levels
 const COMPLIANCE_LEVELS = [
@@ -102,7 +113,11 @@ export default function PrivacyPoolPage() {
   const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "https://sepolia.starkscan.co";
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
   const [selectedAsset, setSelectedAsset] = useState(POOL_ASSETS[0]);
-  const [selectedDenomination, setSelectedDenomination] = useState<PrivacyDenomination>(10);
+  const [selectedDenomination, setSelectedDenomination] = useState<number>(10);
+  const assetDenominations = useMemo(
+    () => DENOMINATIONS_FOR_ASSET[selectedAsset.id] || DENOMINATIONS_FOR_ASSET.SAGE,
+    [selectedAsset.id],
+  );
   const [complianceLevel, setComplianceLevel] = useState<ComplianceLevel>(COMPLIANCE_LEVELS[0]);
   const [selectedASPs, setSelectedASPs] = useState<string[]>([]);
 
@@ -279,13 +294,17 @@ export default function PrivacyPoolPage() {
       return {
         totalDeposited: {
           SAGE: tvl.toLocaleString(undefined, { minimumFractionDigits: 2 }),
-          USDC: "0.00",
+          ETH: "0.00",
           STRK: "0.00",
+          wBTC: "0.00",
+          USDC: "0.00",
         },
         yourDeposits: {
           SAGE: userDeposits ? (Number(userDeposits) / 1e18).toLocaleString(undefined, { minimumFractionDigits: 2 }) : "0.00",
-          USDC: "0.00",
+          ETH: "0.00",
           STRK: "0.00",
+          wBTC: "0.00",
+          USDC: "0.00",
         },
         pendingWithdrawals: "0.00",
         anonymitySet: stats.anonymity_set_size || stats.deposit_count || 0,
@@ -297,13 +316,17 @@ export default function PrivacyPoolPage() {
     return {
       totalDeposited: {
         SAGE: "0.00",
-        USDC: "0.00",
+        ETH: "0.00",
         STRK: "0.00",
+        wBTC: "0.00",
+        USDC: "0.00",
       },
       yourDeposits: {
         SAGE: "0.00",
-        USDC: "0.00",
+        ETH: "0.00",
         STRK: "0.00",
+        wBTC: "0.00",
+        USDC: "0.00",
       },
       pendingWithdrawals: "0.00",
       anonymitySet: 0,
@@ -364,13 +387,13 @@ export default function PrivacyPoolPage() {
 
     try {
       if (gasPaymentMethod === "wallet") {
-        // Standard wallet deposit
-        await deposit(selectedDenomination);
+        // Standard wallet deposit — pass selected asset
+        await deposit(selectedDenomination as PrivacyDenomination, selectedAsset.id);
       } else {
         // Gasless deposit via AVNU Paymaster
         const gasMethod = gasPaymentMethod === "gasless-sponsored" ? "sponsored" : "pay-strk";
         await gaslessDeposit({
-          denomination: selectedDenomination,
+          denomination: selectedDenomination as PrivacyDenomination,
           gasMethod: gasMethod as "sponsored" | "pay-strk",
         });
       }
@@ -700,6 +723,47 @@ export default function PrivacyPoolPage() {
                   </div>
                 )}
 
+                {/* Asset Selector */}
+                <div className="space-y-3">
+                  <label className="text-sm font-medium text-gray-300">Select Asset</label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {POOL_ASSETS.map((asset) => {
+                      const isLive = asset.status === "live";
+                      const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[asset.id];
+                      const hasPool = isLive && poolAddr && poolAddr !== "0x0";
+                      return (
+                        <button
+                          key={asset.id}
+                          onClick={() => {
+                            if (!hasPool) return;
+                            setSelectedAsset(asset);
+                            // Reset denomination to first available for new asset
+                            const denoms = DENOMINATIONS_FOR_ASSET[asset.id] || DENOMINATIONS_FOR_ASSET.SAGE;
+                            setSelectedDenomination(denoms[2] ?? denoms[0]);
+                          }}
+                          disabled={!hasPool}
+                          className={cn(
+                            "p-2.5 rounded-lg border text-center transition-all relative",
+                            selectedAsset.id === asset.id
+                              ? "bg-brand-500/20 border-brand-500 text-white"
+                              : hasPool
+                              ? "bg-surface-elevated border-surface-border text-gray-300 hover:border-gray-500"
+                              : "bg-surface-elevated/50 border-surface-border/50 text-gray-500 cursor-not-allowed"
+                          )}
+                        >
+                          <span className="text-lg">{asset.icon}</span>
+                          <p className="text-xs font-medium mt-0.5">{asset.id}</p>
+                          {!isLive && (
+                            <span className="absolute -top-1.5 -right-1.5 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/30">
+                              Soon
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 {/* Denomination Selector (Fixed amounts for optimal anonymity) */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
@@ -707,10 +771,10 @@ export default function PrivacyPoolPage() {
                     <span className="text-xs text-gray-400">Fixed denominations for anonymity</span>
                   </div>
                   <div className="grid grid-cols-5 gap-2">
-                    {availableDenominations.map((denom) => (
+                    {assetDenominations.map((denom) => (
                       <button
                         key={denom}
-                        onClick={() => setSelectedDenomination(denom as PrivacyDenomination)}
+                        onClick={() => setSelectedDenomination(denom)}
                         disabled={!hasKeys}
                         className={cn(
                           "p-3 rounded-lg border text-center transition-all",
@@ -721,7 +785,7 @@ export default function PrivacyPoolPage() {
                         )}
                       >
                         <span className="text-lg font-bold">{denom}</span>
-                        <p className="text-xs text-gray-400">SAGE</p>
+                        <p className="text-xs text-gray-400">{selectedAsset.id}</p>
                       </button>
                     ))}
                   </div>
@@ -1171,7 +1235,7 @@ export default function PrivacyPoolPage() {
                     leafIndex={depositState.proofData.leafIndex}
                     txHash={depositState.txHash}
                     amount={depositState.proofData.amount}
-                    symbol="SAGE"
+                    symbol={selectedAsset.id}
                   />
                 )}
 
@@ -1211,7 +1275,7 @@ export default function PrivacyPoolPage() {
                   ) : (
                     <span className="flex items-center justify-center gap-2">
                       <ArrowDownToLine className="w-5 h-5" />
-                      Deposit {selectedDenomination} SAGE
+                      Deposit {selectedDenomination} {selectedAsset.id}
                     </span>
                   )}
                 </button>
@@ -1259,9 +1323,13 @@ export default function PrivacyPoolPage() {
                           )}
                         >
                           <div className="flex items-center gap-3">
-                            <span className="text-xl">🔮</span>
+                            <span className="text-xl">
+                              {POOL_ASSETS.find(a => a.id === (note.tokenSymbol || "SAGE"))?.icon || "🔮"}
+                            </span>
                             <div className="text-left">
-                              <p className="font-medium text-white">{note.denomination} SAGE</p>
+                              <p className="font-medium text-white">
+                                {note.denomination} {note.tokenSymbol || "SAGE"}
+                              </p>
                               <p className="text-xs text-gray-400 font-mono">
                                 {note.commitment.slice(0, 10)}...{note.commitment.slice(-6)}
                               </p>
@@ -1281,7 +1349,9 @@ export default function PrivacyPoolPage() {
                   <div className="p-4 rounded-lg bg-surface-elevated border border-surface-border space-y-2">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400">Amount:</span>
-                      <span className="text-white font-medium">{selectedNote.denomination} SAGE</span>
+                      <span className="text-white font-medium">
+                        {selectedNote.denomination} {selectedNote.tokenSymbol || "SAGE"}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-400">Deposited:</span>
@@ -1333,7 +1403,7 @@ export default function PrivacyPoolPage() {
                   ) : (
                     <span className="flex items-center justify-center gap-2">
                       <Unlock className="w-5 h-5" />
-                      {selectedNote ? `Withdraw ${selectedNote.denomination} SAGE` : "Select a Note"}
+                      {selectedNote ? `Withdraw ${selectedNote.denomination} ${selectedNote.tokenSymbol || "SAGE"}` : "Select a Note"}
                     </span>
                   )}
                 </button>
@@ -1668,7 +1738,8 @@ export default function PrivacyPoolPage() {
         title="Confirm Privacy Deposit"
         description="You are about to deposit funds into the privacy pool. This will shield your assets using a Pedersen commitment."
         details={[
-          { label: "Amount", value: `${selectedDenomination} SAGE`, isCurrency: true },
+          { label: "Amount", value: `${selectedDenomination} ${selectedAsset.id}`, isCurrency: true },
+          { label: "Asset", value: selectedAsset.name },
           { label: "Privacy Level", value: complianceLevel.name },
           { label: "Anonymity Set", value: `${poolStats.anonymitySet.toLocaleString()} deposits` },
         ]}
@@ -1684,7 +1755,7 @@ export default function PrivacyPoolPage() {
         title="Confirm Private Withdrawal"
         description="A zero-knowledge proof will be generated to verify your note ownership without revealing which deposit is yours."
         details={[
-          { label: "Amount", value: selectedNote ? `${selectedNote.denomination} SAGE` : "0 SAGE", isCurrency: true },
+          { label: "Amount", value: selectedNote ? `${selectedNote.denomination} ${selectedNote.tokenSymbol || "SAGE"}` : "0", isCurrency: true },
           { label: "Proof Type", value: "TEE-Assisted STWO" },
           { label: "Nullifier", value: selectedNote?.commitment.slice(0, 16) || "...", isAddress: true },
         ]}
