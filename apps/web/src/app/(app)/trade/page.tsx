@@ -4,10 +4,9 @@ import { useState, useCallback } from "react";
 import {
   BookOpen,
   Info,
-  Coins,
   Shield,
-  Lock,
   ArrowUpDown,
+  Repeat,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -18,12 +17,37 @@ import { MyOrders } from "./components/MyOrders";
 import { PairSelector } from "./components/PairSelector";
 import { MarketStats } from "./components/MarketStats";
 import { PrivateAuction } from "./components/PrivateAuction";
+import { ShieldedSwapPanel } from "@/components/swap";
 import { TRADING_PAIRS } from "./config";
 import {
   ResponsiveTradingGrid,
 } from "@/components/ui/ResponsiveTradingLayout";
 
-type TradeMode = "orderbook" | "private";
+type TradeMode = "orderbook" | "swap" | "private";
+
+const TRADE_MODES = [
+  {
+    id: "orderbook" as const,
+    label: "Orderbook",
+    icon: BookOpen,
+    description: "Peer-to-peer OTC limit orders",
+    activeClass: "bg-white/10 text-white shadow-sm",
+  },
+  {
+    id: "swap" as const,
+    label: "Shielded Swap",
+    icon: Repeat,
+    description: "Privacy-preserving AMM swaps",
+    activeClass: "bg-violet-500/15 text-violet-300 border border-violet-500/20 shadow-sm shadow-violet-500/10",
+  },
+  {
+    id: "private" as const,
+    label: "Dark Pool",
+    icon: Shield,
+    description: "Encrypted batch auction — zero MEV",
+    activeClass: "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm",
+  },
+] as const;
 
 export default function TradePage() {
   const [mode, setMode] = useState<TradeMode>("orderbook");
@@ -41,6 +65,8 @@ export default function TradePage() {
     setOrderFormData({ price, amount, side, timestamp: Date.now() });
   }, []);
 
+  const activeMode = TRADE_MODES.find((m) => m.id === mode)!;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -51,38 +77,29 @@ export default function TradePage() {
             Trade
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {mode === "orderbook"
-              ? "Trade tokens peer-to-peer via the OTC orderbook"
-              : "Encrypted batch auction — zero front-running, zero MEV"}
+            {activeMode.description}
           </p>
         </div>
 
-        {/* Mode Toggle */}
+        {/* Mode Toggle — 3 tabs */}
         <div className="flex items-center bg-surface-elevated rounded-xl p-1 border border-surface-border">
-          <button
-            onClick={() => setMode("orderbook")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              mode === "orderbook"
-                ? "bg-white/10 text-white shadow-sm"
-                : "text-gray-400 hover:text-white"
-            )}
-          >
-            <BookOpen className="w-4 h-4" />
-            Orderbook
-          </button>
-          <button
-            onClick={() => setMode("private")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all",
-              mode === "private"
-                ? "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 shadow-sm"
-                : "text-gray-400 hover:text-white"
-            )}
-          >
-            <Shield className="w-4 h-4" />
-            Private Auction
-          </button>
+          {TRADE_MODES.map((m) => {
+            const Icon = m.icon;
+            const isActive = mode === m.id;
+            return (
+              <button
+                key={m.id}
+                onClick={() => setMode(m.id)}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all",
+                  isActive ? m.activeClass : "text-gray-400 hover:text-white"
+                )}
+              >
+                <Icon className="w-4 h-4" />
+                <span className="hidden xs:inline">{m.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -165,7 +182,62 @@ export default function TradePage() {
               </div>
             </div>
           </motion.div>
+
+        ) : mode === "swap" ? (
+          /* ═══════════════════════════════════════════════════════
+             SHIELDED SWAP — centered card layout
+             ═══════════════════════════════════════════════════════ */
+          <motion.div
+            key="swap"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center"
+          >
+            {/* Centered swap card with ambient glow */}
+            <div className="w-full max-w-[480px] relative">
+              {/* Background ambient glow */}
+              <div className="absolute -inset-8 pointer-events-none">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-violet-600/[0.06] rounded-full blur-[100px]" />
+                <div className="absolute top-1/3 left-1/4 w-40 h-40 bg-fuchsia-600/[0.04] rounded-full blur-[80px]" />
+              </div>
+
+              {/* Main card */}
+              <div className="relative rounded-3xl border border-white/[0.06] bg-gradient-to-b from-surface-card/95 to-[#0c0e14]/95 backdrop-blur-xl p-6 shadow-2xl shadow-black/40">
+                <ShieldedSwapPanel />
+              </div>
+            </div>
+
+            {/* Info footer */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="mt-6 max-w-[480px] w-full"
+            >
+              <div className="glass-card p-4 bg-gradient-to-r from-violet-600/[0.06] to-fuchsia-600/[0.04]">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-violet-600/15">
+                    <Shield className="w-4 h-4 text-violet-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-300">
+                      <strong className="text-violet-300">How shielded swaps work:</strong>{" "}
+                      Your tokens are withdrawn from a privacy pool, swapped through Ekubo AMM,
+                      and deposited into the destination privacy pool — all in one atomic transaction.
+                      Only the router contract appears on-chain, keeping your identity hidden.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+
         ) : (
+          /* ═══════════════════════════════════════════════════════
+             PRIVATE AUCTION (Dark Pool)
+             ═══════════════════════════════════════════════════════ */
           <motion.div
             key="private"
             initial={{ opacity: 0, y: 10 }}
