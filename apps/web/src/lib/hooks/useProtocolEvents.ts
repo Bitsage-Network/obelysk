@@ -17,6 +17,7 @@ import {
   type TradingEventType,
   type GovernanceEventType,
   type StakingEventType,
+  type DarkPoolEventType,
 } from "../events/protocolEvents";
 import { fetchPrivacyEvents, type PrivacyEvent } from "../events/privacyEvents";
 import type { NetworkType } from "../contracts/addresses";
@@ -545,6 +546,127 @@ export function usePrivacyEvents(
 
   return {
     privacyEvents,
+    ...state,
+    isConnected: state.lastPollTime !== null,
+    connectionState: state.isPolling ? "polling" as const : state.error ? "error" as const : "connected" as const,
+    retry: poll,
+  };
+}
+
+// ============================================================================
+// Dark Pool Events Hook (commit/reveal/fill/settle activity)
+// ============================================================================
+
+export interface DarkPoolEventItem {
+  event_type: DarkPoolEventType;
+  order_id?: string;
+  trader?: string;
+  epoch_id?: string;
+  clearing_price?: string;
+  fill_amount?: string;
+  asset?: string;
+  amount?: string;
+  tx_hash: string;
+  block_number: number;
+  timestamp: number;
+}
+
+export function useDarkPoolEvents(
+  options: UseEventPollerOptions = {},
+) {
+  const {
+    pollInterval = 8000, // 2 blocks — fast for dark pool activity
+    autoStart = true,
+    network = "sepolia",
+    maxEvents = 100,
+  } = options;
+
+  const [darkPoolEvents, setDarkPoolEvents] = useState<DarkPoolEventItem[]>([]);
+  const [state, setState] = useState<EventPollerState>({
+    isPolling: false,
+    lastPollTime: null,
+    error: null,
+    pollCount: 0,
+  });
+
+  const lastBlockRef = useRef<number>(0);
+  const mountedRef = useRef(true);
+  const intervalRef = useRef<NodeJS.Timeout>();
+
+  const poll = useCallback(async () => {
+    if (!mountedRef.current) return;
+    setState((prev) => ({ ...prev, isPolling: true, error: null }));
+
+    try {
+      const result = await fetchProtocolEvents<DarkPoolEventType>({
+        network,
+        domain: "dark_pool",
+        fromBlock: lastBlockRef.current || undefined,
+        chunkSize: 100,
+      });
+
+      if (!mountedRef.current) return;
+
+      if (result.events.length > 0) {
+        lastBlockRef.current = Math.max(
+          ...result.events.map((e) => e.blockNumber),
+        ) + 1;
+      }
+
+      const newEvents: DarkPoolEventItem[] = [];
+      for (const event of result.events) {
+        if (event.type === "unknown") continue;
+
+        const item: DarkPoolEventItem = {
+          event_type: event.type,
+          order_id: event.data.order_id_low || event.data.order_id,
+          trader: event.data.trader,
+          epoch_id: event.data.epoch_id,
+          clearing_price: event.data.clearing_price_low,
+          fill_amount: event.data.fill_amount_low,
+          asset: event.data.asset,
+          amount: event.data.amount_low,
+          tx_hash: event.transactionHash,
+          block_number: event.blockNumber,
+          timestamp: Date.now(),
+        };
+        newEvents.push(item);
+      }
+
+      if (newEvents.length > 0) {
+        setDarkPoolEvents((prev) => [...newEvents, ...prev].slice(0, maxEvents));
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isPolling: false,
+        lastPollTime: Date.now(),
+        pollCount: prev.pollCount + 1,
+      }));
+    } catch (error) {
+      if (!mountedRef.current) return;
+      setState((prev) => ({
+        ...prev,
+        isPolling: false,
+        error: error instanceof Error ? error.message : "Polling failed",
+      }));
+    }
+  }, [network, maxEvents]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (autoStart) {
+      poll();
+      intervalRef.current = setInterval(poll, pollInterval);
+    }
+    return () => {
+      mountedRef.current = false;
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [autoStart, poll, pollInterval]);
+
+  return {
+    darkPoolEvents,
     ...state,
     isConnected: state.lastPollTime !== null,
     connectionState: state.isPolling ? "polling" as const : state.error ? "error" as const : "connected" as const,
