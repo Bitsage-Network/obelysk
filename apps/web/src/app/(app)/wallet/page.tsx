@@ -637,118 +637,136 @@ function OverviewTab({
       className="space-y-4 sm:space-y-6 max-w-2xl mx-auto"
     >
       {/* Main Balance Card */}
-      <div className="glass-card overflow-hidden">
-        <div className="p-4 sm:p-6 text-center bg-gradient-to-b from-surface-card to-surface-elevated">
-          <p className="text-3xl sm:text-4xl font-bold text-white mb-2">
-            {walletData.totalUsdValue}
-          </p>
+      {address ? (
+        <>
+          <div className="glass-card overflow-hidden">
+            <div className="p-4 sm:p-6 text-center bg-gradient-to-b from-surface-card to-surface-elevated">
+              <p className="text-3xl sm:text-4xl font-bold text-white mb-2">
+                {walletData.totalUsdValue}
+              </p>
 
-          <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
-            {showPrivateBalance ? (
-              <span className="text-base sm:text-lg text-white">
-                {walletData.privateBalance} SAGE
-              </span>
-            ) : (
-              <span className="text-base sm:text-lg text-brand-400 font-mono tracking-wider">
-                ••••••• SAGE
-              </span>
-            )}
-            <span className="text-xs sm:text-sm text-brand-400">(Private)</span>
-            <button
-              onClick={() => showPrivateBalance ? onHidePrivate() : onRevealPrivate()}
-              disabled={isSigningToReveal}
-              className="p-1 rounded hover:bg-surface-elevated transition-colors"
-            >
-              {isSigningToReveal ? (
-                <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400 animate-spin" />
-              ) : showPrivateBalance ? (
-                <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400" />
-              ) : (
-                <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400" />
+              <div className="flex items-center justify-center gap-1.5 sm:gap-2 mb-3 sm:mb-4 flex-wrap">
+                {showPrivateBalance ? (
+                  <span className="text-base sm:text-lg text-white">
+                    {walletData.privateBalance} SAGE
+                  </span>
+                ) : (
+                  <span className="text-base sm:text-lg text-brand-400 font-mono tracking-wider">
+                    ••••••• SAGE
+                  </span>
+                )}
+                <span className="text-xs sm:text-sm text-brand-400">(Private)</span>
+                <button
+                  onClick={() => showPrivateBalance ? onHidePrivate() : onRevealPrivate()}
+                  disabled={isSigningToReveal}
+                  className="p-1 rounded hover:bg-surface-elevated transition-colors"
+                >
+                  {isSigningToReveal ? (
+                    <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400 animate-spin" />
+                  ) : showPrivateBalance ? (
+                    <EyeOff className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-400" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-brand-400" />
+                  )}
+                </button>
+              </div>
+
+              {parseFloat(walletData.pendingEarnings) > 0 && (
+                <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 mb-4">
+                  <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-sm text-emerald-400">
+                    +{walletData.pendingEarnings} SAGE pending
+                  </span>
+                </div>
               )}
-            </button>
-          </div>
 
-          {parseFloat(walletData.pendingEarnings) > 0 && (
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-500/30 mb-4">
-              <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-sm text-emerald-400">
-                +{walletData.pendingEarnings} SAGE pending
-              </span>
+              <p className="text-sm text-gray-500">
+                {walletData.publicBalance} SAGE available to fund
+              </p>
             </div>
-          )}
 
-          <p className="text-sm text-gray-500">
-            {walletData.publicBalance} SAGE available to fund
-          </p>
-        </div>
+            <div className="p-3 sm:p-4 border-t border-surface-border grid grid-cols-2 gap-2 sm:gap-3">
+              <button
+                onClick={onShowPayModal}
+                className="flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm sm:text-base font-medium transition-colors shadow-lg shadow-brand-500/20"
+              >
+                <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                Pay
+              </button>
+              <button
+                onClick={onShowRequestModal}
+                className="flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-surface-elevated hover:bg-surface-border text-white text-sm sm:text-base font-medium transition-colors border border-surface-border"
+              >
+                <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                Request
+              </button>
+            </div>
 
-        <div className="p-3 sm:p-4 border-t border-surface-border grid grid-cols-2 gap-2 sm:gap-3">
-          <button
-            onClick={onShowPayModal}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm sm:text-base font-medium transition-colors shadow-lg shadow-brand-500/20"
-          >
-            <ArrowUpRight className="w-4 h-4 sm:w-5 sm:h-5" />
-            Pay
-          </button>
-          <button
-            onClick={onShowRequestModal}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl bg-surface-elevated hover:bg-surface-border text-white text-sm sm:text-base font-medium transition-colors border border-surface-border"
-          >
-            <ArrowDownLeft className="w-4 h-4 sm:w-5 sm:h-5" />
-            Request
-          </button>
-        </div>
-
-        <div className="p-3 sm:p-4 border-t border-surface-border grid grid-cols-2 gap-2 sm:gap-3">
-          <button
-            onClick={onShowRolloverModal}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-xs sm:text-sm font-medium transition-colors border border-brand-500/20"
-          >
-            <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            Rollover
-          </button>
-          <button
-            onClick={onShowRagequitModal}
-            className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs sm:text-sm font-medium transition-colors border border-red-500/20"
-          >
-            <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-            Ragequit
-          </button>
-        </div>
-      </div>
-
-      {/* Balance Breakdown */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4">
-        <div className="glass-card p-3 sm:p-4">
-          <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
-            <Eye className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
-            <span className="text-[10px] sm:text-xs text-gray-400">Public</span>
+            <div className="p-3 sm:p-4 border-t border-surface-border grid grid-cols-2 gap-2 sm:gap-3">
+              <button
+                onClick={onShowRolloverModal}
+                className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 text-xs sm:text-sm font-medium transition-colors border border-brand-500/20"
+              >
+                <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                Rollover
+              </button>
+              <button
+                onClick={onShowRagequitModal}
+                className="flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-3 sm:px-4 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs sm:text-sm font-medium transition-colors border border-red-500/20"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                Ragequit
+              </button>
+            </div>
           </div>
-          <p className="text-base sm:text-lg font-bold text-white truncate">{walletData.publicBalance}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
-        </div>
 
-        <div className="glass-card p-3 sm:p-4 bg-gradient-to-br from-brand-600/10 to-accent-fuchsia/10 border-brand-500/30">
-          <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
-            <EyeOff className="w-3 h-3 sm:w-4 sm:h-4 text-brand-400" />
-            <span className="text-[10px] sm:text-xs text-brand-400">Private</span>
-          </div>
-          <p className="text-base sm:text-lg font-bold text-brand-400 font-mono truncate">
-            {showPrivateBalance ? walletData.privateBalance : "•••••"}
-          </p>
-          <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
-        </div>
+          {/* Balance Breakdown */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            <div className="glass-card p-3 sm:p-4">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
+                <Eye className="w-3 h-3 sm:w-4 sm:h-4 text-gray-400" />
+                <span className="text-[10px] sm:text-xs text-gray-400">Public</span>
+              </div>
+              <p className="text-base sm:text-lg font-bold text-white truncate">{walletData.publicBalance}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
+            </div>
 
-        <div className="glass-card p-3 sm:p-4">
-          <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
-            <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-orange-400" />
-            <span className="text-[10px] sm:text-xs text-orange-400">Pending</span>
+            <div className="glass-card p-3 sm:p-4 bg-gradient-to-br from-brand-600/10 to-accent-fuchsia/10 border-brand-500/30">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
+                <EyeOff className="w-3 h-3 sm:w-4 sm:h-4 text-brand-400" />
+                <span className="text-[10px] sm:text-xs text-brand-400">Private</span>
+              </div>
+              <p className="text-base sm:text-lg font-bold text-brand-400 font-mono truncate">
+                {showPrivateBalance ? walletData.privateBalance : "•••••"}
+              </p>
+              <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
+            </div>
+
+            <div className="glass-card p-3 sm:p-4">
+              <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
+                <Clock className="w-3 h-3 sm:w-4 sm:h-4 text-orange-400" />
+                <span className="text-[10px] sm:text-xs text-orange-400">Pending</span>
+              </div>
+              <p className="text-base sm:text-lg font-bold text-orange-400 truncate">+{walletData.pendingEarnings}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
+            </div>
           </div>
-          <p className="text-base sm:text-lg font-bold text-orange-400 truncate">+{walletData.pendingEarnings}</p>
-          <p className="text-[10px] sm:text-xs text-gray-500">SAGE</p>
+        </>
+      ) : (
+        <div className="glass-card p-6 sm:p-8 text-center">
+          <div className="w-16 h-16 rounded-full bg-surface-elevated flex items-center justify-center mx-auto mb-4">
+            <Wallet className="w-8 h-8 text-gray-500" />
+          </div>
+          <h3 className="text-lg font-semibold text-white mb-2">Connect Your Wallet</h3>
+          <p className="text-sm text-gray-400 mb-4">Connect a wallet to view your balances and manage your funds.</p>
+          <button
+            onClick={onConnect}
+            className="px-6 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors shadow-lg shadow-brand-500/20"
+          >
+            Connect Wallet
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Multi-Token Balances (ETH, STRK, USDC, wBTC) */}
       <TokenBalancesCard address={address} network={network} explorerUrl={explorerUrl} onBridgeClick={onBridgeClick} />
