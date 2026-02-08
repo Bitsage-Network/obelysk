@@ -42,7 +42,9 @@ export default function SendPage() {
   const { network } = useNetwork();
   const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "";
   const obelyskWallet = useSafeObelyskWallet();
-  const balance = obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" };
+  const balance = address
+    ? (obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" })
+    : { public: "0", private: "0", pending: "0" };
   const isPrivateRevealed = obelyskWallet?.isPrivateRevealed ?? false;
   const revealPrivateBalance = obelyskWallet?.revealPrivateBalance;
   const hidePrivateBalance = obelyskWallet?.hidePrivateBalance;
@@ -372,38 +374,52 @@ export default function SendPage() {
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-4"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-fuchsia flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-white" />
+        {address ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-fuchsia flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Obelysk Wallet</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-white font-medium">{balance.public} SAGE</span>
+                  <span className="text-gray-600">|</span>
+                  <span className="text-brand-400 font-mono text-sm">
+                    {isPrivateRevealed ? balance.private : "•••••"} private
+                  </span>
+                  {parseFloat(balance.pending) > 0 && (
+                    <>
+                      <span className="text-gray-600">|</span>
+                      <span className="text-orange-400 text-sm flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3" />
+                        +{balance.pending} pending
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-400">Obelysk Wallet</p>
-              <div className="flex items-center gap-3">
-                <span className="text-white font-medium">{balance.public} SAGE</span>
-                <span className="text-gray-600">|</span>
-                <span className="text-brand-400 font-mono text-sm">
-                  {isPrivateRevealed ? balance.private : "•••••"} private
-                </span>
-                {parseFloat(balance.pending) > 0 && (
-                  <>
-                    <span className="text-gray-600">|</span>
-                    <span className="text-orange-400 text-sm flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3" />
-                      +{balance.pending} pending
-                    </span>
-                  </>
-                )}
+            <Link
+              href="/wallet"
+              className="px-3 py-1.5 text-sm text-brand-400 hover:text-brand-300 border border-brand-500/30 rounded-lg hover:bg-brand-500/10 transition-colors"
+            >
+              Manage
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-surface-elevated flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-gray-500" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">No Wallet Connected</p>
+                <p className="text-xs text-gray-500">Connect wallet to send tokens</p>
               </div>
             </div>
           </div>
-          <Link
-            href="/wallet"
-            className="px-3 py-1.5 text-sm text-brand-400 hover:text-brand-300 border border-brand-500/30 rounded-lg hover:bg-brand-500/10 transition-colors"
-          >
-            Manage
-          </Link>
-        </div>
+        )}
       </motion.div>
 
       {/* Balance Card */}
