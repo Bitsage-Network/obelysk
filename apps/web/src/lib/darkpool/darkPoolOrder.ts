@@ -46,7 +46,7 @@ export interface DarkPoolOrderNote {
   orderId: bigint;
   order: DarkPoolOrder;
   epoch: number;
-  status: "committed" | "revealed" | "filled" | "cancelled" | "expired";
+  status: "committed" | "revealed" | "filled" | "claimed" | "cancelled" | "expired";
   trader?: string;         // Wallet address that created this note
   commitTxHash?: string;
   revealTxHash?: string;
@@ -213,6 +213,13 @@ const DARK_POOL_ABI = [
     type: "function",
     inputs: [{ name: "epoch_id", type: "core::integer::u64" }],
     outputs: [{ name: "orders", type: "core::array::Array::<core::integer::u256>" }],
+    state_mutability: "view",
+  },
+  {
+    name: "is_order_claimed",
+    type: "function",
+    inputs: [{ name: "order_id", type: "core::integer::u256" }],
+    outputs: [{ name: "claimed", type: "core::bool" }],
     state_mutability: "view",
   },
 ] as const;
@@ -525,6 +532,35 @@ export async function readOrderFromContract(
   } catch (err) {
     console.warn("[DarkPool] Failed to read order:", err);
     return null;
+  }
+}
+
+/**
+ * Check if a filled order has already been claimed
+ */
+export async function readIsOrderClaimed(
+  network: NetworkType,
+  orderId: bigint,
+): Promise<boolean> {
+  const contractAddress = getDarkPoolAddress(network);
+  if (contractAddress === "0x0") return false;
+
+  const provider = getProvider(network);
+
+  try {
+    const idLow = "0x" + (orderId & BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).toString(16);
+    const idHigh = "0x" + (orderId >> 128n).toString(16);
+
+    const result = await provider.callContract({
+      contractAddress,
+      entrypoint: "is_order_claimed",
+      calldata: [idLow, idHigh],
+    });
+
+    return BigInt(result[0] || "0") !== 0n;
+  } catch {
+    // View function may not exist on older deployment — assume not claimed
+    return false;
   }
 }
 

@@ -58,6 +58,7 @@ import {
   readBalanceHint,
   readEpochResult,
   readOrderFromContract,
+  readIsOrderClaimed,
   parseOrderIdFromReceipt,
   cacheHintLocally,
   formatPrice,
@@ -345,7 +346,12 @@ export function useDarkPool(): UseDarkPoolResult {
                 Cancelled: "cancelled",
                 Expired: "expired",
               };
-              const newStatus = statusMap[contractOrder.status] ?? note.status;
+              let newStatus = statusMap[contractOrder.status] ?? note.status;
+              // Check if a filled order has already been claimed on-chain
+              if (newStatus === "filled") {
+                const claimed = await readIsOrderClaimed(network as NetworkType, note.orderId);
+                if (claimed) newStatus = "claimed";
+              }
               if (newStatus !== note.status) {
                 const updates: Partial<DarkPoolOrderNote> = { status: newStatus };
                 if (contractOrder.fillAmount > 0n) {
@@ -682,6 +688,9 @@ export function useDarkPool(): UseDarkPoolResult {
         setStage("committing");
         await sendAsync(calls);
 
+        // Mark order as claimed in IndexedDB
+        await updateOrderNote(orderId, { status: "claimed" });
+
         // Cache hints locally
         cacheHintLocally(address, receiveAsset, receiveHint);
         cacheHintLocally(address, spendAsset, spendHint);
@@ -690,7 +699,15 @@ export function useDarkPool(): UseDarkPoolResult {
         await refreshBalances();
         await refreshOrders();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Claim fill failed");
+        const msg = err instanceof Error ? err.message : "Claim fill failed";
+        // Handle "Already claimed" gracefully — just update local state
+        if (msg.includes("Already claimed")) {
+          await updateOrderNote(orderId, { status: "claimed" });
+          await refreshOrders();
+          setStage("idle");
+          return;
+        }
+        setError(msg);
         setStage("error");
       }
     },
