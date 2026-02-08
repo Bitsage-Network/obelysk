@@ -88,6 +88,18 @@ export {
   type UseShieldedSwapResult,
 } from './useShieldedSwap';
 
+// Dark Pool hooks (Commit-Reveal Batch Auction)
+export {
+  useDarkPool,
+  type DarkPoolStage,
+  type EpochPhase as DarkPoolEpochPhase,
+  type EpochInfo,
+  type OrderView as DarkPoolOrderView,
+  type EpochResultView,
+  type DarkPoolBalance,
+  type UseDarkPoolResult,
+} from './useDarkPool';
+
 // Privacy events (on-chain event stream)
 export {
   usePrivacyEvents,

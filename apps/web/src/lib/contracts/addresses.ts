@@ -77,6 +77,9 @@ export const CONTRACTS = {
     ETH_PRIVACY_POOL: "0x0",
     STRK_PRIVACY_POOL: "0x0",
     WBTC_PRIVACY_POOL: "0x0",
+
+    // Dark Pool (Commit-Reveal Batch Auction)
+    DARK_POOL: "0x0",
   },
 
   // Sepolia Testnet - ALL 37 CONTRACTS DEPLOYED
@@ -167,6 +170,11 @@ export const CONTRACTS = {
     STRK_PRIVACY_POOL: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
     // Deployed: 2026-02-07 via sncast — class hash 0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5
     WBTC_PRIVACY_POOL: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
+
+    // Dark Pool (Commit-Reveal Batch Auction) v2
+    // Redeployed: 2026-02-07 — class hash 0x7e593545973648aaf03700369d5b5d090c87a4b669ebf1b41c49101fe51d69d
+    // Fixes: EC point ops, volume-capped clearing, claim_fill, Fiat-Shamir proof, epoch=10, AssetAdded event
+    DARK_POOL: "0x02535f64fb17bb54cfa3554d159499bb92720c33eeab5df26178c0638739bc76",
   },
   // Mainnet - Not yet deployed
   mainnet: {
@@ -219,6 +227,9 @@ export const CONTRACTS = {
     ETH_PRIVACY_POOL: "0x0",
     STRK_PRIVACY_POOL: "0x0",
     WBTC_PRIVACY_POOL: "0x0",
+
+    // Dark Pool (Commit-Reveal Batch Auction)
+    DARK_POOL: "0x0",
   },
 } as const;
 
