@@ -9,6 +9,7 @@
 // Deployable contracts (self-contained, OZ deps only)
 mod shielded_swap_router;
 mod confidential_transfer;
+mod dark_pool_auction;
 
 // The following modules require sage_contracts dependency to compile:
 // mod elgamal;
