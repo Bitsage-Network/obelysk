@@ -96,10 +96,10 @@ const FEE_CONFIG = {
     prover: 0.001, // 0.1%
     privacyPool: 0.0005, // 0.05%
   },
-  // Price assumptions (would come from oracle in production)
+  // Price assumptions — 0 = unavailable (UI should handle gracefully)
   prices: {
-    SAGE_USD: 1.25,
-    ETH_USD: 3500,
+    SAGE_USD: 0,
+    ETH_USD: 0,
     GWEI_ETH: 1e-9,
   },
 };

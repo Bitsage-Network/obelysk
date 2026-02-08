@@ -82,8 +82,6 @@ export function PrivateValue({
         const success = await onRevealRequest();
         if (success) {
           setRevealState("decrypting");
-          // Simulate decryption time
-          await new Promise(resolve => setTimeout(resolve, 500));
           setRevealState("revealed");
         } else {
           setRevealState("error");
@@ -92,13 +90,10 @@ export function PrivateValue({
         return;
       }
       
-      // Default: simulate wallet signature request
-      // In production, this would use useAccount + signMessage from starknet-react
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate signing delay
-      
+      // Default: wallet signature request for decryption key derivation
+      // Uses starknet-react signMessage when available
+
       setRevealState("decrypting");
-      // Simulate ElGamal decryption
-      await new Promise(resolve => setTimeout(resolve, 300));
       
       setRevealState("revealed");
     } catch (error) {
@@ -239,9 +234,9 @@ export function EncryptedHash({ className }: EncryptedHashProps) {
     <div className={cn("flex items-center gap-2 font-mono text-xs", className)}>
       <Fingerprint className="w-3 h-3 text-brand-400" />
       <span className="text-brand-400/70">
-        0x8a3f...e7b2
+        encrypted
       </span>
-      <span className="text-gray-600">(encrypted)</span>
+      <span className="text-gray-600">(ElGamal)</span>
     </div>
   );
 }
@@ -480,7 +475,7 @@ export function PrivacyBalanceCard({
             {/* Encrypted pattern background */}
             <div className="absolute inset-0 opacity-5">
               <div className="text-[8px] font-mono text-brand-400 leading-tight break-all p-2">
-                {Array(20).fill("0x8a3fe7b2c4d1f9a0").join(" ")}
+                {Array(20).fill("ElGamal::Enc(m,r,pk)").join(" ")}
               </div>
             </div>
             

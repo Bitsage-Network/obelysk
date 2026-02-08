@@ -202,7 +202,7 @@ export function Sidebar({ collapsed, onToggle, mobileOpen, onMobileClose }: Side
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs font-medium text-emerald-400">Starknet Sepolia</span>
             </div>
-            <p className="text-xs text-gray-400">24 Active Validators</p>
+            <p className="text-xs text-gray-400">Privacy Network Active</p>
           </motion.div>
         )}
       </AnimatePresence>

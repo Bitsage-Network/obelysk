@@ -56,9 +56,8 @@ export function OrderBook({ pairId, pair, onOrderClick }: OrderBookProps) {
   const { isConnected: wsConnected } = useTradingEvents(numericPairId);
 
   // Fetch STRK/USD price from Pragma Oracle for USD conversion
-  // Fallback to ~$0.084 if oracle not available (Jan 2026 approximate rate)
   const { data: strkUsdPrice, isLoading: priceLoading } = usePragmaPrice('STRK_USD');
-  const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0.084;
+  const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0;
 
   const isRefetching = isFetching && !isLoading;
 

@@ -230,19 +230,20 @@ export function isValidOrderSize(amountWei: bigint, pair: TradingPair): boolean 
   return amountWei >= pair.minOrderSize;
 }
 
-// Get estimated market price (for market orders)
-// Returns a conservative price estimate to ensure sufficient approval
+// Get estimated market price (for ERC20 approval limits)
+// Returns a conservative upper-bound for token approval, NOT a real price
+// Actual execution price comes from the on-chain orderbook
 export function getEstimatedMarketPrice(pair: TradingPair): bigint {
-  // Use 2x the typical best_ask to provide buffer for slippage and price movement
-  // The PlaceOrder component adds another 50% buffer on top of this
+  // Upper-bound approval limits per pair — conservative to avoid re-approvals
+  // These are NOT market prices; they're max approval buffers
   if (pair.id === "SAGE_STRK") {
-    return 200000000000000000n; // 0.20 STRK (18 decimals) - 2x the 0.10 best_ask
+    return 1000000000000000000n; // 1 STRK max approval per SAGE
   }
   if (pair.id === "SAGE_USDC") {
-    return 200000n; // 0.20 USDC (6 decimals)
+    return 1000000n; // 1 USDC max approval per SAGE
   }
   if (pair.id === "SAGE_ETH") {
-    return 100000000000000n; // 0.0001 ETH
+    return 1000000000000000n; // 0.001 ETH max approval per SAGE
   }
   return 0n;
 }

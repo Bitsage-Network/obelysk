@@ -66,9 +66,8 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
   const tradingPairConfig = useMemo(() => getTradingPairById(pairId), [pairId]);
 
   // Fetch STRK/USD price from Pragma Oracle for USD conversion
-  // Fallback to ~$0.084 if oracle not available (Jan 2026 approximate rate)
   const { data: strkUsdPrice } = usePragmaPrice('STRK_USD');
-  const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0.084;
+  const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0;
 
   // Get real balance from contract
   const { data: sageBalance } = useSageBalance(address);

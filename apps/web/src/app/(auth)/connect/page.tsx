@@ -320,7 +320,7 @@ export default function ConnectPage() {
               <span className="text-white font-medium">Try Demo Mode</span>
             </motion.button>
             <p className="text-xs text-gray-500 text-center mt-2">
-              Preview the app with mock data
+              Preview the app without a wallet
             </p>
           </div>
         </div>

@@ -117,8 +117,9 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
   // Use injected connectors (ArgentX, Braavos, etc.)
   const { connectors } = useInjectedConnectors({
     recommended: [argent(), braavos()],
-    includeRecommended: "onlyIfNoConnectors",
-    order: "random",
+    includeRecommended: "always",
+    order: "alphabetical",
+    shimLegacyConnectors: ["braavos", "argentX"],
   });
 
   // Configure chains based on network

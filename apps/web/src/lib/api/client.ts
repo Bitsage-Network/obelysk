@@ -1222,12 +1222,12 @@ export const getSagePrice = async (): Promise<TokenPrice> => {
     const response = await getTokenPrice('SAGE');
     return response.data;
   } catch (error) {
-    // Return fallback price if API unavailable
-    console.warn('[PriceFeed] Failed to fetch SAGE price, using fallback');
+    // Return zero price when API unavailable — UI should show "unavailable"
+    console.warn('[PriceFeed] Failed to fetch SAGE price, API offline');
     return {
       token: 'SAGE',
       symbol: 'SAGE',
-      price_usd: 4.55,
+      price_usd: 0,
       price_change_24h: 0,
       price_change_pct_24h: 0,
       volume_24h: 0,

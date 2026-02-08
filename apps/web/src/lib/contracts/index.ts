@@ -1080,7 +1080,7 @@ export function buildRegisterPrivacyAccountCall(
  */
 export function buildRagequitCall(
   amount: bigint,
-  proof: string[] = ["0", "0"], // Placeholder proof for testnet
+  proof: string[] = [], // Proof not yet implemented — requires STWO circuit deployment
   network: NetworkType = "sepolia"
 ): Call {
   const addresses = getContractAddresses(network);

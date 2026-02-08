@@ -25,6 +25,8 @@ import { cn } from "@/lib/utils";
 import { PrivacyBalanceCard, PrivacyModeToggle } from "@/components/privacy/PrivacyToggle";
 import { ProofDetails } from "@/components/privacy/ProofDetails";
 import { useSafeObelyskWallet } from "@/lib/obelysk/ObelyskWalletContext";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { NETWORK_CONFIG } from "@/lib/contracts/addresses";
 import Link from "next/link";
 import { SUPPORTED_ASSETS, type Asset, DEFAULT_ASSET } from "@/lib/contracts/assets";
 import { useAccount } from "@starknet-react/core";
@@ -37,6 +39,8 @@ import { parsePaymentUri, parseObelyskAddress } from "@/lib/obelysk/address";
 
 export default function SendPage() {
   const { address } = useAccount();
+  const { network } = useNetwork();
+  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "";
   const obelyskWallet = useSafeObelyskWallet();
   const balance = obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" };
   const isPrivateRevealed = obelyskWallet?.isPrivateRevealed ?? false;
@@ -487,7 +491,7 @@ export default function SendPage() {
                 On-chain withdrawal verified
               </span>
               <a
-                href={`https://sepolia.starkscan.co/tx/${withdrawState.txHash}`}
+                href={`${explorerUrl}/tx/${withdrawState.txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300 transition-colors"
@@ -859,7 +863,7 @@ export default function SendPage() {
                       <span className="text-xs text-gray-500">{tx.time}</span>
                       {tx.tx_hash && !tx.is_private && (
                         <a
-                          href={`https://sepolia.starkscan.co/tx/${tx.tx_hash}`}
+                          href={`${explorerUrl}/tx/${tx.tx_hash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-brand-400 hover:underline flex items-center gap-1"
@@ -941,7 +945,7 @@ export default function SendPage() {
                           {privacyMode ? "Proving" : "Preparing"}
                         </p>
                         <p className="text-xs text-emerald-400">
-                          {privacyMode ? "Proved in 2ms" : "Transaction prepared"}
+                          {privacyMode ? (provingTime ? `Proved in ${provingTime}ms` : "Proof generated") : "Transaction prepared"}
                         </p>
                       </div>
                     </div>
@@ -1043,7 +1047,7 @@ export default function SendPage() {
                     {privacyMode && (
                       <div className="flex items-center gap-2 text-xs text-brand-400">
                         <Zap className="w-3 h-3" />
-                        ZK proof will be generated (~2ms)
+                        ZK proof will be generated
                       </div>
                     )}
                   </div>

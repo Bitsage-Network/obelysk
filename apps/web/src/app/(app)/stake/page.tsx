@@ -22,6 +22,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { PrivacyBalanceCard, PrivacyOption } from "@/components/privacy/PrivacyToggle";
 import { useSafeObelyskWallet } from "@/lib/obelysk/ObelyskWalletContext";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { NETWORK_CONFIG } from "@/lib/contracts/addresses";
 import Link from "next/link";
 import {
   useMyStaking,
@@ -61,11 +63,13 @@ function parseSageAmount(amount: string): bigint {
   return whole * 10n ** 18n + decimal;
 }
 
+// Staking tiers — APR is estimated from on-chain staking config (estimated_apy_bps)
+// These are display tiers for UI, actual APR comes from contract
 const stakingTiers = [
-  { name: "Bronze", min: 100, max: 999, apr: 18, color: "text-orange-400", benefits: ["Basic validation", "Standard rewards"] },
-  { name: "Silver", min: 1000, max: 4999, apr: 21, color: "text-gray-300", benefits: ["Priority jobs", "+15% rewards"] },
-  { name: "Gold", min: 5000, max: 24999, apr: 24, color: "text-yellow-400", benefits: ["Premium jobs", "+25% rewards", "Early access"] },
-  { name: "Diamond", min: 25000, max: Infinity, apr: 30, color: "text-cyan-400", benefits: ["Top-tier jobs", "+40% rewards", "Governance voting", "Network incentives"] },
+  { name: "Bronze", min: 100, max: 999, apr: null as number | null, color: "text-orange-400", benefits: ["Basic validation", "Standard rewards"] },
+  { name: "Silver", min: 1000, max: 4999, apr: null as number | null, color: "text-gray-300", benefits: ["Priority jobs", "+15% rewards"] },
+  { name: "Gold", min: 5000, max: 24999, apr: null as number | null, color: "text-yellow-400", benefits: ["Premium jobs", "+25% rewards", "Early access"] },
+  { name: "Diamond", min: 25000, max: Infinity, apr: null as number | null, color: "text-cyan-400", benefits: ["Top-tier jobs", "+40% rewards", "Governance voting", "Network incentives"] },
 ];
 
 // Default SDK data when SDK not mounted
@@ -167,6 +171,8 @@ function StakePageInner({
   stakingConfig,
   loadingConfig,
 }: StakePageInnerPropsWithSDK) {
+  const { network } = useNetwork();
+  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "";
   const [activeTab, setActiveTab] = useState<"stake" | "unstake">("stake");
   const [amount, setAmount] = useState("");
   const [stakePrivately, setStakePrivately] = useState(false);
@@ -829,7 +835,7 @@ function StakePageInner({
                   <div className="flex items-center justify-between">
                     <span className="text-emerald-400">Transaction submitted!</span>
                     <a
-                      href={`https://sepolia.starkscan.co/tx/${txData.transaction_hash}`}
+                      href={`${explorerUrl}/tx/${txData.transaction_hash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-brand-400 hover:text-brand-300 flex items-center gap-1"
@@ -919,7 +925,7 @@ function StakePageInner({
                         <span className="badge badge-success text-xs">Current</span>
                       )}
                     </div>
-                    <span className="text-sm text-emerald-400">{tier.apr}% APR</span>
+                    <span className="text-sm text-emerald-400">{tier.apr != null ? `${tier.apr}% APR` : "APR TBD"}</span>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
                     {tier.min.toLocaleString()} - {tier.max === Infinity ? "∞" : tier.max.toLocaleString()} SAGE
@@ -1005,7 +1011,7 @@ function StakePageInner({
                     </p>
                     {event.tx_hash && (
                       <a
-                        href={`https://sepolia.starkscan.co/tx/${event.tx_hash}`}
+                        href={`${explorerUrl}/tx/${event.tx_hash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-brand-400 hover:underline flex items-center gap-1 justify-end"

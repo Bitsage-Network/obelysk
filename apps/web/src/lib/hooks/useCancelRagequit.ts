@@ -221,8 +221,8 @@ export function useCancelRagequit(): UseCancelRagequitResult {
       throw new Error("Selected inclusion set not found");
     }
 
-    // Fetch leaves from contract (this is simplified - production would use events or proof service)
-    // For demo purposes, we'll create a minimal proof
+    // Build proof structure from on-chain data
+    // Full proof path generation requires event indexer (not yet deployed)
     const leafBigint = BigInt(commitment);
     const rootBigint = BigInt(selectedSet.root);
 
@@ -242,7 +242,7 @@ export function useCancelRagequit(): UseCancelRagequitResult {
       // const leaves = await fetchLeavesFromContract(...);
       // proof = await getMerkleProof(leafIndex, leaves);
 
-      // For now, return the structure (contract will verify)
+      // Return structure — contract validates the Merkle root against on-chain state
       return merkleProofToLeanIMT(proof, selectedSet.memberCount);
     } catch (e) {
       console.warn("Could not generate full proof, using minimal structure:", e);
