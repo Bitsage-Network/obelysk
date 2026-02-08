@@ -756,6 +756,36 @@ function OverviewTab({
       {/* Privacy Session - Gasless Operations */}
       <PrivacySessionCard />
 
+      {/* Quick Links */}
+      <div className="grid grid-cols-2 gap-3">
+        <Link
+          href="/wallet/privacy-pool"
+          className="glass-card p-4 flex items-center gap-3 hover:border-brand-500/40 transition-colors group"
+        >
+          <div className="w-10 h-10 rounded-lg bg-brand-500/20 flex items-center justify-center group-hover:bg-brand-500/30 transition-colors">
+            <Shield className="w-5 h-5 text-brand-400" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-white">Privacy Pools</p>
+            <p className="text-xs text-gray-500">Deposit & withdraw privately</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600 ml-auto" />
+        </Link>
+        <Link
+          href="/wallet/stealth"
+          className="glass-card p-4 flex items-center gap-3 hover:border-brand-500/40 transition-colors group"
+        >
+          <div className="w-10 h-10 rounded-lg bg-accent-fuchsia/20 flex items-center justify-center group-hover:bg-accent-fuchsia/30 transition-colors">
+            <EyeOff className="w-5 h-5 text-accent-fuchsia" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-white">Stealth Addresses</p>
+            <p className="text-xs text-gray-500">Receive private payments</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600 ml-auto" />
+        </Link>
+      </div>
+
       {/* Connected Address */}
       <div className="glass-card p-4">
         {address ? (

@@ -49,6 +49,10 @@ import {
 import { useDarkPoolEvents, type DarkPoolEventItem } from "@/lib/hooks/useProtocolEvents";
 import { EpochHistoryPanel } from "./EpochHistoryPanel";
 import { PnLSummaryCard } from "./PnLSummaryCard";
+import {
+  PrivacyTransactionReviewModal,
+  usePrivacyTransactionReview,
+} from "@/components/privacy/PrivacyTransactionReviewModal";
 
 // ============================================================================
 // Epoch Phase Display Config
@@ -271,26 +275,49 @@ function BalanceCard({
   onWithdraw,
   isLoading,
   onRefresh,
+  onReview,
 }: {
   balances: DarkPoolBalance[];
   onDeposit: (token: TokenSymbol, amount: number) => Promise<void>;
   onWithdraw: (token: TokenSymbol, amount: number) => Promise<void>;
   isLoading: boolean;
   onRefresh: () => Promise<void>;
+  onReview: ReturnType<typeof usePrivacyTransactionReview>["review"];
 }) {
   const [action, setAction] = useState<"deposit" | "withdraw">("deposit");
   const [selectedToken, setSelectedToken] = useState<TokenSymbol>("ETH");
   const [amount, setAmount] = useState("");
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     const val = parseFloat(amount);
     if (!val || val <= 0) return;
-    if (action === "deposit") {
-      await onDeposit(selectedToken, val);
-    } else {
-      await onWithdraw(selectedToken, val);
-    }
-    setAmount("");
+
+    onReview({
+      operationType: action,
+      title: action === "deposit" ? "Dark Pool Deposit" : "Dark Pool Withdraw",
+      description: `${action === "deposit" ? "Encrypt & deposit" : "Prove & withdraw"} ${val} ${selectedToken}`,
+      details: [
+        { label: "Action", value: action === "deposit" ? "Deposit" : "Withdraw" },
+        { label: "Amount", value: `${val} ${selectedToken}` },
+      ],
+      privacyInfo: {
+        identityHidden: false,
+        amountHidden: true,
+        recipientHidden: false,
+        proofType: "ElGamal Encryption",
+        whatIsOnChain: ["Encrypted amount (ciphertext)"],
+        whatIsHidden: ["Exact amount", "Balance after operation"],
+      },
+      onConfirm: async () => {
+        if (action === "deposit") {
+          await onDeposit(selectedToken, val);
+        } else {
+          await onWithdraw(selectedToken, val);
+        }
+        setAmount("");
+        return "";
+      },
+    });
   };
 
   const selectedBalance = balances.find((b) => b.symbol === selectedToken);
@@ -458,6 +485,7 @@ function OrdersTable({
   onCancel,
   onClaimFill,
   explorerUrl,
+  onReview,
 }: {
   orders: Array<{
     orderId: bigint;
@@ -475,6 +503,7 @@ function OrdersTable({
   onCancel: (orderId: bigint) => Promise<void>;
   onClaimFill: (orderId: bigint) => Promise<void>;
   explorerUrl: string;
+  onReview: ReturnType<typeof usePrivacyTransactionReview>["review"];
 }) {
   if (orders.length === 0) {
     return (
@@ -616,7 +645,30 @@ function OrdersTable({
                       )}
                       {order.status === "filled" && order.fillAmount && (
                         <button
-                          onClick={() => onClaimFill(order.orderId)}
+                          onClick={() => {
+                            onReview({
+                              operationType: "claim",
+                              title: "Claim Fill",
+                              description: `Claim ${order.fillAmount} fill from epoch #${order.epoch}`,
+                              details: [
+                                { label: "Order", value: `#${order.orderId.toString()}` },
+                                { label: "Side", value: order.side.toUpperCase() },
+                                { label: "Fill Amount", value: order.fillAmount || "N/A" },
+                                { label: "Clearing Price", value: order.clearingPrice || "N/A" },
+                              ],
+                              privacyInfo: {
+                                identityHidden: false,
+                                amountHidden: true,
+                                recipientHidden: false,
+                                whatIsOnChain: ["Encrypted balance delta"],
+                                whatIsHidden: ["Fill amount (encrypted)", "Updated vault balance"],
+                              },
+                              onConfirm: async () => {
+                                await onClaimFill(order.orderId);
+                                return "";
+                              },
+                            });
+                          }}
                           className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold hover:bg-emerald-500/20 transition-colors"
                           title="Claim fill to update encrypted balances"
                         >
@@ -778,6 +830,8 @@ export function PrivateAuction() {
     resetError,
   } = useDarkPool();
 
+  const txReview = usePrivacyTransactionReview();
+
   // Local UI state
   const [selectedPair, setSelectedPair] = useState<TradingPairInfo>(DARK_POOL_PAIRS[0]);
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -839,13 +893,37 @@ export function PrivateAuction() {
   // Handlers
   // --------------------------------------------------------------------------
 
-  const handleSubmitOrder = async () => {
+  const handleSubmitOrder = () => {
     const price = parseFloat(priceInput);
     const amount = parseFloat(amountInput);
     if (!price || !amount || price <= 0 || amount <= 0) return;
-    await submitOrder(price, amount, side, selectedPair);
-    setPriceInput("");
-    setAmountInput("");
+
+    txReview.review({
+      operationType: "commit",
+      title: "Commit Sealed Order",
+      description: `${side.toUpperCase()} ${amount} ${selectedPair.giveSymbol} @ ${price} ${selectedPair.wantSymbol}`,
+      details: [
+        { label: "Side", value: side.toUpperCase() },
+        { label: "Pair", value: selectedPair.label },
+        { label: "Price", value: `${price} ${selectedPair.wantSymbol}` },
+        { label: "Amount", value: `${amount} ${side === "sell" ? selectedPair.giveSymbol : selectedPair.wantSymbol}` },
+        { label: "Relay Mode", value: relayMode ? "Enabled (Identity Hidden)" : "Disabled" },
+      ],
+      privacyInfo: {
+        identityHidden: relayMode,
+        amountHidden: true,
+        recipientHidden: true,
+        proofType: "Poseidon Commitment Hash",
+        whatIsOnChain: ["Order hash (Poseidon)"],
+        whatIsHidden: ["Price", "Amount", "Side (buy/sell)"],
+      },
+      onConfirm: async () => {
+        const txHash = await submitOrder(price, amount, side, selectedPair);
+        setPriceInput("");
+        setAmountInput("");
+        return txHash ?? "";
+      },
+    });
   };
 
   // --------------------------------------------------------------------------
@@ -1219,7 +1297,28 @@ export function PrivateAuction() {
                     </div>
                   </div>
                   <button
-                    onClick={() => settleEpoch(currentEpoch.epoch)}
+                    onClick={() => {
+                      txReview.review({
+                        operationType: "settle",
+                        title: "Settle Epoch",
+                        description: `Trigger on-chain batch settlement for Epoch #${currentEpoch.epoch}`,
+                        details: [
+                          { label: "Epoch", value: `#${currentEpoch.epoch}` },
+                          { label: "Type", value: "Permissionless Settlement" },
+                        ],
+                        privacyInfo: {
+                          identityHidden: false,
+                          amountHidden: false,
+                          recipientHidden: false,
+                          whatIsOnChain: ["Clearing prices", "Fill amounts", "Settlement proof"],
+                          whatIsHidden: ["Individual order identities (relay mode)"],
+                        },
+                        onConfirm: async () => {
+                          await settleEpoch(currentEpoch.epoch);
+                          return "";
+                        },
+                      });
+                    }}
                     disabled={stage === "settling"}
                     className="px-5 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/25 text-emerald-400 text-sm font-semibold hover:bg-emerald-500/25 transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
@@ -1282,6 +1381,7 @@ export function PrivateAuction() {
             onWithdraw={withdraw}
             isLoading={isBalanceOp}
             onRefresh={refreshBalances}
+            onReview={txReview.review}
           />
 
           {/* P&L Summary Card */}
@@ -1379,7 +1479,17 @@ export function PrivateAuction() {
         onCancel={cancelOrder}
         onClaimFill={claimFill}
         explorerUrl={explorerUrl}
+        onReview={txReview.review}
       />
+
+      {/* Privacy Transaction Review Modal */}
+      {txReview.props && (
+        <PrivacyTransactionReviewModal
+          isOpen={txReview.isOpen}
+          onClose={txReview.close}
+          {...txReview.props}
+        />
+      )}
     </div>
   );
 }

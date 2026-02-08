@@ -34,6 +34,10 @@ import {
 } from "@/lib/hooks/useGaslessPrivacyDeposit";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination } from "@/lib/crypto";
 import { ProvingFlowCard, type ProvingStage } from "./ProvingFlowCard";
+import {
+  PrivacyTransactionReviewModal,
+  usePrivacyTransactionReview,
+} from "./PrivacyTransactionReviewModal";
 
 // ============================================================================
 // TYPES
@@ -108,6 +112,7 @@ export function GaslessDepositPanel({
   const [selectedGasMethod, setSelectedGasMethod] = useState<GasPaymentMethod>("wallet");
   const [sponsoredEligible, setSponsoredEligible] = useState(false);
   const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
+  const txReview = usePrivacyTransactionReview();
 
   // Check sponsored eligibility on mount
   useEffect(() => {
@@ -130,18 +135,33 @@ export function GaslessDepositPanel({
     checkEligibility();
   }, [isConnected, checkSponsoredEligibility]);
 
-  // Handle deposit
-  const handleDeposit = async () => {
-    try {
-      const txHash = await deposit({
-        denomination: selectedDenomination,
-        gasMethod: selectedGasMethod,
-      });
-      onSuccess?.(txHash);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Deposit failed";
-      onError?.(message);
-    }
+  // Handle deposit — shows review modal first
+  const handleDeposit = () => {
+    txReview.review({
+      operationType: "deposit",
+      title: "Privacy Pool Deposit",
+      description: `Deposit ${selectedDenomination} SAGE into the privacy pool`,
+      details: [
+        { label: "Amount", value: `${selectedDenomination} SAGE` },
+        { label: "Gas", value: selectedGasMethod === "sponsored" ? "Free (Sponsored)" : selectedGasMethod.toUpperCase() },
+      ],
+      privacyInfo: {
+        identityHidden: false,
+        amountHidden: true,
+        recipientHidden: false,
+        proofType: "Pedersen Commitment + ElGamal Encryption",
+        whatIsOnChain: ["Commitment hash", "Encrypted amount ciphertext"],
+        whatIsHidden: ["Exact deposit amount", "Blinding factor"],
+      },
+      onConfirm: async () => {
+        const txHash = await deposit({
+          denomination: selectedDenomination,
+          gasMethod: selectedGasMethod,
+        });
+        onSuccess?.(txHash);
+        return txHash;
+      },
+    });
   };
 
   // Determine if actively depositing
@@ -406,6 +426,15 @@ export function GaslessDepositPanel({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Privacy Transaction Review Modal */}
+      {txReview.props && (
+        <PrivacyTransactionReviewModal
+          isOpen={txReview.isOpen}
+          onClose={txReview.close}
+          {...txReview.props}
+        />
+      )}
     </div>
   );
 }

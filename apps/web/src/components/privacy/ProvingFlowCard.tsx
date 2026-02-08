@@ -25,6 +25,7 @@ import {
   Loader2,
   Clock,
   Lock,
+  Eye,
   RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -421,6 +422,10 @@ interface ProvingStep {
   key: string;
   label: string;
   description?: string;
+  /** Items encrypted at this step */
+  dataEncrypted?: string[];
+  /** Items becoming visible on-chain at this step */
+  dataRevealed?: string[];
 }
 
 const DEFAULT_PROVING_STEPS: ProvingStep[] = [
@@ -502,6 +507,25 @@ export function ProvingStepsCard({
                 </div>
                 {step.description && (
                   <p className="text-xs text-gray-500">{step.description}</p>
+                )}
+                {/* Per-step privacy indicators */}
+                {step.dataEncrypted && step.dataEncrypted.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {step.dataEncrypted.map((item) => (
+                      <span key={item} className="inline-flex items-center gap-1 text-[10px] text-emerald-400">
+                        <Lock className="w-2.5 h-2.5" />{item}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {step.dataRevealed && step.dataRevealed.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {step.dataRevealed.map((item) => (
+                      <span key={item} className="inline-flex items-center gap-1 text-[10px] text-gray-400">
+                        <Eye className="w-2.5 h-2.5" />{item}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>

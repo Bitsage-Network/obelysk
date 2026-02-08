@@ -52,6 +52,10 @@ import { useASPRegistry, type ASPInfo } from "@/lib/hooks/useASPRegistry";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination, type PrivacyNote } from "@/lib/crypto";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
+import {
+  PrivacyTransactionReviewModal,
+  usePrivacyTransactionReview,
+} from "@/components/privacy/PrivacyTransactionReviewModal";
 import { EXTERNAL_TOKENS, CONTRACTS, NETWORK_CONFIG, PRIVACY_POOL_FOR_TOKEN } from "@/lib/contracts/addresses";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { useGaslessPrivacyDeposit } from "@/lib/hooks/useGaslessPrivacyDeposit";
@@ -62,7 +66,7 @@ const POOL_ASSETS = [
   { id: "ETH", name: "Ether", decimals: 18, icon: "💎", status: "live" as const },
   { id: "STRK", name: "Starknet Token", decimals: 18, icon: "⚡", status: "live" as const },
   { id: "wBTC", name: "Wrapped Bitcoin", decimals: 8, icon: "₿", status: "live" as const },
-  { id: "USDC", name: "USD Coin", decimals: 6, icon: "💵", status: "coming_soon" as const },
+  { id: "USDC", name: "USD Coin", decimals: 6, icon: "💵", status: "live" as const },
 ];
 
 // Per-asset denomination presets
@@ -171,6 +175,8 @@ export default function PrivacyPoolPage() {
     deposit: gaslessDeposit,
     reset: resetGaslessState,
   } = useGaslessPrivacyDeposit();
+
+  const txReview = usePrivacyTransactionReview();
 
   // Audit key state for auditable compliance
   const [auditKey, setAuditKey] = useState<{ x: string; y: string } | null>(null);
@@ -378,7 +384,39 @@ export default function PrivacyPoolPage() {
 
   const handleDepositClick = () => {
     if (!isConnected || !hasKeys) return;
-    setShowDepositConfirm(true);
+    txReview.review({
+      operationType: "deposit",
+      title: "Privacy Pool Deposit",
+      description: `Deposit ${selectedDenomination} ${selectedAsset.id} into the ${selectedAsset.name} privacy pool`,
+      details: [
+        { label: "Amount", value: `${selectedDenomination} ${selectedAsset.id}` },
+        { label: "Asset", value: selectedAsset.name },
+        { label: "Gas", value: gasPaymentMethod === "gasless-sponsored" ? "Free (Sponsored)" : gasPaymentMethod === "gasless-strk" ? "STRK (Gasless)" : "Wallet (STRK)" },
+        { label: "Compliance", value: complianceLevel.name },
+      ],
+      privacyInfo: {
+        identityHidden: false,
+        amountHidden: true,
+        recipientHidden: false,
+        proofType: "Pedersen Commitment + ElGamal Encryption",
+        whatIsOnChain: ["Commitment hash", "Encrypted amount ciphertext", "Nullifier hash"],
+        whatIsHidden: ["Exact deposit amount", "Blinding factor", "Private note"],
+      },
+      onConfirm: async () => {
+        if (gasPaymentMethod === "wallet") {
+          await deposit(selectedDenomination as PrivacyDenomination, selectedAsset.id);
+        } else {
+          const gasMethod = gasPaymentMethod === "gasless-sponsored" ? "sponsored" : "pay-strk";
+          await gaslessDeposit({
+            denomination: selectedDenomination as PrivacyDenomination,
+            gasMethod: gasMethod as "sponsored" | "pay-strk",
+          });
+        }
+        await refetchDeposits();
+        await refreshPoolStats();
+        return "";
+      },
+    });
   };
 
   const handleDeposit = async () => {
@@ -387,10 +425,8 @@ export default function PrivacyPoolPage() {
 
     try {
       if (gasPaymentMethod === "wallet") {
-        // Standard wallet deposit — pass selected asset
         await deposit(selectedDenomination as PrivacyDenomination, selectedAsset.id);
       } else {
-        // Gasless deposit via AVNU Paymaster
         const gasMethod = gasPaymentMethod === "gasless-sponsored" ? "sponsored" : "pay-strk";
         await gaslessDeposit({
           denomination: selectedDenomination as PrivacyDenomination,
@@ -406,27 +442,56 @@ export default function PrivacyPoolPage() {
 
   const handleWithdrawClick = () => {
     if (!selectedNote || !isConnected) return;
-    setShowWithdrawConfirm(true);
+    txReview.review({
+      operationType: "withdraw",
+      title: "Privacy Pool Withdrawal",
+      description: `Withdraw ${selectedNote.denomination} ${selectedAsset.id} from the privacy pool`,
+      details: [
+        { label: "Amount", value: `${selectedNote.denomination} ${selectedAsset.id}` },
+        { label: "Compliance", value: complianceLevel.name },
+        ...(complianceLevel.id === "association_set" ? [{ label: "ASPs", value: `${selectedASPs.length} selected` }] : []),
+      ],
+      privacyInfo: {
+        identityHidden: true,
+        amountHidden: false,
+        recipientHidden: false,
+        proofType: "ZK-STARK Merkle Inclusion + Nullifier",
+        whatIsOnChain: ["Nullifier hash", "Withdrawal amount", "Merkle root"],
+        whatIsHidden: ["Depositor identity", "Deposit-withdrawal link", "Private note"],
+      },
+      onConfirm: async () => {
+        setProofPhase("connecting");
+        setProofPhaseProgress(0);
+
+        const complianceOptions: WithdrawComplianceOptions = {
+          complianceLevel: complianceLevel.id as ComplianceLevelId,
+          selectedASPs: complianceLevel.id === "association_set" ? selectedASPs : undefined,
+          auditKey: complianceLevel.id === "auditable" && auditKey ? auditKey : undefined,
+        };
+
+        await withdraw(selectedNote, undefined, complianceOptions);
+        setSelectedNote(null);
+        await refetchDeposits();
+        await refreshPoolStats();
+        return "";
+      },
+    });
   };
 
   const handleWithdraw = async () => {
     setShowWithdrawConfirm(false);
     if (!selectedNote || !isConnected) return;
 
-    // Reset proof phase display
     setProofPhase("connecting");
     setProofPhaseProgress(0);
 
     try {
-      // Build compliance options based on user selection
       const complianceOptions: WithdrawComplianceOptions = {
         complianceLevel: complianceLevel.id as ComplianceLevelId,
         selectedASPs: complianceLevel.id === "association_set" ? selectedASPs : undefined,
         auditKey: complianceLevel.id === "auditable" && auditKey ? auditKey : undefined,
       };
 
-      // withdraw() sets withdrawState.proofProgress at each stage (0→20→40→60→80→100)
-      // The useEffect above maps proofProgress to UI phases automatically
       await withdraw(selectedNote, undefined, complianceOptions);
 
       setSelectedNote(null);
@@ -1941,6 +2006,15 @@ export default function PrivacyPoolPage() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Privacy Transaction Review Modal */}
+      {txReview.props && (
+        <PrivacyTransactionReviewModal
+          isOpen={txReview.isOpen}
+          onClose={txReview.close}
+          {...txReview.props}
+        />
+      )}
     </div>
   );
 }
