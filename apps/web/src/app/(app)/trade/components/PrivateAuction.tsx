@@ -34,6 +34,7 @@ import {
   useDarkPool,
   type EpochPhase,
   type DarkPoolBalance,
+  type OrderView,
 } from "@/lib/hooks/useDarkPool";
 import {
   type TradingPairInfo,
@@ -46,6 +47,8 @@ import {
   type NetworkType,
 } from "@/lib/contracts/addresses";
 import { useDarkPoolEvents, type DarkPoolEventItem } from "@/lib/hooks/useProtocolEvents";
+import { EpochHistoryPanel } from "./EpochHistoryPanel";
+import { PnLSummaryCard } from "./PnLSummaryCard";
 
 // ============================================================================
 // Epoch Phase Display Config
@@ -522,6 +525,8 @@ function OrdersTable({
               <th className="px-3 py-3 text-left font-medium">Pair</th>
               <th className="px-3 py-3 text-right font-medium">Price</th>
               <th className="px-3 py-3 text-right font-medium">Amount</th>
+              <th className="px-3 py-3 text-right font-medium">Fill Price</th>
+              <th className="px-3 py-3 text-right font-medium">P&L</th>
               <th className="px-3 py-3 text-center font-medium">Status</th>
               <th className="px-3 py-3 text-center font-medium">Epoch</th>
               <th className="px-5 py-3 text-right font-medium">Action</th>
@@ -557,6 +562,32 @@ function OrdersTable({
                   <td className="px-3 py-3.5 text-white text-xs font-medium">{order.pair}</td>
                   <td className="px-3 py-3.5 text-right text-white font-mono text-xs">{order.price}</td>
                   <td className="px-3 py-3.5 text-right text-white font-mono text-xs">{order.amount}</td>
+                  <td className="px-3 py-3.5 text-right text-xs font-mono">
+                    {order.clearingPrice ? (
+                      <span className="text-gray-300">{order.clearingPrice}</span>
+                    ) : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-3.5 text-right text-xs font-mono">
+                    {order.clearingPrice && order.fillAmount ? (() => {
+                      const entry = parseFloat(order.price);
+                      const fill = parseFloat(order.clearingPrice);
+                      const amount = parseFloat(order.fillAmount);
+                      if (!entry || !fill || !amount) return <span className="text-gray-600">-</span>;
+                      const pnl = order.side === "buy"
+                        ? (entry - fill) * amount
+                        : (fill - entry) * amount;
+                      const isProfit = pnl >= 0;
+                      return (
+                        <span className={cn(isProfit ? "text-emerald-400" : "text-red-400")}>
+                          {isProfit ? "+" : ""}{pnl.toFixed(4)}
+                        </span>
+                      );
+                    })() : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </td>
                   <td className="px-3 py-3.5 text-center">
                     <span
                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide", {
@@ -741,6 +772,9 @@ export function PrivateAuction() {
     myOrders,
     epochResult,
     pairs,
+    relayMode,
+    setRelayMode,
+    relayConnected,
     resetError,
   } = useDarkPool();
 
@@ -820,18 +854,39 @@ export function PrivateAuction() {
 
   return (
     <div className="space-y-5">
-      {/* Privacy Banner */}
+      {/* Privacy Banner + Relay Toggle */}
       <motion.div
         initial={{ opacity: 0, y: -5 }}
         animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-violet-500/10 via-cyan-500/5 to-transparent border border-violet-500/15"
       >
         <Shield className="w-4 h-4 text-violet-400 flex-shrink-0" />
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-400 flex-1">
           <span className="text-violet-400 font-semibold">Fully encrypted trading.</span>{" "}
-          Orders are sealed during commit, revealed briefly for matching, then settled at uniform clearing price.
+          Orders are sealed during commit, revealed briefly for matching, then settled at uniform clearing price per pair.
           No front-running. No MEV. Balances always encrypted.
         </p>
+        {/* Relay Mode Toggle */}
+        <button
+          onClick={() => setRelayMode(!relayMode)}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[10px] font-semibold transition-all flex-shrink-0 border",
+            relayMode
+              ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+              : "bg-white/[0.03] border-white/[0.08] text-gray-500 hover:text-white hover:border-white/20",
+          )}
+          title={relayMode ? "Transactions submitted via relay — identity hidden" : "Enable relay mode to hide your identity"}
+        >
+          <Shield className="w-3 h-3" />
+          {relayMode ? (
+            <>
+              <span className={cn("w-1.5 h-1.5 rounded-full", relayConnected ? "bg-emerald-400" : "bg-amber-400 animate-pulse")} />
+              Identity Hidden
+            </>
+          ) : (
+            "Relay Mode"
+          )}
+        </button>
       </motion.div>
 
       {/* Epoch Timer Banner */}
@@ -1213,6 +1268,9 @@ export function PrivateAuction() {
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Epoch History Panel */}
+          <EpochHistoryPanel />
         </div>
 
         {/* Right Sidebar */}
@@ -1225,6 +1283,9 @@ export function PrivateAuction() {
             isLoading={isBalanceOp}
             onRefresh={refreshBalances}
           />
+
+          {/* P&L Summary Card */}
+          <PnLSummaryCard orders={myOrders} />
 
           {/* How It Works */}
           <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">

@@ -1,14 +1,21 @@
-/// Dark Pool Auction Contract — Fully Encrypted Commit-Reveal Batch Auction
+/// Dark Pool Auction Contract v4 — Per-Pair Settlement + Delegated Execution
 ///
 /// Commit-reveal batch auction where orders are sealed during commit phase,
-/// revealed in the next phase, and settled at a uniform clearing price.
+/// revealed in the next phase, and settled at a uniform clearing price PER PAIR.
 ///
 /// Privacy model:
-/// - Identity: Hidden (session keys / relayers)
+/// - Identity: Hidden (session keys / relayers / SNIP-9 outside execution)
 /// - Balances: Always encrypted (ElGamal)
 /// - Orders during commit: Fully hidden (only hash visible)
 /// - Front-running: Impossible (commit locks order before reveal)
 /// - MEV: Zero (uniform clearing price, no ordering advantage)
+///
+/// v4 changes:
+/// - Per-pair settlement: each (give_asset, want_asset) pair gets its own clearing price
+/// - PairSettled event for each pair in an epoch
+/// - get_epoch_pair_result view
+/// - execute_from_outside (SNIP-9) for relay-submitted transactions
+/// - Session key registry for delegated execution
 ///
 /// Epoch lifecycle (~3 blocks = ~12 seconds):
 ///   Block N:   COMMIT — submit order_hash + amount commitment + balance proof
@@ -211,6 +218,29 @@ pub trait IDarkPoolAuction<TContractState> {
     fn get_epoch_result(self: @TContractState, epoch_id: u64) -> EpochResult;
     fn get_supported_pairs(self: @TContractState) -> Array<TradingPair>;
     fn is_order_claimed(self: @TContractState, order_id: u256) -> bool;
+    fn get_epoch_pair_result(
+        self: @TContractState,
+        epoch_id: u64,
+        give_asset: felt252,
+        want_asset: felt252,
+    ) -> EpochResult;
+
+    // --- Session Keys (for relay/outside execution) ---
+    fn register_session_key(ref self: TContractState, session_public_key: felt252);
+    fn revoke_session_key(ref self: TContractState);
+    fn get_session_key(self: @TContractState, owner: ContractAddress) -> felt252;
+
+    // --- Outside Execution (SNIP-9) ---
+    fn execute_from_outside(
+        ref self: TContractState,
+        caller: ContractAddress,
+        nonce: felt252,
+        execute_after: u64,
+        execute_before: u64,
+        call_entrypoint: felt252,
+        call_calldata: Array<felt252>,
+        signature: Array<felt252>,
+    );
 
     // --- Admin ---
     fn add_trading_pair(ref self: TContractState, give: felt252, want: felt252);
@@ -256,6 +286,7 @@ pub mod DarkPoolAuction {
     };
     use core::poseidon::poseidon_hash_span;
     use core::num::traits::Zero;
+    use core::ecdsa::check_ecdsa_signature;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
@@ -341,6 +372,20 @@ pub mod DarkPoolAuction {
         // Fill claims (prevent double-claim)
         order_claimed: Map<u256, bool>,
 
+        // Per-pair epoch results (v4)
+        epoch_pair_cp_low: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_cp_high: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_buy_filled_low: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_buy_filled_high: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_sell_filled_low: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_sell_filled_high: Map<(u64, felt252, felt252), felt252>,
+        epoch_pair_num_fills: Map<(u64, felt252, felt252), u32>,
+
+        // Session key registry: owner → session_public_key (for relay/outside execution)
+        session_keys: Map<ContractAddress, felt252>,
+        // Outside execution nonces (anti-replay)
+        outside_nonce_used: Map<felt252, bool>,
+
         // Timelocked upgrade
         pending_upgrade: ClassHash,
         upgrade_scheduled_at: u64,
@@ -366,6 +411,9 @@ pub mod DarkPoolAuction {
         PairAdded: PairAdded,
         AssetAdded: AssetAdded,
         FillClaimed: FillClaimed,
+        PairSettled: PairSettled,
+        SessionKeyRegistered: SessionKeyRegistered,
+        SessionKeyRevoked: SessionKeyRevoked,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -451,6 +499,31 @@ pub mod DarkPoolAuction {
         pub trader: ContractAddress,
         pub receive_asset: felt252,
         pub spend_asset: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct PairSettled {
+        #[key]
+        pub epoch_id: u64,
+        pub give_asset: felt252,
+        pub want_asset: felt252,
+        pub clearing_price: u256,
+        pub total_buy_filled: u256,
+        pub total_sell_filled: u256,
+        pub num_fills: u32,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct SessionKeyRegistered {
+        #[key]
+        pub owner: ContractAddress,
+        pub session_public_key: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct SessionKeyRevoked {
+        #[key]
+        pub owner: ContractAddress,
     }
 
     // ========================================================================
@@ -683,13 +756,22 @@ pub mod DarkPoolAuction {
                 return;
             }
 
-            // Collect revealed orders, expire unrevealed
-            let mut buy_prices: Array<u256> = array![];
-            let mut buy_amounts: Array<u256> = array![];
-            let mut buy_ids: Array<u256> = array![];
-            let mut sell_prices: Array<u256> = array![];
-            let mut sell_amounts: Array<u256> = array![];
-            let mut sell_ids: Array<u256> = array![];
+            // ==================================================================
+            // Phase 1: Collect revealed orders, expire unrevealed, discover pairs
+            // ==================================================================
+
+            // Flat list of unique pairs seen: (give_asset, want_asset)
+            let mut unique_pair_give: Array<felt252> = array![];
+            let mut unique_pair_want: Array<felt252> = array![];
+            let mut unique_pair_count: u32 = 0;
+
+            // Collect all revealed orders into flat arrays
+            let mut all_order_ids: Array<u256> = array![];
+            let mut all_give_assets: Array<felt252> = array![];
+            let mut all_want_assets: Array<felt252> = array![];
+            let mut all_prices: Array<u256> = array![];
+            let mut all_amounts: Array<u256> = array![];
+            let mut all_sides: Array<OrderSide> = array![];
 
             let mut i: u32 = 0;
             loop {
@@ -706,47 +788,137 @@ pub mod DarkPoolAuction {
                     self.locked_commitment_y.write(order_id, 0);
                 } else if order.status == OrderStatus::Revealed {
                     let revealed = self.revealed_orders.read(order_id);
-                    match revealed.side {
-                        OrderSide::Buy => {
-                            buy_prices.append(revealed.price);
-                            buy_amounts.append(revealed.amount);
-                            buy_ids.append(order_id);
-                        },
-                        OrderSide::Sell => {
-                            sell_prices.append(revealed.price);
-                            sell_amounts.append(revealed.amount);
-                            sell_ids.append(order_id);
-                        },
+
+                    // Track unique pairs
+                    let mut found_pair = false;
+                    let mut p: u32 = 0;
+                    loop {
+                        if p >= unique_pair_count { break; }
+                        if *unique_pair_give.at(p) == revealed.give_asset
+                            && *unique_pair_want.at(p) == revealed.want_asset {
+                            found_pair = true;
+                            break;
+                        }
+                        p += 1;
+                    };
+                    if !found_pair {
+                        unique_pair_give.append(revealed.give_asset);
+                        unique_pair_want.append(revealed.want_asset);
+                        unique_pair_count += 1;
                     }
+
+                    all_order_ids.append(order_id);
+                    all_give_assets.append(revealed.give_asset);
+                    all_want_assets.append(revealed.want_asset);
+                    all_prices.append(revealed.price);
+                    all_amounts.append(revealed.amount);
+                    all_sides.append(revealed.side);
                 }
 
                 i += 1;
             };
 
-            // Find clearing price and execute fills
-            let (clearing_price, total_buy_filled, total_sell_filled, num_fills) =
-                self._compute_clearing_and_fill(
-                    buy_prices.span(), buy_amounts.span(), buy_ids.span(),
-                    sell_prices.span(), sell_amounts.span(), sell_ids.span(),
-                );
+            // ==================================================================
+            // Phase 2: For each unique pair, run clearing algorithm
+            // ==================================================================
 
-            // Store result (flattened)
-            self.epoch_clearing_price_low.write(epoch_id, clearing_price.low.into());
-            self.epoch_clearing_price_high.write(epoch_id, clearing_price.high.into());
-            self.epoch_total_buy_filled_low.write(epoch_id, total_buy_filled.low.into());
-            self.epoch_total_buy_filled_high.write(epoch_id, total_buy_filled.high.into());
-            self.epoch_total_sell_filled_low.write(epoch_id, total_sell_filled.low.into());
-            self.epoch_total_sell_filled_high.write(epoch_id, total_sell_filled.high.into());
-            self.epoch_num_fills.write(epoch_id, num_fills);
+            let total_revealed = all_order_ids.len();
+            let mut aggregate_buy_filled: u256 = 0;
+            let mut aggregate_sell_filled: u256 = 0;
+            let mut aggregate_num_fills: u32 = 0;
+            let mut aggregate_clearing_price: u256 = 0; // last pair's CP for backwards compat
+
+            let mut p_idx: u32 = 0;
+            loop {
+                if p_idx >= unique_pair_count { break; }
+                let pair_give = *unique_pair_give.at(p_idx);
+                let pair_want = *unique_pair_want.at(p_idx);
+
+                // Filter orders for this pair
+                let mut buy_prices: Array<u256> = array![];
+                let mut buy_amounts: Array<u256> = array![];
+                let mut buy_ids: Array<u256> = array![];
+                let mut sell_prices: Array<u256> = array![];
+                let mut sell_amounts: Array<u256> = array![];
+                let mut sell_ids: Array<u256> = array![];
+
+                let mut j: u32 = 0;
+                loop {
+                    if j >= total_revealed { break; }
+                    if *all_give_assets.at(j) == pair_give
+                        && *all_want_assets.at(j) == pair_want {
+                        let side = *all_sides.at(j);
+                        match side {
+                            OrderSide::Buy => {
+                                buy_prices.append(*all_prices.at(j));
+                                buy_amounts.append(*all_amounts.at(j));
+                                buy_ids.append(*all_order_ids.at(j));
+                            },
+                            OrderSide::Sell => {
+                                sell_prices.append(*all_prices.at(j));
+                                sell_amounts.append(*all_amounts.at(j));
+                                sell_ids.append(*all_order_ids.at(j));
+                            },
+                        }
+                    }
+                    j += 1;
+                };
+
+                // Run clearing for this pair
+                let (cp, pair_buy_filled, pair_sell_filled, pair_fills) =
+                    self._compute_clearing_and_fill(
+                        buy_prices.span(), buy_amounts.span(), buy_ids.span(),
+                        sell_prices.span(), sell_amounts.span(), sell_ids.span(),
+                    );
+
+                // Store per-pair result
+                self.epoch_pair_cp_low.write((epoch_id, pair_give, pair_want), cp.low.into());
+                self.epoch_pair_cp_high.write((epoch_id, pair_give, pair_want), cp.high.into());
+                self.epoch_pair_buy_filled_low.write((epoch_id, pair_give, pair_want), pair_buy_filled.low.into());
+                self.epoch_pair_buy_filled_high.write((epoch_id, pair_give, pair_want), pair_buy_filled.high.into());
+                self.epoch_pair_sell_filled_low.write((epoch_id, pair_give, pair_want), pair_sell_filled.low.into());
+                self.epoch_pair_sell_filled_high.write((epoch_id, pair_give, pair_want), pair_sell_filled.high.into());
+                self.epoch_pair_num_fills.write((epoch_id, pair_give, pair_want), pair_fills);
+
+                // Emit per-pair event
+                self.emit(PairSettled {
+                    epoch_id,
+                    give_asset: pair_give,
+                    want_asset: pair_want,
+                    clearing_price: cp,
+                    total_buy_filled: pair_buy_filled,
+                    total_sell_filled: pair_sell_filled,
+                    num_fills: pair_fills,
+                });
+
+                aggregate_buy_filled = aggregate_buy_filled + pair_buy_filled;
+                aggregate_sell_filled = aggregate_sell_filled + pair_sell_filled;
+                aggregate_num_fills = aggregate_num_fills + pair_fills;
+                if cp > 0 { aggregate_clearing_price = cp; }
+
+                p_idx += 1;
+            };
+
+            // ==================================================================
+            // Phase 3: Store aggregate epoch stats (backwards compatible)
+            // ==================================================================
+
+            self.epoch_clearing_price_low.write(epoch_id, aggregate_clearing_price.low.into());
+            self.epoch_clearing_price_high.write(epoch_id, aggregate_clearing_price.high.into());
+            self.epoch_total_buy_filled_low.write(epoch_id, aggregate_buy_filled.low.into());
+            self.epoch_total_buy_filled_high.write(epoch_id, aggregate_buy_filled.high.into());
+            self.epoch_total_sell_filled_low.write(epoch_id, aggregate_sell_filled.low.into());
+            self.epoch_total_sell_filled_high.write(epoch_id, aggregate_sell_filled.high.into());
+            self.epoch_num_fills.write(epoch_id, aggregate_num_fills);
             self.epoch_settled_at.write(epoch_id, get_block_timestamp());
             self.epoch_settled.write(epoch_id, true);
 
             self.emit(EpochSettled {
                 epoch_id,
-                clearing_price,
-                total_buy_filled,
-                total_sell_filled,
-                num_fills,
+                clearing_price: aggregate_clearing_price,
+                total_buy_filled: aggregate_buy_filled,
+                total_sell_filled: aggregate_sell_filled,
+                num_fills: aggregate_num_fills,
             });
         }
 
@@ -904,6 +1076,111 @@ pub mod DarkPoolAuction {
 
         fn is_order_claimed(self: @ContractState, order_id: u256) -> bool {
             self.order_claimed.read(order_id)
+        }
+
+        fn get_epoch_pair_result(
+            self: @ContractState,
+            epoch_id: u64,
+            give_asset: felt252,
+            want_asset: felt252,
+        ) -> EpochResult {
+            let cp_low: felt252 = self.epoch_pair_cp_low.read((epoch_id, give_asset, want_asset));
+            let cp_high: felt252 = self.epoch_pair_cp_high.read((epoch_id, give_asset, want_asset));
+            let bf_low: felt252 = self.epoch_pair_buy_filled_low.read((epoch_id, give_asset, want_asset));
+            let bf_high: felt252 = self.epoch_pair_buy_filled_high.read((epoch_id, give_asset, want_asset));
+            let sf_low: felt252 = self.epoch_pair_sell_filled_low.read((epoch_id, give_asset, want_asset));
+            let sf_high: felt252 = self.epoch_pair_sell_filled_high.read((epoch_id, give_asset, want_asset));
+
+            EpochResult {
+                epoch_id,
+                clearing_price: u256 { low: cp_low.try_into().unwrap(), high: cp_high.try_into().unwrap() },
+                total_buy_filled: u256 { low: bf_low.try_into().unwrap(), high: bf_high.try_into().unwrap() },
+                total_sell_filled: u256 { low: sf_low.try_into().unwrap(), high: sf_high.try_into().unwrap() },
+                num_fills: self.epoch_pair_num_fills.read((epoch_id, give_asset, want_asset)),
+                settled_at: self.epoch_settled_at.read(epoch_id),
+            }
+        }
+
+        // --------------------------------------------------------------------
+        // Session Keys (for relay/outside execution)
+        // --------------------------------------------------------------------
+
+        fn register_session_key(ref self: ContractState, session_public_key: felt252) {
+            let caller = get_caller_address();
+            assert!(session_public_key != 0, "Invalid session key");
+            self.session_keys.write(caller, session_public_key);
+            self.emit(SessionKeyRegistered { owner: caller, session_public_key });
+        }
+
+        fn revoke_session_key(ref self: ContractState) {
+            let caller = get_caller_address();
+            self.session_keys.write(caller, 0);
+            self.emit(SessionKeyRevoked { owner: caller });
+        }
+
+        fn get_session_key(self: @ContractState, owner: ContractAddress) -> felt252 {
+            self.session_keys.read(owner)
+        }
+
+        // --------------------------------------------------------------------
+        // Outside Execution (SNIP-9 simplified)
+        // --------------------------------------------------------------------
+
+        fn execute_from_outside(
+            ref self: ContractState,
+            caller: ContractAddress,
+            nonce: felt252,
+            execute_after: u64,
+            execute_before: u64,
+            call_entrypoint: felt252,
+            call_calldata: Array<felt252>,
+            signature: Array<felt252>,
+        ) {
+            self.pausable.assert_not_paused();
+
+            // 1. Verify caller matches (or is ANY_CALLER = 0x0)
+            let actual_caller = get_caller_address();
+            if !caller.is_zero() {
+                assert!(actual_caller == caller, "Unauthorized caller");
+            }
+
+            // 2. Verify nonce not used (anti-replay)
+            assert!(!self.outside_nonce_used.read(nonce), "Nonce already used");
+
+            // 3. Verify time window
+            let now = get_block_timestamp();
+            assert!(now >= execute_after, "Too early");
+            assert!(now <= execute_before, "Too late");
+
+            // 4. Verify signature over (nonce, execute_after, execute_before, entrypoint) hash
+            // The signature must come from a registered session key owner
+            assert!(signature.len() >= 3, "Invalid signature");
+            let sig_owner_felt = *signature.at(0);
+            let sig_r = *signature.at(1);
+            let sig_s = *signature.at(2);
+
+            // Reconstruct the owner address from the signature
+            // Session key verification: hash must match registered key
+            let msg_hash = poseidon_hash_span(
+                array![nonce, execute_after.into(), execute_before.into(), call_entrypoint].span()
+            );
+
+            // Verify session key is registered
+            let sig_owner: ContractAddress = sig_owner_felt.try_into().unwrap();
+            let registered_key = self.session_keys.read(sig_owner);
+            assert!(registered_key != 0, "No session key registered");
+
+            // Verify ECDSA signature: session key is a STARK public key
+            // The signer proves knowledge of the private key via (r, s) over msg_hash
+            let valid = check_ecdsa_signature(msg_hash, registered_key, sig_r, sig_s);
+            assert!(valid, "Invalid session signature");
+
+            // 5. Mark nonce used
+            self.outside_nonce_used.write(nonce, true);
+
+            // 6. The call is now authorized — we don't dispatch internally,
+            //    the relay submits the actual call separately in the same multicall.
+            //    This entrypoint just validates authorization.
         }
 
         // --------------------------------------------------------------------
