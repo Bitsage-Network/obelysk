@@ -138,11 +138,11 @@ const DEFAULT_CONFIG: ProverConfig = {
   useGpu: true,
 };
 
-/** STWO circuit program hashes (deployed on Starknet Sepolia) */
+/** STWO circuit program hashes — pending deployment to Starknet Sepolia */
 export const STWO_PROGRAM_HASHES = {
-  rangeProof: "0x0", // TODO: Deploy and update
-  balanceProof: "0x0", // TODO: Deploy and update
-  transferProof: "0x0", // TODO: Deploy and update
+  rangeProof: null as string | null, // Not yet deployed
+  balanceProof: null as string | null, // Not yet deployed
+  transferProof: null as string | null, // Not yet deployed
 };
 
 // ============================================================================

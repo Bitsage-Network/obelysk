@@ -386,7 +386,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         // Step 2a: Generate Merkle proof on-chain (must come before nullifier)
         const merkleProof = await generateMerkleProofOnChain(
           selectedNote.commitment,
-          "sepolia"
+          network as NetworkType
         );
 
         if (!merkleProof) {

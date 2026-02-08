@@ -27,11 +27,11 @@ import {
 import { useAccount } from '@starknet-react/core';
 import { usePragmaSagePrice } from './usePragmaOracle';
 
-// Fallback SAGE price in USD (used when on-chain sources fail)
-const SAGE_FALLBACK_PRICE_USD = 0.10;
+// Fallback SAGE price — 0 means "unavailable" (UI should handle gracefully)
+const SAGE_FALLBACK_PRICE_USD = 0;
 
-// Approximate STRK/USD price for conversion
-const STRK_USD_PRICE = 0.50;
+// STRK/USD price — 0 means "unavailable", updated from Pragma Oracle when possible
+const STRK_USD_PRICE = 0;
 
 // ============================================================================
 // SAGE Price Hook - Real OTC Market Data
@@ -337,8 +337,8 @@ export function useOnChainNetworkGraph(network: NetworkType = 'sepolia'): OnChai
         x: centerX + Math.cos(angle) * validatorRadius,
         y: centerY + Math.sin(angle) * validatorRadius,
         earnings: `${estimatedDailyEarnings}/day`,
-        uptime: '99.8%',
-        commission: 5,
+        uptime: '—',
+        commission: 0,
       });
 
       // Connect validators to nearby pools

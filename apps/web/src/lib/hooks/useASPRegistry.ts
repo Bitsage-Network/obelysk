@@ -170,25 +170,9 @@ export function useASPRegistry(options: UseASPRegistryOptions = {}): UseASPRegis
         }
       }
 
-      // If API fetch failed, use contract-based approach
+      // If API fetch failed, report empty — no fake data
       if (fetchedASPs.length === 0) {
-        // Fallback: Generate placeholder ASPs based on count
-        // In production, this should query the contract or an indexer
-        for (let i = 0; i < aspCount; i++) {
-          fetchedASPs.push({
-            aspId: `0x${i.toString(16)}`,
-            nameHash: `0x${Buffer.from(`ASP ${i + 1}`).toString("hex")}`,
-            displayName: `Association Set Provider ${i + 1}`,
-            publicKey: { x: "0x0", y: "0x0" },
-            metadataUriHash: "0x0",
-            status: "Active",
-            registeredAt: Date.now() - (i * 86400000),
-            stakedAmount: 10000n * BigInt(10 ** 18),
-            approvalVotes: 3,
-            totalSets: 1,
-            listIndex: i,
-          });
-        }
+        console.warn("[ASPRegistry] No ASPs available — API offline and no on-chain indexer configured");
       }
 
       setASPs(fetchedASPs);

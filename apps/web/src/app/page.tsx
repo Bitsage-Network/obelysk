@@ -118,9 +118,9 @@ const features = [
 ];
 
 const stats = [
-  { label: "Total Value Locked", value: "$2.4M", icon: Layers },
-  { label: "Private Transactions", value: "12,847", icon: Shield },
-  { label: "Active Users", value: "1,203", icon: Activity },
+  { label: "Network", value: "Starknet", icon: Layers },
+  { label: "Privacy Model", value: "ElGamal + STARK", icon: Shield },
+  { label: "Settlement", value: "On-chain", icon: Activity },
   { label: "Privacy Score", value: "100%", icon: CheckCircle2 },
 ];
 
@@ -815,11 +815,11 @@ export default function HomePage() {
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-gray-500">Oracle Reference Price</div>
                     <div className="flex items-center gap-2">
-                      <span className="text-2xl font-bold text-white font-mono">$42,156.78</span>
-                      <span className="text-xs text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded">+2.4%</span>
+                      <span className="text-2xl font-bold text-white font-mono">—</span>
+                      <span className="text-xs text-gray-400 bg-white/5 px-2 py-1 rounded">Live</span>
                     </div>
                   </div>
-                  <div className="text-xs text-gray-600 mt-1">via Pragma Oracle • Updated 2s ago</div>
+                  <div className="text-xs text-gray-600 mt-1">via Pragma Oracle • Connect wallet for live prices</div>
                 </div>
 
                 {/* Encrypted Liquidity Visualization */}
@@ -885,7 +885,7 @@ export default function HomePage() {
                             animate={{ opacity: [1, 0.7, 1] }}
                             transition={{ duration: 3, repeat: Infinity }}
                           >
-                            12
+                            ••
                           </motion.div>
                           <div className="text-sm text-gray-500">encrypted orders</div>
                           <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400/70">
@@ -947,7 +947,7 @@ export default function HomePage() {
                             animate={{ opacity: [1, 0.7, 1] }}
                             transition={{ duration: 3, delay: 0.5, repeat: Infinity }}
                           >
-                            8
+                            ••
                           </motion.div>
                           <div className="text-sm text-gray-500">encrypted orders</div>
                           <div className="mt-3 flex items-center gap-2 text-xs text-red-400/70">
@@ -963,7 +963,7 @@ export default function HomePage() {
                       <div className="flex items-center justify-between mb-3">
                         <div className="text-sm text-gray-400">Liquidity Depth</div>
                         <div className="flex items-center gap-2">
-                          <span className="text-emerald-400 text-sm font-medium">Strong</span>
+                          <span className="text-emerald-400 text-sm font-medium">Active</span>
                           <div className="flex gap-0.5">
                             {[1, 2, 3, 4, 5].map((i) => (
                               <motion.div
@@ -1025,7 +1025,7 @@ export default function HomePage() {
                           >
                             ACTIVE
                           </motion.div>
-                          <div className="text-[10px] text-gray-600 mt-0.5">3 proofs/sec</div>
+                          <div className="text-[10px] text-gray-600 mt-0.5">STWO prover</div>
                         </div>
                       </div>
 
@@ -1063,7 +1063,7 @@ export default function HomePage() {
                       transition={{ duration: 2, repeat: Infinity }}
                     >
                       <Activity className="w-3 h-3" />
-                      <span>2 matches this minute</span>
+                      <span>Matching orders...</span>
                     </motion.div>
                   </div>
                 </div>
@@ -1106,7 +1106,7 @@ export default function HomePage() {
                     <div className="flex-1">
                       <div className="text-xs text-gray-400 mb-1">Encrypting your order data...</div>
                       <div className="flex items-center gap-2 text-[10px] font-mono">
-                        <span className="text-gray-600">{"{ price: 42100, amount: 1.5 }"}</span>
+                        <span className="text-gray-600">{"{ price: ••••, amount: •.•• }"}</span>
                         <motion.span
                           animate={{ opacity: [0, 1, 0] }}
                           transition={{ duration: 1, repeat: Infinity }}
@@ -1170,19 +1170,19 @@ export default function HomePage() {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <div className="text-gray-500 text-xs mb-1">Amount</div>
-                          <div className="font-mono text-white">1.5000 BTC</div>
+                          <div className="font-mono text-white">•.•••• ETH</div>
                         </div>
                         <div>
                           <div className="text-gray-500 text-xs mb-1">Limit Price</div>
-                          <div className="font-mono text-white">$42,100.00</div>
+                          <div className="font-mono text-white">••••.•• STRK</div>
                         </div>
                       </div>
                       <div className="mt-3 pt-3 border-t border-emerald-500/10 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Lock className="w-3 h-3 text-cyan-400" />
-                          <span className="font-mono text-cyan-400/70">0x7f3a9b...</span>
+                          <span className="font-mono text-cyan-400/70">encrypted</span>
                         </div>
-                        <div className="text-[10px] text-gray-600">Submitted 30s ago</div>
+                        <div className="text-[10px] text-gray-600">Pending commit</div>
                       </div>
                     </motion.div>
 
@@ -1223,19 +1223,19 @@ export default function HomePage() {
                       <div className="grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <div className="text-gray-500 text-xs mb-1">Amount</div>
-                          <div className="font-mono text-white">0.2500 BTC</div>
+                          <div className="font-mono text-white">••.•• STRK</div>
                         </div>
                         <div>
                           <div className="text-gray-500 text-xs mb-1">Limit Price</div>
-                          <div className="font-mono text-white">$42,500.00</div>
+                          <div className="font-mono text-white">•.•••• ETH</div>
                         </div>
                       </div>
                       <div className="mt-3 pt-3 border-t border-red-500/10 flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <Lock className="w-3 h-3 text-cyan-400" />
-                          <span className="font-mono text-cyan-400/70">0x3e7f1c...</span>
+                          <span className="font-mono text-cyan-400/70">encrypted</span>
                         </div>
-                        <div className="text-[10px] text-gray-600">Submitted 2m ago</div>
+                        <div className="text-[10px] text-gray-600">Pending commit</div>
                       </div>
                     </motion.div>
                   </div>
@@ -1260,8 +1260,8 @@ export default function HomePage() {
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         </div>
                         <div>
-                          <div className="text-sm text-white">Bought <span className="font-mono text-emerald-400">0.5 BTC</span></div>
-                          <div className="text-xs text-gray-500">@ $42,080.00 • 2 min ago</div>
+                          <div className="text-sm text-white">Bought <span className="font-mono text-emerald-400">•.•• ETH</span></div>
+                          <div className="text-xs text-gray-500">Encrypted fill</div>
                         </div>
                       </div>
                       <div className="text-right">
@@ -1269,7 +1269,7 @@ export default function HomePage() {
                           <Lock className="w-3 h-3" />
                           Private
                         </div>
-                        <div className="text-[10px] text-gray-600 font-mono">tx: 0xa1f4...</div>
+                        <div className="text-[10px] text-gray-600 font-mono">tx: encrypted</div>
                       </div>
                     </motion.div>
 
@@ -1285,8 +1285,8 @@ export default function HomePage() {
                           <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                         </div>
                         <div>
-                          <div className="text-sm text-white">Sold <span className="font-mono text-red-400">1.0 BTC</span></div>
-                          <div className="text-xs text-gray-500">@ $42,200.00 • 15 min ago</div>
+                          <div className="text-sm text-white">Sold <span className="font-mono text-red-400">••.• STRK</span></div>
+                          <div className="text-xs text-gray-500">Encrypted fill</div>
                         </div>
                       </div>
                       <div className="text-right">
@@ -1294,7 +1294,7 @@ export default function HomePage() {
                           <Lock className="w-3 h-3" />
                           Private
                         </div>
-                        <div className="text-[10px] text-gray-600 font-mono">tx: 0xc5d8...</div>
+                        <div className="text-[10px] text-gray-600 font-mono">tx: encrypted</div>
                       </div>
                     </motion.div>
                   </div>

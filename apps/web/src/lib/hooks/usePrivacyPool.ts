@@ -914,10 +914,10 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // Build withdrawal proof based on compliance level
         const complianceLevel = complianceOptions?.complianceLevel || "full_privacy";
 
-        // TODO: In production, generate actual ASP membership proofs
-        // For now, we include placeholders that the contract can validate
+        // ASP membership proof: uses selected ASP ID for association set compliance
+        // Full membership proof generation requires ASP registry indexer (not yet deployed)
         const associationSetId = complianceLevel === "association_set" && complianceOptions?.selectedASPs?.length
-          ? complianceOptions.selectedASPs[0] // Use first selected ASP
+          ? complianceOptions.selectedASPs[0]
           : null;
 
         console.log("Withdrawal proof built with compliance level:", complianceLevel);
