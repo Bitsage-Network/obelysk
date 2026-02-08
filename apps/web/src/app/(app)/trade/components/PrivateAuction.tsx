@@ -562,7 +562,7 @@ function OrdersTable({
                       className={cn("px-2.5 py-1 rounded-lg text-[10px] font-semibold uppercase tracking-wide", {
                         "bg-cyan-500/10 text-cyan-400 border border-cyan-500/20": order.status === "committed",
                         "bg-amber-500/10 text-amber-400 border border-amber-500/20": order.status === "revealed",
-                        "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20": order.status === "filled",
+                        "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20": order.status === "filled" || order.status === "claimed",
                         "bg-gray-500/10 text-gray-400 border border-gray-500/20": order.status === "cancelled" || order.status === "expired",
                       })}
                     >
@@ -591,6 +591,11 @@ function OrdersTable({
                         >
                           Claim Fill
                         </button>
+                      )}
+                      {order.status === "claimed" && (
+                        <span className="px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" /> Claimed
+                        </span>
                       )}
                       {order.commitTxHash && explorerUrl && (
                         <a

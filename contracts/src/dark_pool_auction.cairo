@@ -210,6 +210,7 @@ pub trait IDarkPoolAuction<TContractState> {
     fn get_epoch_orders(self: @TContractState, epoch_id: u64) -> Array<u256>;
     fn get_epoch_result(self: @TContractState, epoch_id: u64) -> EpochResult;
     fn get_supported_pairs(self: @TContractState) -> Array<TradingPair>;
+    fn is_order_claimed(self: @TContractState, order_id: u256) -> bool;
 
     // --- Admin ---
     fn add_trading_pair(ref self: TContractState, give: felt252, want: felt252);
@@ -899,6 +900,10 @@ pub mod DarkPoolAuction {
                 i += 1;
             };
             result
+        }
+
+        fn is_order_claimed(self: @ContractState, order_id: u256) -> bool {
+            self.order_claimed.read(order_id)
         }
 
         // --------------------------------------------------------------------
