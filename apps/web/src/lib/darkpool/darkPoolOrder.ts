@@ -222,6 +222,26 @@ const DARK_POOL_ABI = [
     outputs: [{ name: "claimed", type: "core::bool" }],
     state_mutability: "view",
   },
+  {
+    name: "get_epoch_pair_result",
+    type: "function",
+    inputs: [
+      { name: "epoch_id", type: "core::integer::u64" },
+      { name: "give_asset", type: "core::felt252" },
+      { name: "want_asset", type: "core::felt252" },
+    ],
+    outputs: [{ name: "result", type: "dark_pool_auction::dark_pool_auction::EpochResult" }],
+    state_mutability: "view",
+  },
+  {
+    name: "get_session_key",
+    type: "function",
+    inputs: [
+      { name: "owner", type: "core::starknet::contract_address::ContractAddress" },
+    ],
+    outputs: [{ name: "key", type: "core::felt252" }],
+    state_mutability: "view",
+  },
 ] as const;
 
 // ============================================================================
@@ -476,6 +496,51 @@ export async function readEpochResult(
     };
   } catch (err) {
     console.warn("[DarkPool] Failed to read epoch result:", err);
+    return null;
+  }
+}
+
+/**
+ * Read epoch settlement result for a specific trading pair
+ */
+export async function readEpochPairResult(
+  network: NetworkType,
+  epochId: number,
+  giveAsset: string,
+  wantAsset: string,
+): Promise<ContractEpochResult | null> {
+  const contractAddress = getDarkPoolAddress(network);
+  if (contractAddress === "0x0") return null;
+
+  const provider = getProvider(network);
+
+  try {
+    const result = await provider.callContract({
+      contractAddress,
+      entrypoint: "get_epoch_pair_result",
+      calldata: [epochId.toString(), giveAsset, wantAsset],
+    });
+
+    // Returns: epoch_id, clearing_price (u256 = 2 felts), total_buy_filled (u256), total_sell_filled (u256), num_fills, settled_at
+    const resultEpochId = Number(BigInt(result[0] || "0"));
+    const clearingPrice = (BigInt(result[2] || "0") << 128n) | BigInt(result[1] || "0");
+    const totalBuyFilled = (BigInt(result[4] || "0") << 128n) | BigInt(result[3] || "0");
+    const totalSellFilled = (BigInt(result[6] || "0") << 128n) | BigInt(result[5] || "0");
+    const numFills = Number(BigInt(result[7] || "0"));
+    const settledAt = Number(BigInt(result[8] || "0"));
+
+    if (settledAt === 0 && clearingPrice === 0n) return null;
+
+    return {
+      epochId: resultEpochId,
+      clearingPrice,
+      totalBuyFilled,
+      totalSellFilled,
+      numFills,
+      settledAt,
+    };
+  } catch (err) {
+    console.warn("[DarkPool] Failed to read epoch pair result:", err);
     return null;
   }
 }
@@ -924,6 +989,102 @@ export function buildClaimFillCalls(
       ],
     },
   ];
+}
+
+// ============================================================================
+// Session Key & Outside Execution Builders
+// ============================================================================
+
+/**
+ * Build register_session_key transaction calls.
+ * Registers a STARK public key for delegated execution.
+ */
+export function buildRegisterSessionKeyCalls(
+  sessionPublicKey: string,
+  contractAddress: string,
+): Call[] {
+  return [
+    {
+      contractAddress,
+      entrypoint: "register_session_key",
+      calldata: [sessionPublicKey],
+    },
+  ];
+}
+
+/**
+ * Build revoke_session_key transaction calls
+ */
+export function buildRevokeSessionKeyCalls(contractAddress: string): Call[] {
+  return [
+    {
+      contractAddress,
+      entrypoint: "revoke_session_key",
+      calldata: [],
+    },
+  ];
+}
+
+/**
+ * Build execute_from_outside transaction calls (for relay submission).
+ * The relay account submits this call on behalf of the user.
+ *
+ * Contract signature: execute_from_outside(caller, nonce, execute_after, execute_before,
+ *   call_entrypoint, call_calldata: Array<felt252>, signature: Array<felt252>)
+ */
+export function buildExecuteFromOutsideCalls(
+  caller: string,
+  nonce: string,
+  executeAfter: number,
+  executeBefore: number,
+  callEntrypoint: string,
+  callCalldata: string[],
+  signature: string[],
+  contractAddress: string,
+): Call[] {
+  return [
+    {
+      contractAddress,
+      entrypoint: "execute_from_outside",
+      calldata: [
+        caller,
+        nonce,
+        "0x" + executeAfter.toString(16),
+        "0x" + executeBefore.toString(16),
+        callEntrypoint,
+        // Array<felt252> is serialized as: length, ...elements
+        callCalldata.length.toString(),
+        ...callCalldata,
+        signature.length.toString(),
+        ...signature,
+      ],
+    },
+  ];
+}
+
+/**
+ * Read a user's registered session key from the contract
+ */
+export async function readSessionKey(
+  network: NetworkType,
+  owner: string,
+): Promise<string | null> {
+  const contractAddress = getDarkPoolAddress(network);
+  if (contractAddress === "0x0") return null;
+
+  const provider = getProvider(network);
+
+  try {
+    const result = await provider.callContract({
+      contractAddress,
+      entrypoint: "get_session_key",
+      calldata: [owner],
+    });
+    const key = result[0] || "0x0";
+    return key === "0x0" ? null : key;
+  } catch {
+    return null;
+  }
 }
 
 // ============================================================================

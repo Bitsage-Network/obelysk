@@ -18,7 +18,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useAccount, useSendTransaction } from "@starknet-react/core";
-import { RpcProvider } from "starknet";
+import { RpcProvider, hash as starknetHash, ec } from "starknet";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { usePrivacyKeys } from "./usePrivacyKeys";
 import { encrypt as elgamalEncrypt, randomScalar } from "@/lib/crypto/elgamal";
@@ -57,13 +57,18 @@ import {
   readEncryptedBalance,
   readBalanceHint,
   readEpochResult,
+  readEpochPairResult,
   readOrderFromContract,
   readIsOrderClaimed,
+  readSessionKey,
   parseOrderIdFromReceipt,
   cacheHintLocally,
+  buildRegisterSessionKeyCalls,
+  buildExecuteFromOutsideCalls,
   formatPrice,
   formatAmount,
 } from "@/lib/darkpool/darkPoolOrder";
+import { createRelayClient, type RelayClient } from "@/lib/relay/relayClient";
 
 // ============================================================================
 // Types
@@ -150,6 +155,11 @@ export interface UseDarkPoolResult {
   epochResult: EpochResultView | null;
   pairs: TradingPairInfo[];
 
+  // Relay mode
+  relayMode: boolean;
+  setRelayMode: (enabled: boolean) => void;
+  relayConnected: boolean;
+
   // Helpers
   refreshOrders: () => Promise<void>;
   refreshEpoch: () => Promise<void>;
@@ -188,6 +198,29 @@ export function useDarkPool(): UseDarkPoolResult {
   const pendingReveals = useRef<Map<bigint, { order: DarkPoolOrder; epoch: number }>>(new Map());
   const submittingRef = useRef(false);
 
+  // Relay mode
+  const [relayMode, setRelayMode] = useState(false);
+  const [relayConnected, setRelayConnected] = useState(false);
+  const relayClientRef = useRef<RelayClient | null>(null);
+
+  // Session key for relay mode (STARK keypair)
+  const sessionKeyRef = useRef<{ privateKey: string; publicKey: string } | null>(null);
+
+  // Initialize relay client and check health
+  useEffect(() => {
+    const client = createRelayClient();
+    relayClientRef.current = client;
+    if (client && relayMode) {
+      client.checkHealth().then(setRelayConnected).catch(() => setRelayConnected(false));
+      const interval = setInterval(() => {
+        client.checkHealth().then(setRelayConnected).catch(() => setRelayConnected(false));
+      }, 15000);
+      return () => clearInterval(interval);
+    } else {
+      setRelayConnected(false);
+    }
+  }, [relayMode]);
+
   // Reset error and return to idle
   const resetError = useCallback(() => {
     setError(null);
@@ -204,6 +237,61 @@ export function useDarkPool(): UseDarkPoolResult {
       || "https://rpc.starknet-testnet.lava.build";
     return new RpcProvider({ nodeUrl: rpcUrl });
   }, [network]);
+
+  // --------------------------------------------------------------------------
+  // Session Key Management (for relay mode)
+  // --------------------------------------------------------------------------
+
+  const SESSION_KEY_STORAGE = "obelysk-session-key";
+
+  /**
+   * Get or create a session keypair for relay mode.
+   * If a key exists in localStorage and is registered on-chain, reuse it.
+   * Otherwise, generate a new one and register it via a direct wallet tx.
+   */
+  const ensureSessionKey = useCallback(
+    async (): Promise<{ privateKey: string; publicKey: string }> => {
+      // Check cached ref first
+      if (sessionKeyRef.current) return sessionKeyRef.current;
+
+      // Check localStorage
+      try {
+        const stored = localStorage.getItem(`${SESSION_KEY_STORAGE}-${address}`);
+        if (stored) {
+          const parsed = JSON.parse(stored) as { privateKey: string; publicKey: string };
+          // Verify it's still registered on-chain
+          const onChainKey = await readSessionKey(network as NetworkType, address!);
+          if (onChainKey === parsed.publicKey) {
+            sessionKeyRef.current = parsed;
+            return parsed;
+          }
+        }
+      } catch { /* not found or corrupted */ }
+
+      // Generate a new STARK keypair
+      const privateKey = "0x" + ec.starkCurve.utils.randomPrivateKey().reduce(
+        (s: string, b: number) => s + b.toString(16).padStart(2, "0"), ""
+      );
+      const publicKey = "0x" + ec.starkCurve.getPublicKey(privateKey, true).reduce(
+        (s: string, b: number) => s + b.toString(16).padStart(2, "0"), ""
+      );
+
+      // Register on-chain (this must be a direct wallet tx — not relayed)
+      const regCalls = buildRegisterSessionKeyCalls(publicKey, contractAddress);
+      await sendAsync(regCalls);
+
+      const keypair = { privateKey, publicKey };
+      sessionKeyRef.current = keypair;
+
+      // Persist
+      try {
+        localStorage.setItem(`${SESSION_KEY_STORAGE}-${address}`, JSON.stringify(keypair));
+      } catch { /* SSR or quota */ }
+
+      return keypair;
+    },
+    [address, network, contractAddress, sendAsync],
+  );
 
   // --------------------------------------------------------------------------
   // Epoch Tracking (from contract)
@@ -352,10 +440,27 @@ export function useDarkPool(): UseDarkPoolResult {
                 const claimed = await readIsOrderClaimed(network as NetworkType, note.orderId);
                 if (claimed) newStatus = "claimed";
               }
-              if (newStatus !== note.status) {
+              if (newStatus !== note.status || (contractOrder.fillAmount > 0n && !note.clearingPrice)) {
                 const updates: Partial<DarkPoolOrderNote> = { status: newStatus };
                 if (contractOrder.fillAmount > 0n) {
                   updates.fillAmount = contractOrder.fillAmount;
+                }
+                // Fetch per-pair clearing price for filled/claimed orders
+                if (
+                  (newStatus === "filled" || newStatus === "claimed") &&
+                  !note.clearingPrice &&
+                  contractOrder.giveAsset &&
+                  contractOrder.wantAsset
+                ) {
+                  const pairResult = await readEpochPairResult(
+                    network as NetworkType,
+                    note.epoch,
+                    contractOrder.giveAsset,
+                    contractOrder.wantAsset,
+                  );
+                  if (pairResult?.clearingPrice) {
+                    updates.clearingPrice = pairResult.clearingPrice;
+                  }
                 }
                 await updateOrderNote(note.orderId, updates);
                 return { ...note, ...updates };
@@ -453,12 +558,58 @@ export function useDarkPool(): UseDarkPoolResult {
         const calls = buildCommitCalls(order, proof, contractAddress);
 
         setStage("committing");
-        const response = await sendAsync(calls);
+
+        let txHash: string;
+
+        if (relayMode && relayClientRef.current && relayConnected) {
+          // --- Relay path: sign with session key and submit via relay ---
+          const sessionKey = await ensureSessionKey();
+
+          // Build the OutsideExecution payload
+          const nonce = "0x" + BigInt(Date.now()).toString(16) + BigInt(Math.floor(Math.random() * 1e9)).toString(16);
+          const now = Math.floor(Date.now() / 1000);
+          const executeAfter = now - 60;  // 1 min grace
+          const executeBefore = now + 300; // 5 min window
+
+          // The call entrypoint and calldata come from the commit calls
+          const commitCall = calls[0];
+          const entrypointSelector = starknetHash.getSelectorFromName(commitCall.entrypoint);
+
+          // Sign: H(nonce, executeAfter, executeBefore, entrypoint) with session private key
+          const msgHash = starknetHash.computePoseidonHashOnElements([
+            nonce,
+            "0x" + executeAfter.toString(16),
+            "0x" + executeBefore.toString(16),
+            entrypointSelector,
+          ]);
+          const sig = ec.starkCurve.sign(msgHash, sessionKey.privateKey);
+
+          const result = await relayClientRef.current.submitViaRelay(
+            {
+              caller: "0x0", // ANY_CALLER
+              nonce,
+              executeAfter,
+              executeBefore,
+              calls: calls.map((c) => ({
+                contractAddress: c.contractAddress,
+                entrypoint: c.entrypoint,
+                calldata: (c.calldata ?? []) as string[],
+              })),
+            },
+            [address!, "0x" + sig.r.toString(16), "0x" + sig.s.toString(16)],
+            address!,
+          );
+          txHash = result.transactionHash;
+        } else {
+          // --- Direct path: submit via connected wallet ---
+          const response = await sendAsync(calls);
+          txHash = response.transaction_hash;
+        }
 
         // Parse real order ID from tx receipt events
         let orderId: bigint;
         try {
-          const receipt = await provider.waitForTransaction(response.transaction_hash);
+          const receipt = await provider.waitForTransaction(txHash);
           const parsed = parseOrderIdFromReceipt(receipt as unknown as { events?: Array<{ keys?: string[]; data?: string[] }> });
           orderId = parsed ?? BigInt(Date.now()); // Fallback if parsing fails
         } catch {
@@ -473,7 +624,7 @@ export function useDarkPool(): UseDarkPoolResult {
           epoch,
           status: "committed",
           trader: address,
-          commitTxHash: response.transaction_hash,
+          commitTxHash: txHash,
           createdAt: Date.now(),
         };
         await storeOrderNote(note, address);
@@ -490,7 +641,7 @@ export function useDarkPool(): UseDarkPoolResult {
         submittingRef.current = false;
       }
     },
-    [address, account, contractAddress, network, unlockKeys, sendAsync, currentEpoch, refreshOrders, provider],
+    [address, account, contractAddress, network, unlockKeys, sendAsync, currentEpoch, refreshOrders, provider, relayMode, relayConnected, ensureSessionKey],
   );
 
   // --------------------------------------------------------------------------
@@ -647,9 +798,14 @@ export function useDarkPool(): UseDarkPoolResult {
         const receiveAsset = orderView.wantAsset;
         const spendAsset = orderView.giveAsset;
 
-        // Read epoch result to get clearing price for spend calculation
-        const epochResult = await readEpochResult(network as NetworkType, orderView.epoch);
-        const clearingPrice = epochResult?.clearingPrice ?? 0n;
+        // Read per-pair epoch result to get clearing price for spend calculation
+        const pairResult = await readEpochPairResult(
+          network as NetworkType,
+          orderView.epoch,
+          orderView.giveAsset,
+          orderView.wantAsset,
+        );
+        const clearingPrice = pairResult?.clearingPrice ?? 0n;
 
         // For the amount the trader receives (fillAmount in want_asset terms)
         // and the amount they spend (fillAmount * clearingPrice / 1e18 in give_asset terms)
@@ -844,6 +1000,9 @@ export function useDarkPool(): UseDarkPoolResult {
     myOrders,
     epochResult,
     pairs: DARK_POOL_PAIRS,
+    relayMode,
+    setRelayMode,
+    relayConnected,
     refreshOrders,
     refreshEpoch,
     resetError,
