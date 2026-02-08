@@ -48,6 +48,10 @@ import {
   type NetworkType,
 } from "@/lib/contracts/addresses";
 import { ProvingFlowCard, type ProvingStage } from "@/components/privacy/ProvingFlowCard";
+import {
+  PrivacyTransactionReviewModal,
+  usePrivacyTransactionReview,
+} from "@/components/privacy/PrivacyTransactionReviewModal";
 
 // ============================================================================
 // TYPES
@@ -328,6 +332,8 @@ export function ShieldedSwapPanel({
     getPrivacyPoolBalance,
   } = useShieldedSwap();
 
+  const txReview = usePrivacyTransactionReview();
+
   // Token selection
   const supportedTokens = useMemo(
     () => getSupportedSwapTokens(network as NetworkType),
@@ -411,42 +417,63 @@ export function ShieldedSwapPanel({
     setEstimate(null);
   }, [inputToken, outputToken]);
 
-  // Execute swap
-  const handleSwap = useCallback(async () => {
-    if (!inputToken || !outputToken || !inputAmount) return;
-    const inputMeta = TOKEN_METADATA[inputToken.symbol as keyof typeof TOKEN_METADATA];
-    const outputMeta = TOKEN_METADATA[outputToken.symbol as keyof typeof TOKEN_METADATA];
-    const params: SwapParams = {
-      inputToken: inputToken.address,
-      outputToken: outputToken.address,
-      inputAmount,
-      inputDecimals: inputMeta?.decimals ?? 18,
-      outputDecimals: outputMeta?.decimals ?? 18,
-      slippageBps: showCustomSlippage ? parseInt(customSlippage) || 100 : slippageBps,
-      inputSymbol: inputToken.symbol,
-      outputSymbol: outputToken.symbol,
-    };
-    try {
-      const txHash = await executeSwap(params);
-      if (txHash) onSuccess?.(txHash);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Swap failed";
-      onError?.(message);
-    }
-  }, [inputToken, outputToken, inputAmount, slippageBps, customSlippage, showCustomSlippage, executeSwap, onSuccess, onError]);
-
-  // Computed state
-  const isSwapping = state.stage !== "idle" && state.stage !== "confirmed" && state.stage !== "error";
-  const isComplete = state.stage === "confirmed";
-  const hasError = state.stage === "error";
-  const isActive = isSwapping || isComplete || hasError;
-
+  // Pre-compute for review modal description
   const outputDecimals = outputToken
     ? TOKEN_METADATA[outputToken.symbol as keyof typeof TOKEN_METADATA]?.decimals ?? 18
     : 18;
   const estimatedOutputDisplay = estimate
     ? (Number(estimate.expectedOutput) / 10 ** outputDecimals).toFixed(6)
     : "";
+
+  // Execute swap — shows review modal first
+  const handleSwap = useCallback(() => {
+    if (!inputToken || !outputToken || !inputAmount) return;
+
+    const estimatedOut = estimatedOutputDisplay || "calculating...";
+
+    txReview.review({
+      operationType: "swap",
+      title: "Shielded Swap",
+      description: `Swap ${inputAmount} ${inputToken.symbol} for ~${estimatedOut} ${outputToken.symbol}`,
+      details: [
+        { label: "You Pay", value: `${inputAmount} ${inputToken.symbol}` },
+        { label: "You Receive", value: `~${estimatedOut} ${outputToken.symbol}` },
+        { label: "Slippage", value: `${showCustomSlippage ? customSlippage : slippageBps / 100}%` },
+        { label: "Router", value: "ShieldedSwapRouter (Ekubo)" },
+      ],
+      privacyInfo: {
+        identityHidden: true,
+        amountHidden: false,
+        recipientHidden: true,
+        proofType: "ILocker Router Intermediary",
+        whatIsOnChain: ["Swap amounts", "Token pair", "Pool fee tier"],
+        whatIsHidden: ["Your wallet address (router intermediary)", "Trade intent"],
+      },
+      onConfirm: async () => {
+        const inputMeta = TOKEN_METADATA[inputToken.symbol as keyof typeof TOKEN_METADATA];
+        const outputMeta = TOKEN_METADATA[outputToken.symbol as keyof typeof TOKEN_METADATA];
+        const params: SwapParams = {
+          inputToken: inputToken.address,
+          outputToken: outputToken.address,
+          inputAmount,
+          inputDecimals: inputMeta?.decimals ?? 18,
+          outputDecimals: outputMeta?.decimals ?? 18,
+          slippageBps: showCustomSlippage ? parseInt(customSlippage) || 100 : slippageBps,
+          inputSymbol: inputToken.symbol,
+          outputSymbol: outputToken.symbol,
+        };
+        const txHash = await executeSwap(params);
+        if (txHash) onSuccess?.(txHash);
+        return txHash ?? "";
+      },
+    });
+  }, [inputToken, outputToken, inputAmount, slippageBps, customSlippage, showCustomSlippage, executeSwap, onSuccess, txReview, estimatedOutputDisplay]);
+
+  // Computed state
+  const isSwapping = state.stage !== "idle" && state.stage !== "confirmed" && state.stage !== "error";
+  const isComplete = state.stage === "confirmed";
+  const hasError = state.stage === "error";
+  const isActive = isSwapping || isComplete || hasError;
 
   const effectiveSlippage = showCustomSlippage ? parseInt(customSlippage) || 100 : slippageBps;
   const poolsValid = !poolValidationError;
@@ -951,6 +978,15 @@ export function ShieldedSwapPanel({
           )}
         </AnimatePresence>
       </div>
+
+      {/* Privacy Transaction Review Modal */}
+      {txReview.props && (
+        <PrivacyTransactionReviewModal
+          isOpen={txReview.isOpen}
+          onClose={txReview.close}
+          {...txReview.props}
+        />
+      )}
     </div>
   );
 }

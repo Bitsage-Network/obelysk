@@ -27,7 +27,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useAccount } from "@starknet-react/core";
-import { useStealthPageData } from "@/lib/hooks/useApiData";
+import { useStealthOnChain } from "@/lib/hooks/useStealthOnChain";
 
 // Time ranges for scanning
 const TIME_RANGES = [
@@ -48,7 +48,7 @@ export default function StealthAddressesPage() {
   const [scanProgress, setScanProgress] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "unclaimed" | "claimed">("all");
 
-  // Use real API data via hook
+  // Use on-chain event scanner (replaces offline coordinator API)
   const {
     metaAddress: metaAddressData,
     payments,
@@ -59,7 +59,8 @@ export default function StealthAddressesPage() {
     isScanning,
     claim,
     isClaiming,
-  } = useStealthPageData(address);
+    registryDeployed,
+  } = useStealthOnChain(address);
 
   // Get meta address or fallback to placeholder
   const metaAddress = {
@@ -132,7 +133,9 @@ export default function StealthAddressesPage() {
   }, [payments, filterStatus]);
 
   const unclaimedPayments = payments.filter(p => !p.claimed);
+  // Stealth amounts are encrypted on-chain; totalUnclaimedValue may be "0" when amounts are unknown
   const totalUnclaimed = parseFloat(totalUnclaimedValue) / 1e18;
+  const hasEncryptedAmounts = payments.length > 0 && totalUnclaimedValue === "0";
 
   const formatTimeAgo = (timestamp: number) => {
     const seconds = Math.floor((Date.now() - timestamp) / 1000);
@@ -167,6 +170,22 @@ export default function StealthAddressesPage() {
         </Link>
       </div>
 
+      {/* Registry Not Deployed Banner */}
+      {!registryDeployed && (
+        <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/30">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-medium text-orange-300">Stealth Registry Pending Deployment</p>
+              <p className="text-xs text-gray-400 mt-1">
+                The StealthRegistry contract is awaiting compilation and deployment to Sepolia.
+                Once live, you can register your meta-address, receive stealth payments, and scan for incoming transfers.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="glass-card p-4">
@@ -190,7 +209,16 @@ export default function StealthAddressesPage() {
             <div>
               <p className="text-sm text-gray-400">Total Unclaimed Value</p>
               <p className="text-lg font-bold text-white">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAGE`}
+                {isLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin inline" />
+                ) : hasEncryptedAmounts ? (
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-brand-400" />
+                    Encrypted
+                  </span>
+                ) : (
+                  `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAGE`
+                )}
               </p>
             </div>
           </div>
