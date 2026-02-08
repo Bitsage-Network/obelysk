@@ -705,12 +705,18 @@ function StakePageInner({
                     enabled={usePrivateBalance}
                     onToggle={setUsePrivateBalance}
                   />
-                  <PrivacyOption
-                    label="Stake Privately"
-                    description="Hide staked amount on-chain"
-                    enabled={stakePrivately}
-                    onToggle={setStakePrivately}
-                  />
+                  <div className="relative">
+                    <PrivacyOption
+                      label="Stake Privately"
+                      description="Coming soon — not yet supported"
+                      enabled={false}
+                      onToggle={() => {}}
+                      className="opacity-60 pointer-events-none"
+                    />
+                    <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 text-[10px] font-medium border border-orange-500/30">
+                      Coming Soon
+                    </span>
+                  </div>
                 </div>
               )}
 
@@ -758,35 +764,17 @@ function StakePageInner({
 
               {/* Staking Info */}
               {activeTab === "stake" && (
-                <div className={cn(
-                  "p-4 rounded-xl border",
-                  stakePrivately
-                    ? "bg-brand-600/10 border-brand-500/20"
-                    : "bg-surface-elevated/50 border-surface-border"
-                )}>
+                <div className="p-4 rounded-xl border bg-surface-elevated/50 border-surface-border">
                   <div className="flex items-start gap-3">
-                    {stakePrivately ? (
-                      <Shield className="w-5 h-5 text-brand-400 mt-0.5" />
-                    ) : (
-                      <Info className="w-5 h-5 text-gray-400 mt-0.5" />
-                    )}
+                    <Info className="w-5 h-5 text-gray-400 mt-0.5" />
                     <div>
-                      <p className="text-sm text-white mb-1">
-                        {stakePrivately ? "Private Staking Enabled" : "Staking Requirements"}
-                      </p>
-                      {stakePrivately ? (
-                        <p className="text-xs text-gray-400">
-                          Your staked amount will be encrypted using ElGamal encryption.
-                          It will appear as <span className="font-mono text-brand-400">•••••</span> on-chain.
-                          Only you can reveal the actual amount.
-                        </p>
-                      ) : (
-                        <ul className="text-xs text-gray-400 space-y-1">
-                          <li>• Minimum stake: {formatSage(minStake)} SAGE</li>
-                          <li>• Lock period: {lockPeriod}</li>
-                          <li>• Must have registered GPU node</li>
-                        </ul>
-                      )}
+                      <p className="text-sm text-white mb-1">Staking Requirements</p>
+                      <ul className="text-xs text-gray-400 space-y-1">
+                        <li>• Minimum stake: {formatSage(minStake)} SAGE</li>
+                        <li>• Lock period: {lockPeriod}</li>
+                        <li>• Must have registered GPU node</li>
+                        <li>• Private staking is under development. Your stake will be visible on-chain.</li>
+                      </ul>
                     </div>
                   </div>
                 </div>
@@ -866,19 +854,13 @@ function StakePageInner({
                 className={cn(
                   "w-full py-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-all",
                   "disabled:opacity-50 disabled:cursor-not-allowed",
-                  stakePrivately && activeTab === "stake"
-                    ? "bg-gradient-to-r from-brand-600 to-accent-fuchsia hover:from-brand-500 hover:to-accent-fuchsia/90 text-white"
-                    : "btn-glow"
+                  "btn-glow"
                 )}
               >
                 {txPending ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> Waiting for wallet...</>
                 ) : activeTab === "stake" ? (
-                  stakePrivately ? (
-                    <><EyeOff className="w-4 h-4" /> Stake Privately</>
-                  ) : (
-                    <><Lock className="w-4 h-4" /> Stake SAGE</>
-                  )
+                  <><Lock className="w-4 h-4" /> Stake SAGE</>
                 ) : (
                   <><Unlock className="w-4 h-4" /> Begin Unstaking</>
                 )}

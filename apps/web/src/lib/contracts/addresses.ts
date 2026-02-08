@@ -77,6 +77,8 @@ export const CONTRACTS = {
     ETH_PRIVACY_POOL: "0x0",
     STRK_PRIVACY_POOL: "0x0",
     WBTC_PRIVACY_POOL: "0x0",
+    USDC_PRIVACY_POOL: "0x0",
+    STEALTH_REGISTRY: "0x0",
 
     // Dark Pool (Commit-Reveal Batch Auction)
     DARK_POOL: "0x0",
@@ -170,6 +172,12 @@ export const CONTRACTS = {
     STRK_PRIVACY_POOL: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
     // Deployed: 2026-02-07 via sncast — class hash 0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5
     WBTC_PRIVACY_POOL: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
+    // Deployed: 2026-02-08 via sncast — class hash 0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5
+    USDC_PRIVACY_POOL: "0x02bcb455a7e356ef3ff1422d33d0742e633e4b8b4eb9fa6c15e62e8fd16b7e50",
+
+    // Stealth Registry (stealth meta-addresses + payment announcements)
+    // NOT YET DEPLOYED — depends on sage_contracts::obelysk::stealth_payments compilation
+    STEALTH_REGISTRY: "0x0",
 
     // Dark Pool (Commit-Reveal Batch Auction) v3
     // Redeployed: 2026-02-08 — class hash 0x38cebbcf4485a369113d4b75c61683a9d9ffad8ab43e0a272eb3073737acbca
@@ -227,6 +235,8 @@ export const CONTRACTS = {
     ETH_PRIVACY_POOL: "0x0",
     STRK_PRIVACY_POOL: "0x0",
     WBTC_PRIVACY_POOL: "0x0",
+    USDC_PRIVACY_POOL: "0x0",
+    STEALTH_REGISTRY: "0x0",
 
     // Dark Pool (Commit-Reveal Batch Auction)
     DARK_POOL: "0x0",
@@ -500,7 +510,7 @@ export const PRIVACY_POOL_FOR_TOKEN: Record<string, Record<string, string>> = {
     ETH: CONTRACTS.sepolia.ETH_PRIVACY_POOL,
     STRK: CONTRACTS.sepolia.STRK_PRIVACY_POOL,
     wBTC: CONTRACTS.sepolia.WBTC_PRIVACY_POOL,
-    USDC: "0x0", // Not yet deployed
+    USDC: CONTRACTS.sepolia.USDC_PRIVACY_POOL,
   },
   mainnet: {
     SAGE: "0x0",
