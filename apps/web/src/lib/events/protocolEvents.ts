@@ -42,9 +42,29 @@ export const STAKING_SELECTORS = {
   SuccessRecorded: hash.getSelectorFromName("SuccessRecorded"),
 } as const;
 
+export const DARK_POOL_SELECTORS = {
+  OrderCommitted: hash.getSelectorFromName("OrderCommitted"),
+  OrderRevealed: hash.getSelectorFromName("OrderRevealed"),
+  OrderCancelled: hash.getSelectorFromName("OrderCancelled"),
+  OrderFilled: hash.getSelectorFromName("OrderFilled"),
+  EpochSettled: hash.getSelectorFromName("EpochSettled"),
+  Deposited: hash.getSelectorFromName("Deposited"),
+  Withdrawn: hash.getSelectorFromName("Withdrawn"),
+} as const;
+
 // ============================================================================
 // Types
 // ============================================================================
+
+export type DarkPoolEventType =
+  | "order_committed"
+  | "order_revealed"
+  | "order_cancelled"
+  | "order_filled"
+  | "epoch_settled"
+  | "deposited"
+  | "withdrawn"
+  | "unknown";
 
 export type TradingEventType =
   | "order_placed"
@@ -71,7 +91,7 @@ export type StakingEventType =
   | "success_recorded"
   | "unknown";
 
-export type ProtocolEventDomain = "trading" | "governance" | "staking";
+export type ProtocolEventDomain = "trading" | "governance" | "staking" | "dark_pool";
 
 export interface ProtocolEvent<T extends string = string> {
   id: string;
@@ -131,6 +151,13 @@ function getDomainConfig(domain: ProtocolEventDomain, network: NetworkType) {
         selectors: Object.values(STAKING_SELECTORS),
         classify: classifyStakingEvent as (s: string) => string,
         parse: parseStakingEventData as (t: string, k: string[], d: string[]) => Record<string, string>,
+      };
+    case "dark_pool":
+      return {
+        address: contracts.DARK_POOL,
+        selectors: Object.values(DARK_POOL_SELECTORS),
+        classify: classifyDarkPoolEvent as (s: string) => string,
+        parse: parseDarkPoolEventData as (t: string, k: string[], d: string[]) => Record<string, string>,
       };
   }
 }
@@ -321,6 +348,100 @@ function parseStakingEventData(
     case "success_recorded":
       if (keys[1]) parsed.worker = keys[1];
       if (data[0]) parsed.job_id = data[0];
+      break;
+  }
+
+  return parsed;
+}
+
+// ============================================================================
+// Dark Pool Event Classification & Parsing
+// ============================================================================
+
+function classifyDarkPoolEvent(selector: string): DarkPoolEventType {
+  if (selector === DARK_POOL_SELECTORS.OrderCommitted) return "order_committed";
+  if (selector === DARK_POOL_SELECTORS.OrderRevealed) return "order_revealed";
+  if (selector === DARK_POOL_SELECTORS.OrderCancelled) return "order_cancelled";
+  if (selector === DARK_POOL_SELECTORS.OrderFilled) return "order_filled";
+  if (selector === DARK_POOL_SELECTORS.EpochSettled) return "epoch_settled";
+  if (selector === DARK_POOL_SELECTORS.Deposited) return "deposited";
+  if (selector === DARK_POOL_SELECTORS.Withdrawn) return "withdrawn";
+  return "unknown";
+}
+
+function parseDarkPoolEventData(
+  type: DarkPoolEventType,
+  keys: string[],
+  data: string[],
+): Record<string, string> {
+  const parsed: Record<string, string> = {};
+
+  switch (type) {
+    case "order_committed":
+      // OrderCommitted: keys[1..2]=order_id(u256), keys[3]=trader
+      if (keys[1]) parsed.order_id_low = keys[1];
+      if (keys[2]) parsed.order_id_high = keys[2];
+      if (keys[3]) parsed.trader = keys[3];
+      if (data[0]) parsed.epoch = data[0];
+      if (data[1]) parsed.side = data[1];
+      if (data[2]) parsed.give_asset = data[2];
+      if (data[3]) parsed.want_asset = data[3];
+      if (data[4]) parsed.order_hash = data[4];
+      break;
+
+    case "order_revealed":
+      // OrderRevealed: keys[1..2]=order_id(u256)
+      if (keys[1]) parsed.order_id_low = keys[1];
+      if (keys[2]) parsed.order_id_high = keys[2];
+      if (data[0]) parsed.price_low = data[0];
+      if (data[1]) parsed.price_high = data[1];
+      if (data[2]) parsed.amount_low = data[2];
+      if (data[3]) parsed.amount_high = data[3];
+      break;
+
+    case "order_cancelled":
+      // OrderCancelled: keys[1..2]=order_id(u256), keys[3]=trader
+      if (keys[1]) parsed.order_id_low = keys[1];
+      if (keys[2]) parsed.order_id_high = keys[2];
+      if (keys[3]) parsed.trader = keys[3];
+      break;
+
+    case "order_filled":
+      // OrderFilled: keys[1..2]=order_id(u256)
+      if (keys[1]) parsed.order_id_low = keys[1];
+      if (keys[2]) parsed.order_id_high = keys[2];
+      if (data[0]) parsed.fill_amount_low = data[0];
+      if (data[1]) parsed.fill_amount_high = data[1];
+      if (data[2]) parsed.clearing_price_low = data[2];
+      if (data[3]) parsed.clearing_price_high = data[3];
+      break;
+
+    case "epoch_settled":
+      // EpochSettled: keys[1]=epoch_id
+      if (keys[1]) parsed.epoch_id = keys[1];
+      if (data[0]) parsed.clearing_price_low = data[0];
+      if (data[1]) parsed.clearing_price_high = data[1];
+      if (data[2]) parsed.total_buy_filled_low = data[2];
+      if (data[3]) parsed.total_buy_filled_high = data[3];
+      if (data[4]) parsed.total_sell_filled_low = data[4];
+      if (data[5]) parsed.total_sell_filled_high = data[5];
+      if (data[6]) parsed.num_fills = data[6];
+      break;
+
+    case "deposited":
+      // Deposited: keys[1]=trader
+      if (keys[1]) parsed.trader = keys[1];
+      if (data[0]) parsed.asset = data[0];
+      if (data[1]) parsed.amount_low = data[1];
+      if (data[2]) parsed.amount_high = data[2];
+      break;
+
+    case "withdrawn":
+      // Withdrawn: keys[1]=trader
+      if (keys[1]) parsed.trader = keys[1];
+      if (data[0]) parsed.asset = data[0];
+      if (data[1]) parsed.amount_low = data[1];
+      if (data[2]) parsed.amount_high = data[2];
       break;
   }
 
