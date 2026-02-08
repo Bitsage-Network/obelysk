@@ -163,8 +163,10 @@ export default function ObelyskWalletPage() {
 
   // Real wallet balances from Obelysk context (with safe fallbacks)
   const obelyskWallet = useSafeObelyskWallet();
-  const realBalance = obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" };
-  const totalBalanceUsd = obelyskWallet?.totalBalanceUsd ?? "$0.00";
+  const realBalance = address
+    ? (obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" })
+    : { public: "0", private: "0", pending: "0" };
+  const totalBalanceUsd = address ? (obelyskWallet?.totalBalanceUsd ?? "$0.00") : "$0.00";
   const isPrivateRevealed = obelyskWallet?.isPrivateRevealed ?? false;
   const revealPrivateBalance = obelyskWallet?.revealPrivateBalance ?? (async () => {});
   const hidePrivateBalance = obelyskWallet?.hidePrivateBalance ?? (() => {});

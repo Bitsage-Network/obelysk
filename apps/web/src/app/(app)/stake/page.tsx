@@ -516,39 +516,53 @@ function StakePageInner({
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-4"
       >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-fuchsia flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-white" />
+        {address ? (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-fuchsia flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">Available to Stake</p>
+                <div className="flex items-center gap-3">
+                  <span className="text-white font-medium">{balance.public} SAGE</span>
+                  <span className="text-gray-600">|</span>
+                  <span className="text-brand-400 font-mono text-sm flex items-center gap-1">
+                    <EyeOff className="w-3 h-3" />
+                    {isPrivateRevealed ? balance.private : "•••••"} private
+                  </span>
+                  {parseFloat(balance.pending) > 0 && (
+                    <>
+                      <span className="text-gray-600">|</span>
+                      <span className="text-orange-400 text-sm flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3" />
+                        +{balance.pending} pending
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-400">Available to Stake</p>
-              <div className="flex items-center gap-3">
-                <span className="text-white font-medium">{balance.public} SAGE</span>
-                <span className="text-gray-600">|</span>
-                <span className="text-brand-400 font-mono text-sm flex items-center gap-1">
-                  <EyeOff className="w-3 h-3" />
-                  {isPrivateRevealed ? balance.private : "•••••"} private
-                </span>
-                {parseFloat(balance.pending) > 0 && (
-                  <>
-                    <span className="text-gray-600">|</span>
-                    <span className="text-orange-400 text-sm flex items-center gap-1">
-                      <RefreshCw className="w-3 h-3" />
-                      +{balance.pending} pending
-                    </span>
-                  </>
-                )}
+            <Link
+              href="/wallet"
+              className="text-sm text-brand-400 hover:underline"
+            >
+              Rollover to Private →
+            </Link>
+          </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-surface-elevated flex items-center justify-center">
+                <Wallet className="w-5 h-5 text-gray-500" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-400">No Wallet Connected</p>
+                <p className="text-xs text-gray-500">Connect wallet to stake SAGE</p>
               </div>
             </div>
           </div>
-          <Link
-            href="/wallet"
-            className="text-sm text-brand-400 hover:underline"
-          >
-            Rollover to Private →
-          </Link>
-        </div>
+        )}
       </motion.div>
 
       {/* Stats Grid */}
@@ -1125,7 +1139,9 @@ function StakePageInner({
 export default function StakePage() {
   const { address } = useAccount();
   const obelyskWallet = useSafeObelyskWallet();
-  const balance = obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" };
+  const balance = address
+    ? (obelyskWallet?.balance ?? { public: "0", private: "0", pending: "0" })
+    : { public: "0", private: "0", pending: "0" };
   const isPrivateRevealed = obelyskWallet?.isPrivateRevealed ?? false;
   const sdkMounted = useSDKMounted();
 
