@@ -1,8 +1,9 @@
 "use client";
 
-import { useConnect, useAccount, Connector } from "@starknet-react/core";
+import { useConnect, useAccount, useSignTypedData, Connector } from "@starknet-react/core";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
+import { shortString } from "starknet";
 import {
   Wallet,
   ArrowRight,
@@ -12,31 +13,88 @@ import {
   AlertCircle,
   X,
   Shield,
+  Eye,
+  KeyRound,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { LogoIcon } from "@/components/ui/Logo";
 
+type ConnectPhase = "select-wallet" | "approve-connection" | "redirecting";
+
 export default function ConnectPage() {
   const { connectAsync, connectors, isPending, error: connectError, reset } = useConnect();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
+  const { signTypedDataAsync } = useSignTypedData({});
   const router = useRouter();
   const [mounted, setMounted] = useState(false);
   const [connectingConnectorId, setConnectingConnectorId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [connectPhase, setConnectPhase] = useState<ConnectPhase>("select-wallet");
+  const [isSigning, setIsSigning] = useState(false);
 
   // Set mounted after hydration
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  // Redirect to wallet page when connected
+  // Skip approval if already verified in this session
   useEffect(() => {
     if (isConnected && address && mounted) {
-      router.push("/wallet");
+      const verified = sessionStorage.getItem("obelysk_verified");
+      if (verified === address) {
+        router.push("/wallet");
+      } else {
+        setConnectPhase("approve-connection");
+      }
     }
   }, [isConnected, address, router, mounted]);
+
+  const handleApproveConnection = async () => {
+    if (!address || !chainId) return;
+    setIsSigning(true);
+    setLocalError(null);
+    try {
+      const chainIdStr = typeof chainId === "bigint" ? chainId.toString(16) : String(chainId);
+      const connectionTypedData = {
+        types: {
+          StarkNetDomain: [
+            { name: "name", type: "felt" },
+            { name: "version", type: "felt" },
+            { name: "chainId", type: "felt" },
+          ],
+          ConnectionApproval: [
+            { name: "action", type: "felt" },
+            { name: "user", type: "felt" },
+          ],
+        },
+        primaryType: "ConnectionApproval" as const,
+        domain: {
+          name: shortString.encodeShortString("Obelysk"),
+          version: shortString.encodeShortString("1"),
+          chainId: shortString.encodeShortString(chainIdStr),
+        },
+        message: {
+          action: shortString.encodeShortString("Connect"),
+          user: address,
+        },
+      };
+      await signTypedDataAsync(connectionTypedData);
+      sessionStorage.setItem("obelysk_verified", address);
+      setConnectPhase("redirecting");
+      router.push("/wallet");
+    } catch (err) {
+      setLocalError(err instanceof Error ? err.message : "Signature rejected");
+    } finally {
+      setIsSigning(false);
+    }
+  };
+
+  const handleDeclineConnection = () => {
+    setConnectPhase("select-wallet");
+    reset();
+  };
 
   const handleConnect = async (connector: Connector) => {
     try {
@@ -61,10 +119,10 @@ export default function ConnectPage() {
       }
 
       console.log("Connection successful");
-      // Small delay to ensure wallet state is updated
+      // Small delay to ensure wallet state is updated, then show approval
       setTimeout(() => {
         setConnectingConnectorId(null);
-        router.push("/wallet");
+        setConnectPhase("approve-connection");
       }, 500);
     } catch (error) {
       // Clear timeout on error
@@ -127,8 +185,117 @@ export default function ConnectPage() {
           </p>
         </div>
 
-        {/* Connect Card */}
-        <div className="bg-surface-card border border-surface-border rounded-2xl p-4 sm:p-6">
+        {/* Approval Interstitial */}
+        <AnimatePresence mode="wait">
+          {connectPhase === "approve-connection" && address && (
+            <motion.div
+              key="approve"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="bg-surface-card border border-surface-border rounded-2xl p-4 sm:p-6"
+            >
+              <div className="text-center mb-5">
+                <div className="inline-flex w-14 h-14 rounded-2xl bg-violet-500/10 border border-violet-500/20 items-center justify-center mb-3">
+                  <Shield className="w-7 h-7 text-violet-400" />
+                </div>
+                <h2 className="text-lg font-bold text-white">dApp Connection</h2>
+                <p className="text-xs text-gray-500 mt-1">Obelysk Protocol would like to connect</p>
+              </div>
+
+              {/* Connected Address */}
+              <div className="px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06] mb-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-500">Connected Address</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium">
+                    Sepolia
+                  </span>
+                </div>
+                <p className="text-xs text-white font-mono mt-1 truncate">{address}</p>
+              </div>
+
+              {/* Permission text */}
+              <p className="text-xs text-gray-400 mb-4 leading-relaxed">
+                You will still be required to sign any new transaction. No funds will be moved without your explicit approval.
+              </p>
+
+              {/* Permission Rows */}
+              <div className="space-y-2.5 mb-5">
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.02]">
+                  <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="text-xs text-white font-medium">Read wallet address</span>
+                  </div>
+                  <span className="text-[10px] text-gray-600">Always allowed</span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-white/[0.02]">
+                  <Eye className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="text-xs text-white font-medium">View public balances</span>
+                  </div>
+                  <span className="text-[10px] text-gray-600">Always allowed</span>
+                </div>
+                <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-violet-500/5 border border-violet-500/10">
+                  <Shield className="w-4 h-4 text-violet-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <span className="text-xs text-white font-medium">Submit transactions</span>
+                    <p className="text-[10px] text-gray-500">Requires your signature each time</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Connection Error */}
+              {localError && (
+                <div className="mb-4 p-3 bg-red-500/20 border border-red-500/30 rounded-lg flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  <p className="text-sm text-red-300">{localError}</p>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3">
+                <button
+                  onClick={handleDeclineConnection}
+                  className="flex-1 py-3 rounded-xl text-sm font-medium text-gray-400 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                >
+                  Decline
+                </button>
+                <motion.button
+                  onClick={handleApproveConnection}
+                  disabled={isSigning}
+                  whileHover={{ scale: isSigning ? 1 : 1.02 }}
+                  whileTap={{ scale: isSigning ? 1 : 0.98 }}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 transition-all shadow-lg shadow-violet-500/20 flex items-center justify-center gap-2 disabled:opacity-60"
+                >
+                  {isSigning ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <KeyRound className="w-4 h-4" />
+                  )}
+                  {isSigning ? "Signing..." : "Approve & Sign"}
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
+
+          {connectPhase === "redirecting" && (
+            <motion.div
+              key="redirecting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="bg-surface-card border border-surface-border rounded-2xl p-8 text-center"
+            >
+              <Loader2 className="w-8 h-8 text-violet-400 animate-spin mx-auto" />
+              <p className="text-sm text-gray-400 mt-3">Redirecting to dashboard...</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Connect Card — only shown during wallet selection */}
+        <div className={cn(
+          "bg-surface-card border border-surface-border rounded-2xl p-4 sm:p-6",
+          connectPhase !== "select-wallet" && "hidden",
+        )}>
           <h2 className="text-base sm:text-lg font-semibold text-white mb-3 sm:mb-4 flex items-center gap-2">
             <Wallet className="w-4 h-4 sm:w-5 sm:h-5 text-violet-400" />
             Connect Wallet
@@ -325,8 +492,8 @@ export default function ConnectPage() {
           </div>
         </div>
 
-        {/* Features */}
-        <div className="mt-6 sm:mt-8 grid grid-cols-3 gap-3 sm:gap-4">
+        {/* Features — hidden during approval */}
+        <div className={cn("mt-6 sm:mt-8 grid grid-cols-3 gap-3 sm:gap-4", connectPhase !== "select-wallet" && "hidden")}>
           <div className="bg-surface-card/50 border border-surface-border rounded-xl p-3 sm:p-4 text-center">
             <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 mx-auto mb-1.5 sm:mb-2" />
             <p className="text-xs sm:text-sm text-gray-400">ZK Privacy</p>
@@ -341,8 +508,8 @@ export default function ConnectPage() {
           </div>
         </div>
 
-        {/* Footer */}
-        <p className="text-center text-xs sm:text-sm text-gray-500 mt-6 sm:mt-8 px-4">
+        {/* Footer — hidden during approval */}
+        <p className={cn("text-center text-xs sm:text-sm text-gray-500 mt-6 sm:mt-8 px-4", connectPhase !== "select-wallet" && "hidden")}>
           By connecting, you agree to our{" "}
           <a href="#" className="text-violet-400 hover:underline">Terms of Service</a>
         </p>

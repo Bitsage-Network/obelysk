@@ -42,6 +42,13 @@ export const STAKING_SELECTORS = {
   SuccessRecorded: hash.getSelectorFromName("SuccessRecorded"),
 } as const;
 
+export const STEALTH_SELECTORS = {
+  MetaAddressRegistered: hash.getSelectorFromName("MetaAddressRegistered"),
+  MetaAddressUpdated: hash.getSelectorFromName("MetaAddressUpdated"),
+  StealthPaymentSent: hash.getSelectorFromName("StealthPaymentSent"),
+  StealthPaymentClaimed: hash.getSelectorFromName("StealthPaymentClaimed"),
+} as const;
+
 export const DARK_POOL_SELECTORS = {
   OrderCommitted: hash.getSelectorFromName("OrderCommitted"),
   OrderRevealed: hash.getSelectorFromName("OrderRevealed"),
@@ -91,7 +98,14 @@ export type StakingEventType =
   | "success_recorded"
   | "unknown";
 
-export type ProtocolEventDomain = "trading" | "governance" | "staking" | "dark_pool";
+export type StealthEventType =
+  | "meta_address_registered"
+  | "meta_address_updated"
+  | "payment_sent"
+  | "payment_claimed"
+  | "unknown";
+
+export type ProtocolEventDomain = "trading" | "governance" | "staking" | "dark_pool" | "stealth";
 
 export interface ProtocolEvent<T extends string = string> {
   id: string;
@@ -158,6 +172,13 @@ function getDomainConfig(domain: ProtocolEventDomain, network: NetworkType) {
         selectors: Object.values(DARK_POOL_SELECTORS),
         classify: classifyDarkPoolEvent as (s: string) => string,
         parse: parseDarkPoolEventData as (t: string, k: string[], d: string[]) => Record<string, string>,
+      };
+    case "stealth":
+      return {
+        address: contracts.STEALTH_REGISTRY,
+        selectors: Object.values(STEALTH_SELECTORS),
+        classify: classifyStealthEvent as (s: string) => string,
+        parse: parseStealthEventData as (t: string, k: string[], d: string[]) => Record<string, string>,
       };
   }
 }
@@ -585,6 +606,73 @@ export function getStakingEventLabel(type: StakingEventType): string {
     slashed: "Slashed",
     rewards_claimed: "Rewards Claimed",
     success_recorded: "Success Recorded",
+    unknown: "Unknown",
+  };
+  return labels[type];
+}
+
+// ============================================================================
+// Stealth Event Classification & Parsing
+// ============================================================================
+
+function classifyStealthEvent(selector: string): StealthEventType {
+  if (selector === STEALTH_SELECTORS.MetaAddressRegistered) return "meta_address_registered";
+  if (selector === STEALTH_SELECTORS.MetaAddressUpdated) return "meta_address_updated";
+  if (selector === STEALTH_SELECTORS.StealthPaymentSent) return "payment_sent";
+  if (selector === STEALTH_SELECTORS.StealthPaymentClaimed) return "payment_claimed";
+  return "unknown";
+}
+
+function parseStealthEventData(
+  type: StealthEventType,
+  keys: string[],
+  data: string[],
+): Record<string, string> {
+  const parsed: Record<string, string> = {};
+
+  switch (type) {
+    case "meta_address_registered":
+    case "meta_address_updated":
+      // keys[1]=worker
+      if (keys[1]) parsed.worker = keys[1];
+      if (data[0]) parsed.spending_pubkey_x = data[0];
+      if (data[1]) parsed.viewing_pubkey_x = data[1];
+      if (data[2]) parsed.timestamp = data[2];
+      break;
+
+    case "payment_sent":
+      // keys[1..2]=announcement_index(u256), keys[3]=stealth_address
+      if (keys[1]) parsed.announcement_index_low = keys[1];
+      if (keys[2]) parsed.announcement_index_high = keys[2];
+      if (keys[3]) parsed.stealth_address = keys[3];
+      if (data[0]) parsed.ephemeral_pubkey_x = data[0];
+      if (data[1]) parsed.view_tag = data[1];
+      if (data[2]) parsed.job_id_low = data[2];
+      if (data[3]) parsed.job_id_high = data[3];
+      if (data[4]) parsed.timestamp = data[4];
+      break;
+
+    case "payment_claimed":
+      // keys[1..2]=announcement_index(u256), keys[3]=claimer
+      if (keys[1]) parsed.announcement_index_low = keys[1];
+      if (keys[2]) parsed.announcement_index_high = keys[2];
+      if (keys[3]) parsed.claimer = keys[3];
+      if (data[0]) parsed.recipient = data[0];
+      if (data[1]) parsed.amount_low = data[1];
+      if (data[2]) parsed.amount_high = data[2];
+      if (data[3]) parsed.timestamp = data[3];
+      break;
+  }
+
+  return parsed;
+}
+
+export function getStealthEventLabel(type: StealthEventType): string {
+  const labels: Record<StealthEventType, string> = {
+    meta_address_registered: "Meta-Address Registered",
+    meta_address_updated: "Meta-Address Updated",
+    payment_sent: "Stealth Payment Sent",
+    payment_claimed: "Stealth Payment Claimed",
     unknown: "Unknown",
   };
   return labels[type];

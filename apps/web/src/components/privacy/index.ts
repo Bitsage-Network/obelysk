@@ -21,3 +21,9 @@ export { GaslessDepositPanel } from "./GaslessDepositPanel";
 
 export { PrivacyActivityFeed } from "./PrivacyActivityFeed";
 export type { PrivacyActivityFeedProps } from "./PrivacyActivityFeed";
+
+export {
+  PrivacyTransactionReviewModal,
+  usePrivacyTransactionReview,
+} from "./PrivacyTransactionReviewModal";
+export type { PrivacyTransactionReviewModalProps } from "./PrivacyTransactionReviewModal";
