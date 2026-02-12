@@ -32,7 +32,7 @@ export type NetworkType = "devnet" | "sepolia" | "mainnet";
 
 // Get current network contracts (default to sepolia)
 export function getContractAddresses(network: NetworkType = "sepolia") {
-  return CONTRACTS[network];
+  return CONTRACTS[network] || CONTRACTS.sepolia;
 }
 
 // ============================================

@@ -55,7 +55,7 @@ export function usePragmaPrice(
   network: NetworkType = 'sepolia'
 ): PragmaOracleResult {
   const addresses = getContractAddresses(network);
-  const oracleAddress = addresses.ORACLE_WRAPPER;
+  const oracleAddress = addresses?.ORACLE_WRAPPER || '0x0';
 
   // Query get_price function which returns PragmaPrice struct
   const { data, isLoading, isError, error, refetch } = useReadContract({
@@ -143,7 +143,7 @@ export function usePragmaPrice(
  */
 export function usePragmaSagePrice(network: NetworkType = 'sepolia'): PragmaOracleResult {
   const addresses = getContractAddresses(network);
-  const oracleAddress = addresses.ORACLE_WRAPPER;
+  const oracleAddress = addresses?.ORACLE_WRAPPER || '0x0';
 
   // Use dedicated get_sage_price function
   const { data, isLoading, isError, error, refetch } = useReadContract({
@@ -226,7 +226,7 @@ export function usePragmaPrices(
  */
 export function usePragmaOracleHealth(network: NetworkType = 'sepolia') {
   const addresses = getContractAddresses(network);
-  const oracleAddress = addresses.ORACLE_WRAPPER;
+  const oracleAddress = addresses?.ORACLE_WRAPPER || '0x0';
 
   const { data: configData, isLoading: configLoading } = useReadContract({
     address: oracleAddress as `0x${string}`,
