@@ -9,6 +9,7 @@ import {
   PEDERSEN_H_X,
   PEDERSEN_H_Y,
   CURVE_ORDER,
+  STARK_PRIME,
   type ECPoint,
 } from "./constants";
 import {
@@ -20,6 +21,7 @@ import {
   isOnCurve,
   pointToFelts,
 } from "./elgamal";
+import { hash } from "starknet";
 
 // Get the Pedersen H generator (second generator)
 export function getPedersenH(): ECPoint {
@@ -64,7 +66,7 @@ export function addCommitments(c1: ECPoint, c2: ECPoint): ECPoint {
 
 // Subtract commitments: C1 - C2 = commit(v1 - v2, r1 - r2)
 export function subtractCommitments(c1: ECPoint, c2: ECPoint): ECPoint {
-  const negC2: ECPoint = { x: c2.x, y: mod(-c2.y, CURVE_ORDER) };
+  const negC2: ECPoint = { x: c2.x, y: mod(-c2.y, STARK_PRIME) };
   return addPoints(c1, negC2);
 }
 
@@ -78,22 +80,15 @@ export function verifyCommitment(c: ECPoint): boolean {
   return isOnCurve(c);
 }
 
-// Convert commitment to felt252 (hash for on-chain storage)
+// Convert commitment to felt252 (Poseidon hash for on-chain storage)
 export function commitmentToFelt(commitment: ECPoint): string {
-  // Use Poseidon hash of x,y coordinates for on-chain commitment ID
-  // For now, use a simpler hash (in production, use Poseidon)
-  const data = `${commitment.x.toString(16)}${commitment.y.toString(16)}`;
-  return "0x" + simpleHash(data).toString(16);
-}
-
-// Simple hash function (replace with Poseidon in production)
-function simpleHash(data: string): bigint {
-  let hash = 0n;
-  for (let i = 0; i < data.length; i++) {
-    const char = BigInt(data.charCodeAt(i));
-    hash = mod((hash << 8n) ^ char ^ (hash >> 4n), CURVE_ORDER);
-  }
-  return hash;
+  const felt = BigInt(
+    hash.computePoseidonHash(
+      commitment.x.toString(),
+      commitment.y.toString()
+    )
+  );
+  return "0x" + felt.toString(16);
 }
 
 // Create a privacy note with commitment

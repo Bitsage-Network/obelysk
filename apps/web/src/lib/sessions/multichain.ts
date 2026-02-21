@@ -252,36 +252,48 @@ export async function verifyEthereumSignature(
 
 /**
  * Compute EIP-712 message hash
+ *
+ * TODO: Implement using ethers.js or viem for proper keccak256-based EIP-712 hashing.
+ * EIP-712 requires keccak256, NOT Poseidon. Install ethers (`npm i ethers`) or viem
+ * (`npm i viem`) and use their TypedDataEncoder / hashTypedData utilities.
+ *
+ * Example with ethers v6:
+ *   import { TypedDataEncoder } from 'ethers';
+ *   return TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message);
+ *
+ * Example with viem:
+ *   import { hashTypedData } from 'viem';
+ *   return hashTypedData({ domain: typedData.domain, types: typedData.types, primaryType: typedData.primaryType, message: typedData.message });
  */
-function computeEIP712Hash(typedData: ReturnType<typeof buildEIP712TypedData>): string {
-  // Implement EIP-712 hash computation
-  // This is a simplified version - in production use ethers or viem
-
-  const domainSeparator = hash.computePoseidonHashOnElements([
-    '0x' + Buffer.from('EIP712Domain').toString('hex'),
-    '0x' + Buffer.from(typedData.domain.name).toString('hex'),
-    '0x' + Buffer.from(typedData.domain.version).toString('hex'),
-    typedData.domain.chainId.toString(),
-  ]);
-
-  const messageHash = hash.computePoseidonHashOnElements(
-    Object.values(typedData.message).map(v => v?.toString() || '0x0')
+function computeEIP712Hash(_typedData: ReturnType<typeof buildEIP712TypedData>): string {
+  throw new Error(
+    'computeEIP712Hash is not implemented. EIP-712 requires keccak256 hashing via ethers.js or viem. ' +
+    'Install one of these packages and implement proper EIP-712 hashing.'
   );
-
-  return hash.computePoseidonHash(domainSeparator, messageHash);
 }
 
 /**
  * Recover Ethereum address from signature
+ *
+ * TODO: Implement using ethers.js or viem for proper ECDSA recovery.
+ * Install ethers (`npm i ethers`) or viem (`npm i viem`).
+ *
+ * Example with ethers v6:
+ *   import { recoverAddress } from 'ethers';
+ *   return recoverAddress(messageHash, signature.signature);
+ *
+ * Example with viem:
+ *   import { recoverAddress } from 'viem';
+ *   return recoverAddress({ hash: messageHash, signature: signature.signature });
  */
 async function recoverEthereumAddress(
-  messageHash: string,
-  signature: MultichainSignature
+  _messageHash: string,
+  _signature: MultichainSignature
 ): Promise<string> {
-  // This would use ethers.js or viem in production
-  // For now, return a placeholder - actual implementation requires ethers/viem
-  console.warn('Ethereum signature recovery requires ethers.js or viem');
-  return signature.publicKey || '0x0';
+  throw new Error(
+    'recoverEthereumAddress is not implemented. ECDSA recovery requires ethers.js or viem. ' +
+    'Install one of these packages and implement proper address recovery.'
+  );
 }
 
 /**
