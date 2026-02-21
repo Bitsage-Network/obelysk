@@ -61,7 +61,7 @@ jobs:
         with:
           scarb-version: "2.12.0"
 
-      - uses: software-mansion/setup-snfoundry@v3
+      - uses: foundry-rs/setup-snfoundry@v5
 
       - name: Build contracts
         run: cd contracts && scarb build
@@ -106,12 +106,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Check for Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile found, skipping Docker security scan"
+          fi
+
       - name: Build Docker image for scanning
-        run: docker build -t obelysk-scan:test . 2>/dev/null || echo "No Dockerfile found, skipping"
+        if: steps.dockerfile.outputs.exists == 'true'
+        run: docker build -t obelysk-scan:test .
 
       - name: Run Trivy vulnerability scanner
+        if: steps.dockerfile.outputs.exists == 'true'
         uses: aquasecurity/trivy-action@master
-        if: hashFiles('Dockerfile') != ''
         with:
           image-ref: "obelysk-scan:test"
           format: "sarif"
@@ -119,7 +130,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy scan results
+        if: steps.dockerfile.outputs.exists == 'true'
         uses: github/codeql-action/upload-sarif@v3
-        if: hashFiles('trivy-results.sarif') != ''
         with:
           sarif_file: "trivy-results.sarif"

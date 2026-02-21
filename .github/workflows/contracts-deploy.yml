@@ -63,7 +63,7 @@ jobs:
         with:
           scarb-version: "2.12.0"
 
-      - uses: software-mansion/setup-snfoundry@v3
+      - uses: foundry-rs/setup-snfoundry@v5
 
       - uses: actions/download-artifact@v4
         with:
