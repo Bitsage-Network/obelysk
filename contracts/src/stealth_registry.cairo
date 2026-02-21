@@ -12,7 +12,7 @@
 // 5. Integrates with SAGE token for transfers
 
 use starknet::ContractAddress;
-use sage_contracts::obelysk::stealth_payments::{
+use super::stealth_payments::{
     StealthMetaAddress, StealthPaymentAnnouncement, StealthSpendingProof,
     derive_stealth_address, verify_spending_proof, encrypt_amount_to_stealth
 };

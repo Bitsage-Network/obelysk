@@ -877,6 +877,18 @@ pub fn verify_encryption_proof(
         return false;
     }
 
+    // Schnorr equation: response*G + challenge*PK == commitment
+    // This is the critical verification step - without it, any (challenge, response) pair
+    // that matches the Fiat-Shamir hash would be accepted.
+    let g = generator();
+    let response_g = ec_mul(response_reduced, g);
+    let challenge_pk = ec_mul(expected_challenge, public_key);
+    let lhs = ec_add(response_g, challenge_pk);
+
+    if lhs.x != commitment.x || lhs.y != commitment.y {
+        return false;
+    }
+
     true
 }
 

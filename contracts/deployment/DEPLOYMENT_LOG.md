@@ -58,3 +58,27 @@ with provably unknown discrete log. Previously used 2*G (known dlog).
 ### ConfidentialTransfer — No upgrade needed (source-only fix)
 - Had unused H_X/H_Y constants (dead code, not referenced in function bodies)
 - Source updated for consistency but compiled artifact unchanged
+
+---
+
+## Sepolia Testnet — 2026-02-16 (DarkPool + Bridge)
+
+### DarkPoolAuction
+- **Class Hash**: `0x047df902481a78ab8bc2e3e29d10ec04cf77368e32f4c54bf1a46d9db07d9495`
+- **CASM Hash**: `0x0316eeadcf3b25bff98f2cfc8763afb18fa6013b032646df08f436ebd2cdade7`
+- **Contract Address**: `0x047765422c66c23d1639a2d93c9c4b91dc41da6273dd4baeab030b4b6ada0d46`
+- **Declare TX**: `0x0766a51f22eb358c15fce91e76323d89856f353882e38ce08f8a918eff171cdc`
+- **Deploy TX**: `0x029685524265d32d4878a9f911f1496046150b0426724303515c6d1440ebeb33`
+- **Constructor Args**: owner=deployer (`0x0759a4...b344`)
+- **Upgradability**: 5-min timelocked (`schedule_upgrade` / `execute_upgrade`)
+- **Features**: Per-pair commit-reveal batch auction, ElGamal encrypted balances, session keys, SNIP-9 outside execution, pausable
+
+### VM31ConfidentialBridge
+- **Class Hash**: `0x03b5186a25f140040eb8a58e2bc3c2733bad6af0c8399b0d5bb962f92f8e9617`
+- **CASM Hash**: `0x0766eb88c06444e133c908f3719d5acbaee65d1e3c72ceeab677a19419407362`
+- **Contract Address**: `0x025a45900864ac136ae56338dc481e2de7bfd9a4ff83ffcceff8439fa1f630a7`
+- **Declare TX**: `0x0745aca5c90cbe0da1e9877d67556db25c9285ae8bb86af20abfc1e5ff233baf`
+- **Deploy TX**: `0x05f239a484770568d94c7e3da0ee467410239ad018c0434c4797fe1564e0cda4`
+- **Constructor Args**: owner=deployer, relayer=deployer, vm31_pool=`0x07cf94...e1f9`, confidential_transfer=`0x07ab4e...0e86`
+- **Upgradability**: 5-min timelocked (`schedule_upgrade` / `execute_upgrade` / `cancel_upgrade`)
+- **Features**: Bridges finalized VM31 withdrawals into ConfidentialTransfer encrypted balances, idempotent bridge keys, reentrancy guard, pausable

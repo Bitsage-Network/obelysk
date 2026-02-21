@@ -338,8 +338,8 @@ pub mod ShieldedSwapRouter {
         self.swap_count.write(0);
         self.is_locked.write(false);
 
-        // Default 5-minute upgrade delay (for testnet; increase for mainnet)
-        self.upgrade_delay.write(300);
+        // 48h upgrade delay for mainnet (172800s); use 300s for testnet deployments
+        self.upgrade_delay.write(172800);
     }
 
     // ========================================================================

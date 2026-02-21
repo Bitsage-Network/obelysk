@@ -2,10 +2,18 @@
 version = 1
 
 [[package]]
+name = "integrity"
+version = "2.1.0"
+source = "registry+https://scarbs.xyz/"
+checksum = "sha256:31eb462462e7176e42b2fe14272bf221d2655a0708299105ca64d0b99bd59b3e"
+
+[[package]]
 name = "obelysk_contracts"
 version = "0.1.0"
 dependencies = [
  "openzeppelin",
+ "sage_contracts",
+ "snforge_std",
 ]
 
 [[package]]
@@ -113,3 +121,25 @@ source = "git+https://github.com/OpenZeppelin/cairo-contracts?tag=v0.20.0#7756fd
 name = "openzeppelin_utils"
 version = "0.20.0"
 source = "git+https://github.com/OpenZeppelin/cairo-contracts?tag=v0.20.0#7756fd1de2b4ebd239fa6e372d75535cea02e5e5"
+
+[[package]]
+name = "sage_contracts"
+version = "0.1.0"
+source = "git+https://github.com/Bitsage-Network/BitSage-Cairo-Smart-Contracts.git?branch=main#574c0fa8aedf446f78c2693505fdc0c766f52043"
+dependencies = [
+ "integrity",
+ "openzeppelin",
+]
+
+[[package]]
+name = "snforge_scarb_plugin"
+version = "0.56.0"
+source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.56.0#f530c15269018e08a458d807ba2da2ea2a2b60e6"
+
+[[package]]
+name = "snforge_std"
+version = "0.56.0"
+source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.56.0#f530c15269018e08a458d807ba2da2ea2a2b60e6"
+dependencies = [
+ "snforge_scarb_plugin",
+]

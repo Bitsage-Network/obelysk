@@ -23,7 +23,8 @@ use core::poseidon::poseidon_hash_span;
 use sage_contracts::obelysk::elgamal::{
     ECPoint, ElGamalCiphertext,
     ec_mul, ec_add,
-    generator, generator_h
+    generator, generator_h,
+    mul_mod_n, add_mod_n,
 };
 
 // ============================================================================
@@ -304,9 +305,11 @@ pub fn create_spending_proof(
     // Step 2: Challenge e = H(stealth_addr, R, PK_stealth)
     let challenge = compute_spending_challenge(stealth_address, commitment, stealth_pubkey);
 
-    // Step 3: Response s = k + e * sk_stealth (mod order)
-    let e_times_sk = challenge * stealth_spending_key;
-    let response = nonce + e_times_sk;
+    // Step 3: Response s = k + e * sk_stealth (mod curve_order)
+    // CRITICAL: Must use curve-order modular arithmetic, not felt252 arithmetic.
+    // felt252 arithmetic is mod P (field prime), but Schnorr requires mod N (curve order).
+    let e_times_sk = mul_mod_n(challenge, stealth_spending_key);
+    let response = add_mod_n(nonce, e_times_sk);
 
     StealthSpendingProof {
         commitment,
