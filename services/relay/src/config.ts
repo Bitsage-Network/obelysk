@@ -12,6 +12,9 @@ export const config = {
   relayAccountAddress: process.env.RELAY_ACCOUNT_ADDRESS || "",
   darkPoolAddress: process.env.DARK_POOL_ADDRESS || "0x03534599fbdfc28e12148560363fbe2551a6dfdea9901a9189f27e1f22b4ef94",
 
+  // Authentication
+  apiKey: process.env.RELAY_API_KEY || "",
+
   // Rate limiting
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || "20", 10),
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "300000", 10), // 5 minutes
