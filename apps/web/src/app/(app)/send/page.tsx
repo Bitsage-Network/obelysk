@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import {
   Send,
   ArrowRight,
@@ -36,6 +36,7 @@ import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination } from "@/lib/crypto";
 import { useToast } from "@/lib/providers/ToastProvider";
 import { parsePaymentUri, parseObelyskAddress } from "@/lib/obelysk/address";
+import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 
 export default function SendPage() {
   const { address } = useAccount();
@@ -74,6 +75,32 @@ export default function SendPage() {
 
   // Privacy keys for note management
   const { getSpendableNotes } = usePrivacyKeys();
+
+  // AVNU Paymaster for gasless transactions
+  const paymasterNetwork = network === "mainnet" ? "mainnet" : "sepolia";
+  const {
+    executeGasless: paymasterExecuteGasless,
+    checkEligibility: paymasterCheckEligibility,
+    isLoading: isPaymasterLoading,
+  } = useAVNUPaymaster(paymasterNetwork);
+  const [gasSponsored, setGasSponsored] = useState(false);
+
+  // Check paymaster eligibility when address or network changes
+  useEffect(() => {
+    if (!address) {
+      setGasSponsored(false);
+      return;
+    }
+    let cancelled = false;
+    paymasterCheckEligibility()
+      .then((result) => {
+        if (!cancelled) setGasSponsored(result.eligible);
+      })
+      .catch(() => {
+        if (!cancelled) setGasSponsored(false);
+      });
+    return () => { cancelled = true; };
+  }, [address, paymasterCheckEligibility]);
 
   // Fetch real data from API
   const {
@@ -329,6 +356,53 @@ export default function SendPage() {
           resetProvingState();
         }, 3000);
 
+      } else if (gasSponsored) {
+        // Gasless public send via AVNU paymaster
+        const { CallData } = await import("starknet");
+        const { getTokenAddressForSymbol } = await import("@/lib/contracts/addresses");
+        const tokenAddress = getTokenAddressForSymbol(network, selectedAsset.id);
+
+        if (!tokenAddress || tokenAddress === "0x0") {
+          throw new Error(`Token address not found for ${selectedAsset.symbol} on ${network}`);
+        }
+
+        // Validate recipient is a valid Starknet address
+        if (!recipient.startsWith("0x") || recipient.length < 10) {
+          throw new Error("Invalid recipient address");
+        }
+
+        // Convert amount to BigInt without floating point precision loss:
+        // Split on decimal, pad fractional part to `decimals` digits, combine
+        const decimals = selectedAsset.decimals || 18;
+        const [whole = "0", frac = ""] = amount.split(".");
+        const paddedFrac = frac.padEnd(decimals, "0").slice(0, decimals);
+        const amountBn = BigInt(whole) * BigInt(10 ** decimals) + BigInt(paddedFrac);
+
+        if (amountBn <= 0n) {
+          throw new Error("Amount must be greater than zero");
+        }
+
+        const U128_MAX = (1n << 128n) - 1n;
+        const calls = [{
+          contractAddress: tokenAddress,
+          entrypoint: "transfer",
+          calldata: CallData.compile({
+            recipient,
+            amount: { low: amountBn & U128_MAX, high: amountBn >> 128n },
+          }),
+        }];
+
+        await paymasterExecuteGasless(calls, { sponsored: true });
+        toast.success("Transfer sent gaslessly!");
+        setSendSuccess(true);
+
+        setTimeout(() => {
+          setShowConfirm(false);
+          setSendSuccess(false);
+          setAmount("");
+          setRecipient("");
+          resetProvingState();
+        }, 2000);
       } else {
         // Public send
         await sendPublic(recipient, amount);
@@ -763,9 +837,15 @@ export default function SendPage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">Transaction fee</span>
-              <span className="text-gray-300 flex items-center gap-1">
-                <Zap className="w-3 h-3" /> Gas fee applies
-              </span>
+              {gasSponsored ? (
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Sponsored (AA)
+                </span>
+              ) : (
+                <span className="text-gray-300 flex items-center gap-1">
+                  <Zap className="w-3 h-3" /> Gas fee applies
+                </span>
+              )}
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">Privacy</span>
@@ -1054,9 +1134,15 @@ export default function SendPage() {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Fee</span>
-                        <span className="text-gray-300 flex items-center gap-1">
-                          <Zap className="w-3 h-3" /> Gas fee applies
-                        </span>
+                        {gasSponsored ? (
+                          <span className="text-emerald-400 flex items-center gap-1">
+                            <Zap className="w-3 h-3" /> Sponsored
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 flex items-center gap-1">
+                            <Zap className="w-3 h-3" /> Gas fee applies
+                          </span>
+                        )}
                       </div>
                     </div>
 

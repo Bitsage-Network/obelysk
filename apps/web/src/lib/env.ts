@@ -14,9 +14,12 @@
 const ENV_VALUES = {
   NEXT_PUBLIC_STARKNET_NETWORK: process.env.NEXT_PUBLIC_STARKNET_NETWORK,
   NEXT_PUBLIC_RPC_URL: process.env.NEXT_PUBLIC_RPC_URL,
+  NEXT_PUBLIC_MAINNET_RPC_URL: process.env.NEXT_PUBLIC_MAINNET_RPC_URL,
+  NEXT_PUBLIC_RELAY_URL: process.env.NEXT_PUBLIC_RELAY_URL,
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL,
   NEXT_PUBLIC_DEMO_MODE: process.env.NEXT_PUBLIC_DEMO_MODE,
+  NEXT_PUBLIC_AVNU_API_KEY: process.env.NEXT_PUBLIC_AVNU_API_KEY,
   NEXT_PUBLIC_SAGE_TOKEN_ADDRESS: process.env.NEXT_PUBLIC_SAGE_TOKEN_ADDRESS,
   NEXT_PUBLIC_OTC_ORDERBOOK_ADDRESS: process.env.NEXT_PUBLIC_OTC_ORDERBOOK_ADDRESS,
   NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS: process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS,
@@ -78,6 +81,7 @@ interface EnvConfig {
   rpcUrl: string;
   apiUrl: string;
   wsUrl: string;
+  relayUrl: string;
 
   // Contract addresses (depend on network)
   contracts: {
@@ -91,6 +95,7 @@ interface EnvConfig {
   // Feature flags
   isDevnet: boolean;
   isProduction: boolean;
+  isMainnet: boolean;
 }
 
 class EnvValidationError extends Error {
@@ -124,6 +129,27 @@ export function validateEnv(): { valid: boolean; errors: string[] } {
       if (!value || value === '0x0') {
         errors.push(`Missing or invalid contract address: ${envVar}`);
       }
+    }
+  }
+
+  // For mainnet, validate RPC endpoint and relay URL
+  if (network === 'mainnet') {
+    // Prefer dedicated mainnet var, fall back to generic RPC_URL
+    const rpcUrl = getEnv('NEXT_PUBLIC_MAINNET_RPC_URL') || getEnv('NEXT_PUBLIC_RPC_URL') || '';
+    if (!rpcUrl) {
+      errors.push('NEXT_PUBLIC_MAINNET_RPC_URL is required for mainnet');
+    } else {
+      const publicEndpoints = ['blastapi.io', 'publicnode.com', '.public.'];
+      if (publicEndpoints.some(ep => rpcUrl.includes(ep))) {
+        errors.push('Mainnet RPC URL should use a dedicated provider (Alchemy/Infura), not a public endpoint');
+      }
+    }
+
+    const relayUrl = getEnv('NEXT_PUBLIC_RELAY_URL') || '';
+    if (!relayUrl) {
+      errors.push('NEXT_PUBLIC_RELAY_URL is required for mainnet');
+    } else if (relayUrl.startsWith('http://')) {
+      errors.push('NEXT_PUBLIC_RELAY_URL must use HTTPS for mainnet');
     }
   }
 
@@ -166,12 +192,19 @@ export function getEnvConfig(): EnvConfig {
 
   const network = (getEnv('NEXT_PUBLIC_STARKNET_NETWORK') || 'sepolia') as StarknetNetwork;
   const isDevnet = network === 'devnet' || network === 'local';
+  const isMainnet = network === 'mainnet';
+
+  // For mainnet, prefer NEXT_PUBLIC_MAINNET_RPC_URL, fall back to NEXT_PUBLIC_RPC_URL
+  const rpcUrl = isMainnet
+    ? (getEnv('NEXT_PUBLIC_MAINNET_RPC_URL') || getEnv('NEXT_PUBLIC_RPC_URL') || 'https://starknet-mainnet.public.blastapi.io')
+    : (getEnv('NEXT_PUBLIC_RPC_URL') || 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo');
 
   return {
     network,
-    rpcUrl: getEnv('NEXT_PUBLIC_RPC_URL') || 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo',
+    rpcUrl,
     apiUrl: getEnv('NEXT_PUBLIC_API_URL') || OPTIONAL_ENV_VARS.NEXT_PUBLIC_API_URL,
     wsUrl: getEnv('NEXT_PUBLIC_WS_URL') || OPTIONAL_ENV_VARS.NEXT_PUBLIC_WS_URL,
+    relayUrl: getEnv('NEXT_PUBLIC_RELAY_URL') || '',
 
     contracts: isDevnet
       ? {
@@ -191,6 +224,7 @@ export function getEnvConfig(): EnvConfig {
 
     isDevnet,
     isProduction: process.env.NODE_ENV === 'production',
+    isMainnet,
   };
 }
 
