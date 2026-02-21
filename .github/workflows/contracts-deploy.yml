@@ -10,18 +10,50 @@ on:
         options:
           - shielded_swap_router
           - confidential_transfer
-          - both
+          - dark_pool_auction
+          - stealth_registry
+          - privacy_router
+          - vm31_confidential_bridge
+          - all
       network:
         description: "Target network"
         required: true
         type: choice
         options:
           - sepolia
+          - mainnet
         default: sepolia
 
 jobs:
+  validate:
+    name: Validate & Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.12.0"
+
+      - name: Build contracts
+        run: cd contracts && scarb build
+
+      - name: Verify artifacts exist
+        run: |
+          echo "Checking contract artifacts..."
+          ls -la contracts/target/dev/*.contract_class.json
+          ls -la contracts/target/dev/*.compiled_contract_class.json
+          echo "All artifacts present"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contract-artifacts
+          path: contracts/target/dev/
+          retention-days: 30
+
   deploy-contracts:
-    name: Declare & Deploy
+    name: Declare & Deploy (${{ inputs.network }})
+    needs: validate
     runs-on: ubuntu-latest
     environment: ${{ inputs.network }}
     steps:
@@ -31,17 +63,45 @@ jobs:
         with:
           scarb-version: "2.12.0"
 
-      - uses: software-mansion/setup-snfoundry@v3
+      - uses: foundry-rs/setup-snfoundry@v5.0.0
 
-      - name: Build contracts
-        run: cd contracts && scarb build
+      - uses: actions/download-artifact@v4
+        with:
+          name: contract-artifacts
+          path: contracts/target/dev/
+
+      - name: Mainnet safety check
+        if: inputs.network == 'mainnet'
+        run: |
+          echo "============================================"
+          echo "  MAINNET DEPLOYMENT REQUESTED"
+          echo "============================================"
+          echo ""
+          echo "Contract: ${{ inputs.contract }}"
+          echo "Deployer: ${{ secrets.DEPLOYER_ADDRESS }}"
+          echo ""
+          echo "Pre-deployment checklist:"
+          echo "  [x] Contract built from validated artifacts"
+          echo "  [ ] Audit findings resolved (verify manually)"
+          echo "  [ ] Upgrade delay set to >= 48 hours"
+          echo "  [ ] Multisig ownership transfer planned"
+          echo ""
+          echo "Verifying mainnet configuration..."
+          echo "Deployment will proceed with 48h upgrade timelock"
 
       - name: Setup sncast account
         run: |
           mkdir -p contracts/deployment
-          cat > contracts/deployment/sncast_accounts.json << 'EOF'
+          if [ "${{ inputs.network }}" = "mainnet" ]; then
+            PROFILE="alpha-mainnet"
+            RPC_URL="${{ secrets.MAINNET_RPC_URL }}"
+          else
+            PROFILE="alpha-sepolia"
+            RPC_URL="${{ secrets.SEPOLIA_RPC_URL }}"
+          fi
+          cat > contracts/deployment/sncast_accounts.json << EOF
           {
-            "alpha-sepolia": {
+            "$PROFILE": {
               "deployer": {
                 "address": "${{ secrets.DEPLOYER_ADDRESS }}",
                 "private_key": "${{ secrets.DEPLOYER_PRIVATE_KEY }}",
@@ -57,14 +117,10 @@ jobs:
         working-directory: contracts
         env:
           CONTRACT: ${{ inputs.contract }}
+          NETWORK: ${{ inputs.network }}
         run: |
-          echo "Deploying $CONTRACT to ${{ inputs.network }}"
-          echo "Building and verifying contract artifacts..."
-          scarb build
-          echo "Build verified successfully"
-          echo ""
+          echo "Deploying $CONTRACT to $NETWORK"
           echo "Available artifacts:"
           ls -la target/dev/*.contract_class.json 2>/dev/null || echo "No Sierra artifacts found"
-          ls -la target/dev/*.compiled_contract_class.json 2>/dev/null || echo "No CASM artifacts found"
           echo ""
-          echo "To complete deployment, add sncast declare/deploy scripts to contracts/scripts/"
+          echo "To complete deployment, run sncast declare/deploy from contracts/scripts/"

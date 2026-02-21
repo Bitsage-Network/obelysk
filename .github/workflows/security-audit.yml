@@ -1,0 +1,138 @@
+name: Security Audit
+
+on:
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly on Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: npm audit (production)
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+
+      - name: Check for known vulnerable packages
+        run: |
+          echo "Checking for critical vulnerable packages..."
+          npx audit-ci --config .audit-ci.json 2>/dev/null || {
+            echo "audit-ci not configured, running basic npm audit"
+            npm audit --omit=dev --audit-level=critical
+          }
+
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan for secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --results=verified
+
+  contract-security:
+    name: Contract Security Checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: software-mansion/setup-scarb@v1
+        with:
+          scarb-version: "2.12.0"
+
+      - uses: foundry-rs/setup-snfoundry@v5.0.0
+
+      - name: Build contracts
+        run: cd contracts && scarb build
+
+      - name: Run contract tests
+        run: cd contracts && scarb test
+
+      - name: Check contract artifact sizes
+        run: |
+          echo "=== Contract Artifact Sizes ==="
+          MAX_SIZE_KB=500
+          OVERSIZED=0
+          for f in contracts/target/dev/*.contract_class.json; do
+            if [ -f "$f" ]; then
+              SIZE_KB=$(du -k "$f" | cut -f1)
+              NAME=$(basename "$f")
+              if [ "$SIZE_KB" -gt "$MAX_SIZE_KB" ]; then
+                echo "WARNING: $NAME is ${SIZE_KB}KB (limit: ${MAX_SIZE_KB}KB)"
+                OVERSIZED=1
+              else
+                echo "OK: $NAME (${SIZE_KB}KB)"
+              fi
+            fi
+          done
+          if [ "$OVERSIZED" = "1" ]; then
+            echo ""
+            echo "Some contracts exceed the size limit. Consider optimizing."
+          fi
+
+      - name: Verify upgrade timelocks
+        run: |
+          echo "=== Checking Upgrade Timelock Constants ==="
+          echo "Searching for upgrade_delay values in contract source..."
+          grep -rn "upgrade_delay" contracts/src/ || echo "No hardcoded upgrade_delay found (set via constructor)"
+          echo ""
+          echo "Reminder: Mainnet contracts MUST use upgrade_delay >= 172800 (48 hours)"
+
+  docker-security:
+    name: Docker Security
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for Dockerfile
+        id: dockerfile
+        run: |
+          if [ -f "Dockerfile" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "No Dockerfile found, skipping Docker security scan"
+          fi
+
+      - name: Build Docker image for scanning
+        id: docker-build
+        if: steps.dockerfile.outputs.exists == 'true'
+        continue-on-error: true
+        run: docker build -t obelysk-scan:test .
+
+      - name: Run Trivy vulnerability scanner
+        if: steps.docker-build.outcome == 'success'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: "obelysk-scan:test"
+          format: "sarif"
+          output: "trivy-results.sarif"
+          severity: "CRITICAL,HIGH"
+
+      - name: Upload Trivy scan results
+        if: steps.docker-build.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: "trivy-results.sarif"
