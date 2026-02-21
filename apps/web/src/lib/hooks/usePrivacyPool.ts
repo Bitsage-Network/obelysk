@@ -866,21 +866,6 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 20 }));
 
-        // CRITICAL: Nullifier = H(nullifier_secret, leaf_index)
-        // NOT H(nullifier_secret, commitment)!
-        // The leaf_index is returned by pp_deposit and stored in the note
-        if (note.leafIndex === 0 && note.depositTxHash) {
-          // TODO: Fetch leafIndex from transaction receipt or indexer
-          console.warn("Warning: leafIndex is 0, may need to fetch from chain");
-        }
-
-        const nullifier = deriveNullifier(
-          BigInt(note.nullifierSecret),
-          note.leafIndex
-        );
-
-        console.log("Withdrawal nullifier:", nullifier, "for leafIndex:", note.leafIndex);
-
         // ==============================
         // Step 2: Fetch Merkle proof (API first, local tree fallback)
         // ==============================

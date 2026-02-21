@@ -396,20 +396,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           );
         }
 
-        // Derive nullifier: H(nullifierSecret, leafIndex)
-        const nullifier = deriveNullifier(
-          BigInt(selectedNote.nullifierSecret),
-          selectedNote.leafIndex
-        );
-
-        console.log(
-          "[ShieldedSwap] Nullifier derived:",
-          nullifierToFelt(nullifier).slice(0, 16) + "...",
-          "for leafIndex:",
-          selectedNote.leafIndex
-        );
-
-        if (abortRef.current) return;
+        if (abortRef.current) return null;
 
         setState((prev) => ({
           ...prev,

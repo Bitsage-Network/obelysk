@@ -23,6 +23,7 @@ export interface MerkleProofResult {
   path_indices: number[];
   root: string;
   leafIndex: number;
+  tree_size: number;
 }
 
 // ============================================================================
@@ -76,7 +77,7 @@ function getPrivacyPoolsContract(network: NetworkType): Contract {
   if (!address || address === "0x0") {
     throw new Error(`Privacy Pools not deployed on ${network}`);
   }
-  return new Contract(PRIVACY_POOLS_VIEW_ABI, address, provider);
+  return new Contract({ abi: PRIVACY_POOLS_VIEW_ABI, address, providerOrAccount: provider });
 }
 
 /**
@@ -228,6 +229,7 @@ export async function fetchMerkleProofLocal(
     path_indices: formatted.pathIndices,
     root: formatted.root,
     leafIndex: formatted.leafIndex,
+    tree_size: commitments.length,
   };
 }
 
@@ -262,6 +264,7 @@ export async function fetchMerkleProofWithFallback(
           path_indices: data.path_indices.map((p: number) => p),
           root: data.current_root || data.root,
           leafIndex: data.leaf_index,
+          tree_size: data.tree_size || 0,
         };
       }
     }
