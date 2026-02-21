@@ -7,7 +7,7 @@
 
 import { Account, RpcProvider, hash, type Call } from "starknet";
 import { config } from "./config";
-import { checkRateLimit } from "./rateLimiter";
+import { getRateLimitStore } from "./store";
 import type { RelayPayload } from "./validation";
 
 // Singleton provider and account
@@ -48,8 +48,9 @@ export interface RelayResult {
  * 4. Wait for inclusion
  */
 export async function submitRelay(payload: RelayPayload): Promise<RelayResult> {
-  // 1. Rate limit
-  if (!checkRateLimit(payload.ownerAddress)) {
+  // 1. Rate limit (already checked in index.ts, double-check here)
+  const remaining = await getRateLimitStore().remaining(payload.ownerAddress);
+  if (remaining <= 0) {
     return {
       transactionHash: "",
       status: "error",
