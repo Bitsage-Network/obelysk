@@ -124,6 +124,7 @@ source = "git+https://github.com/OpenZeppelin/cairo-contracts?tag=v0.20.0#7756fd
 [[package]]
 name = "sage_contracts"
 version = "0.1.0"
+source = "git+https://github.com/Bitsage-Network/BitSage-Cairo-Smart-Contracts.git?branch=main#574c0fa8aedf446f78c2693505fdc0c766f52043"
 dependencies = [
  "integrity",
  "openzeppelin",

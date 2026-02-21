@@ -6,7 +6,7 @@ edition = "2024_07"
 [dependencies]
 starknet = "2.12.0"
 openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts", tag = "v0.20.0" }
-sage_contracts = { path = "../../BitSage-Cairo-Smart-Contracts" }
+sage_contracts = { git = "https://github.com/Bitsage-Network/BitSage-Cairo-Smart-Contracts.git", branch = "main" }
 
 [[target.starknet-contract]]
 casm = true
