@@ -7,6 +7,7 @@ import {
   Shield,
   ArrowUpDown,
   Repeat,
+  ArrowLeftRight,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -17,13 +18,13 @@ import { MyOrders } from "./components/MyOrders";
 import { PairSelector } from "./components/PairSelector";
 import { MarketStats } from "./components/MarketStats";
 import { PrivateAuction } from "./components/PrivateAuction";
-import { ShieldedSwapPanel } from "@/components/swap";
+import { ShieldedSwapPanel, AvnuSwapPanel } from "@/components/swap";
 import { TRADING_PAIRS } from "./config";
 import {
   ResponsiveTradingGrid,
 } from "@/components/ui/ResponsiveTradingLayout";
 
-type TradeMode = "orderbook" | "swap" | "private";
+type TradeMode = "orderbook" | "swap" | "avnu" | "private";
 
 const TRADE_MODES = [
   {
@@ -32,6 +33,13 @@ const TRADE_MODES = [
     icon: BookOpen,
     description: "Peer-to-peer OTC limit orders",
     activeClass: "bg-white/10 text-white shadow-sm",
+  },
+  {
+    id: "avnu" as const,
+    label: "Swap",
+    icon: ArrowLeftRight,
+    description: "Best-price DEX aggregated swaps via AVNU",
+    activeClass: "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-sm shadow-emerald-500/10",
   },
   {
     id: "swap" as const,
@@ -181,6 +189,52 @@ export default function TradePage() {
                 </div>
               </div>
             </div>
+          </motion.div>
+
+        ) : mode === "avnu" ? (
+          /* ═══════════════════════════════════════════════════════
+             AVNU SWAP — DEX aggregated swaps
+             ═══════════════════════════════════════════════════════ */
+          <motion.div
+            key="avnu"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center"
+          >
+            <div className="w-full max-w-[480px] relative">
+              <div className="absolute -inset-8 pointer-events-none">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-emerald-600/[0.06] rounded-full blur-[100px]" />
+                <div className="absolute top-1/3 left-1/4 w-40 h-40 bg-teal-600/[0.04] rounded-full blur-[80px]" />
+              </div>
+
+              <div className="relative rounded-3xl border border-white/[0.06] bg-gradient-to-b from-surface-card/95 to-[#0c0e14]/95 backdrop-blur-xl p-6 shadow-2xl shadow-black/40">
+                <AvnuSwapPanel />
+              </div>
+            </div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.3 }}
+              className="mt-6 max-w-[480px] w-full"
+            >
+              <div className="glass-card p-4 bg-gradient-to-r from-emerald-600/[0.06] to-teal-600/[0.04]">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-emerald-600/15">
+                    <ArrowLeftRight className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-300">
+                      <strong className="text-emerald-300">AVNU DEX Aggregator:</strong>{" "}
+                      Routes your swap across Ekubo, JediSwap, MySwap, 10kSwap, and market makers
+                      with split routing for the best price. Standard swap — your wallet address is visible on-chain.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
 
         ) : mode === "swap" ? (
