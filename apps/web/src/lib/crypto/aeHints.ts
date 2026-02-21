@@ -21,6 +21,8 @@ import {
   type ElGamalCiphertext,
 } from "./constants";
 import { scalarMult, addPoints, mod, randomScalar, getGenerator } from "./elgamal";
+import { hash as starkHash } from "starknet";
+import { logger } from "@/lib/utils/logger";
 
 // AE Hint structure matching Cairo contract
 export interface AEHint {
@@ -36,26 +38,12 @@ export interface TransferHintBundle {
   auditorHint?: AEHint;   // Optional compliance auditor hint
 }
 
-// Poseidon constants (matching Cairo's poseidon_hash_span)
-const POSEIDON_ROUND_CONSTANTS = [
-  0x6861759ea556a2339dd92f9562a30b9e58e2ad98109ae4780b7fd8eac77fe6fn,
-  0x3827681995d5af9ffc8397a3d00425a3da43f76abf28a64e4ab1a22ad1eeee7n,
-];
-
 /**
- * Simple Poseidon hash (2-to-1 compression)
- * Simplified version - production should use full sponge construction
+ * Poseidon hash using starknet.js (matches Cairo's poseidon_hash_span)
  */
 function poseidonHash(inputs: bigint[]): bigint {
-  let state = 0n;
-  for (const input of inputs) {
-    // Mix input into state
-    state = mod(state + input, STARK_PRIME);
-    // Apply round constant
-    state = mod(state * state * state + POSEIDON_ROUND_CONSTANTS[0], STARK_PRIME);
-    state = mod(state + POSEIDON_ROUND_CONSTANTS[1], STARK_PRIME);
-  }
-  return state;
+  const felts = inputs.map(v => '0x' + v.toString(16));
+  return BigInt(starkHash.computePoseidonHashOnElements(felts));
 }
 
 /**
@@ -185,7 +173,7 @@ export function decryptAEHint(
   const expectedMac = computeMac(macKey, hint.encryptedAmount, hint.nonce);
 
   if (expectedMac !== hint.mac) {
-    console.warn("[AEHint] MAC verification failed");
+    logger.warn("[AEHint] MAC verification failed");
     return null;
   }
 
@@ -317,21 +305,21 @@ export async function hybridDecrypt(
   ciphertext: ElGamalCiphertext,
   privateKey: bigint,
   hint?: AEHint,
-  maxValue: bigint = 1000000000000n
+  maxValue: bigint = 2n ** 40n
 ): Promise<bigint> {
   // Try AE hint first (O(1))
   if (hint) {
     const amount = decryptAEHintFromCiphertext(hint, ciphertext, privateKey);
     if (amount !== null) {
-      console.log("[AEHint] O(1) decryption successful");
+      logger.log("[AEHint] O(1) decryption successful");
       return amount;
     }
-    console.warn("[AEHint] Hint decryption failed, falling back to BSGS");
+    logger.warn("[AEHint] Hint decryption failed, falling back to BSGS");
   }
 
   // Fall back to baby-step giant-step (O(√n))
   // Import dynamically to avoid circular dependency
   const { decrypt } = await import("./elgamal");
-  console.log("[AEHint] Using baby-step giant-step (O(√n))");
+  logger.log("[AEHint] Using baby-step giant-step (O(√n))");
   return decrypt(ciphertext, privateKey, maxValue);
 }

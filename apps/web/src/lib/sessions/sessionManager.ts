@@ -231,7 +231,7 @@ export class BitSageSessionManager {
   constructor(
     provider: ProviderInterface,
     contractAddress: string,
-    chainId: string = 'SN_SEPOLIA'
+    chainId: string = process.env.NEXT_PUBLIC_STARKNET_NETWORK === 'mainnet' ? 'SN_MAIN' : 'SN_SEPOLIA'
   ) {
     this.provider = provider;
     this.contractAddress = contractAddress;

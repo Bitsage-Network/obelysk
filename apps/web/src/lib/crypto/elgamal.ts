@@ -198,7 +198,7 @@ export function encrypt(
 export function decrypt(
   ciphertext: ElGamalCiphertext,
   privateKey: bigint,
-  maxValue: bigint = 1000000000000n // Max balance to search
+  maxValue: bigint = 2n ** 40n // Max balance to search (~1.1 trillion)
 ): bigint {
   const c1: ECPoint = { x: ciphertext.c1_x, y: ciphertext.c1_y };
   const c2: ECPoint = { x: ciphertext.c2_x, y: ciphertext.c2_y };
