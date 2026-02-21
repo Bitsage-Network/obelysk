@@ -27,7 +27,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useAccount } from "@starknet-react/core";
-import { useStealthOnChain } from "@/lib/hooks/useStealthOnChain";
+import { useStealthOnChain, type ClaimParams } from "@/lib/hooks/useStealthOnChain";
+import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
 
 // Time ranges for scanning
 const TIME_RANGES = [
@@ -40,6 +41,7 @@ const TIME_RANGES = [
 
 export default function StealthAddressesPage() {
   const { address } = useAccount();
+  const { hasKeys, unlockKeys } = usePrivacyKeys();
   const [showSpendingKey, setShowSpendingKey] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [selectedTimeRange, setSelectedTimeRange] = useState(TIME_RANGES[1]);
@@ -47,6 +49,7 @@ export default function StealthAddressesPage() {
   const [showQRCode, setShowQRCode] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [filterStatus, setFilterStatus] = useState<"all" | "unclaimed" | "claimed">("all");
+  const [claimError, setClaimError] = useState<string | null>(null);
 
   // Use on-chain event scanner (replaces offline coordinator API)
   const {
@@ -105,13 +108,43 @@ export default function StealthAddressesPage() {
 
   const handleClaimSelected = async () => {
     if (selectedPayments.length === 0 || !address) return;
-    claim({ address, paymentIds: selectedPayments });
-    setSelectedPayments([]);
+    setClaimError(null);
+    try {
+      const keyPair = await unlockKeys();
+      if (!keyPair) {
+        setClaimError("Failed to unlock stealth keys. Please set up privacy keys first.");
+        return;
+      }
+      claim({
+        address,
+        paymentIds: selectedPayments,
+        spendingKey: keyPair.privateKey,
+        viewingKey: keyPair.privateKey, // viewing key derived from same keypair
+      });
+      setSelectedPayments([]);
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : "Failed to claim");
+    }
   };
 
   const handleClaimSingle = async (paymentId: string) => {
     if (!address) return;
-    claim({ address, paymentIds: [paymentId] });
+    setClaimError(null);
+    try {
+      const keyPair = await unlockKeys();
+      if (!keyPair) {
+        setClaimError("Failed to unlock stealth keys. Please set up privacy keys first.");
+        return;
+      }
+      claim({
+        address,
+        paymentIds: [paymentId],
+        spendingKey: keyPair.privateKey,
+        viewingKey: keyPair.privateKey,
+      });
+    } catch (err) {
+      setClaimError(err instanceof Error ? err.message : "Failed to claim");
+    }
   };
 
   const togglePaymentSelection = (paymentId: string) => {
@@ -504,6 +537,28 @@ export default function StealthAddressesPage() {
                 ))
               )}
             </div>
+
+            {/* Claim Error */}
+            {claimError && (
+              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-300">{claimError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Keys Required Notice */}
+            {!hasKeys && unclaimedPayments.length > 0 && (
+              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
+                <div className="flex items-start gap-2">
+                  <Key className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-orange-300">
+                    Privacy keys required to claim payments. Your wallet will prompt you to sign a message to derive your stealth keys.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {/* Batch Claim */}
             {selectedPayments.length > 0 && (
