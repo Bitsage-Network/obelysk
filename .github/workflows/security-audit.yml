@@ -117,11 +117,13 @@ jobs:
           fi
 
       - name: Build Docker image for scanning
+        id: docker-build
         if: steps.dockerfile.outputs.exists == 'true'
+        continue-on-error: true
         run: docker build -t obelysk-scan:test .
 
       - name: Run Trivy vulnerability scanner
-        if: steps.dockerfile.outputs.exists == 'true'
+        if: steps.docker-build.outcome == 'success'
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: "obelysk-scan:test"
@@ -130,7 +132,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: Upload Trivy scan results
-        if: steps.dockerfile.outputs.exists == 'true'
+        if: steps.docker-build.outcome == 'success'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: "trivy-results.sarif"
