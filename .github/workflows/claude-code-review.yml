@@ -25,7 +25,6 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-opus-4-6
           track_progress: true
           prompt: |
             You are a senior security reviewer for the Obelysk Protocol — a dual-track privacy system on Starknet
