@@ -385,6 +385,56 @@ export function compressPoint(point: ECPoint): string {
   return (signBit === 1n ? "03" : "02") + point.x.toString(16).padStart(64, "0");
 }
 
+/**
+ * Tonelli-Shanks modular square root: returns y such that y^2 ≡ n (mod p).
+ * Works for any odd prime p, including when p ≡ 1 (mod 4) (the STARK prime).
+ * Returns null if n is not a quadratic residue mod p.
+ */
+export function tonelliShanks(n: bigint, p: bigint): bigint | null {
+  if (n === 0n) return 0n;
+
+  // Check that n is a quadratic residue (Euler's criterion)
+  if (modPow(n, (p - 1n) / 2n, p) !== 1n) return null;
+
+  // Factor out powers of 2: p - 1 = Q * 2^S
+  let q = p - 1n;
+  let s = 0n;
+  while (q % 2n === 0n) {
+    q /= 2n;
+    s += 1n;
+  }
+
+  // Find a quadratic non-residue z
+  let z = 2n;
+  while (modPow(z, (p - 1n) / 2n, p) !== p - 1n) {
+    z += 1n;
+  }
+
+  let m = s;
+  let c = modPow(z, q, p);
+  let t = modPow(n, q, p);
+  let r = modPow(n, (q + 1n) / 2n, p);
+
+  while (true) {
+    if (t === 1n) return r;
+
+    // Find the least i such that t^(2^i) ≡ 1 (mod p)
+    let i = 1n;
+    let tmp = mod(t * t, p);
+    while (tmp !== 1n) {
+      tmp = mod(tmp * tmp, p);
+      i += 1n;
+    }
+
+    // Update r, t, c, m
+    const b = modPow(c, modPow(2n, m - i - 1n, p - 1n), p);
+    m = i;
+    c = mod(b * b, p);
+    t = mod(t * c, p);
+    r = mod(r * b, p);
+  }
+}
+
 // Decompress point from compressed format
 export function decompressPoint(compressed: string): ECPoint {
   const signBit = compressed.slice(0, 2) === "03" ? 1n : 0n;
@@ -396,8 +446,11 @@ export function decompressPoint(compressed: string): ECPoint {
     STARK_PRIME
   );
 
-  // Tonelli-Shanks for square root (simplified for Stark prime)
-  const y = modPow(y2, (STARK_PRIME + 1n) / 4n, STARK_PRIME);
+  // Tonelli-Shanks square root (works for STARK prime where p ≡ 1 mod 4)
+  const y = tonelliShanks(y2, STARK_PRIME);
+  if (y === null) {
+    throw new Error("x-coordinate is not on the curve");
+  }
 
   // Select correct y based on sign bit
   const finalY = (y & 1n) === signBit ? y : mod(-y, STARK_PRIME);
