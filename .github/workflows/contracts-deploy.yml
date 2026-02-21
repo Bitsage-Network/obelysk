@@ -99,6 +99,8 @@ jobs:
             PROFILE="alpha-sepolia"
             RPC_URL="${{ secrets.SEPOLIA_RPC_URL }}"
           fi
+          # Write account file with restricted permissions
+          umask 077
           cat > contracts/deployment/sncast_accounts.json << EOF
           {
             "$PROFILE": {
@@ -112,15 +114,131 @@ jobs:
             }
           }
           EOF
+          chmod 600 contracts/deployment/sncast_accounts.json
 
       - name: Declare & Deploy
         working-directory: contracts
         env:
           CONTRACT: ${{ inputs.contract }}
           NETWORK: ${{ inputs.network }}
+          DEPLOYER_ADDRESS: ${{ secrets.DEPLOYER_ADDRESS }}
         run: |
-          echo "Deploying $CONTRACT to $NETWORK"
-          echo "Available artifacts:"
-          ls -la target/dev/*.contract_class.json 2>/dev/null || echo "No Sierra artifacts found"
-          echo ""
-          echo "To complete deployment, run sncast declare/deploy from contracts/scripts/"
+          set -euo pipefail
+
+          if [ "$NETWORK" = "mainnet" ]; then
+            RPC_URL="${{ secrets.MAINNET_RPC_URL }}"
+            UPGRADE_DELAY=172800
+          else
+            RPC_URL="${{ secrets.SEPOLIA_RPC_URL }}"
+            UPGRADE_DELAY=300
+          fi
+
+          SNCAST="sncast --account deployer --accounts-file deployment/sncast_accounts.json --url $RPC_URL"
+          PACKAGE="obelysk_contracts"
+
+          declare_and_deploy() {
+            local contract_name="$1"
+            shift
+            local calldata="$*"
+
+            echo "=== Declaring $contract_name ==="
+            local declare_output
+            declare_output=$($SNCAST declare --contract-name "$contract_name" 2>&1) || true
+
+            # Parse class hash from output (handles both fresh declare and already-declared)
+            CLASS_HASH=$(echo "$declare_output" | grep -oP 'class_hash: \K0x[0-9a-fA-F]+' || true)
+            if [ -z "$CLASS_HASH" ]; then
+              # "already declared" — extract hash from error message without re-declaring
+              CLASS_HASH=$(echo "$declare_output" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || true)
+            fi
+
+            if [ -z "$CLASS_HASH" ]; then
+              echo "ERROR: Failed to declare $contract_name"
+              echo "Output: $declare_output"
+              exit 1
+            fi
+            echo "Class hash: $CLASS_HASH"
+
+            # Validate class hash format
+            if [[ ! "$CLASS_HASH" =~ ^0x[0-9a-fA-F]+$ ]]; then
+              echo "ERROR: Invalid class hash format: $CLASS_HASH"
+              exit 1
+            fi
+
+            echo "=== Deploying $contract_name ==="
+            local deploy_output
+            if [ -n "$calldata" ]; then
+              deploy_output=$($SNCAST deploy --class-hash "$CLASS_HASH" --constructor-calldata $calldata 2>&1)
+            else
+              deploy_output=$($SNCAST deploy --class-hash "$CLASS_HASH" 2>&1)
+            fi
+
+            ADDR=$(echo "$deploy_output" | grep -oP 'contract_address: \K0x[0-9a-fA-F]+' || true)
+            if [ -z "$ADDR" ]; then
+              echo "ERROR: Failed to deploy $contract_name"
+              echo "Output: $deploy_output"
+              exit 1
+            fi
+
+            # Validate address format
+            if [[ ! "$ADDR" =~ ^0x[0-9a-fA-F]+$ ]]; then
+              echo "ERROR: Invalid contract address format: $ADDR"
+              exit 1
+            fi
+
+            echo "Deployed at: $ADDR"
+            echo "${contract_name}_ADDRESS=$ADDR" >> "$GITHUB_ENV"
+            echo "${contract_name}_CLASS_HASH=$CLASS_HASH" >> "$GITHUB_ENV"
+          }
+
+          # ─── Contract dispatch ───
+          case "$CONTRACT" in
+            confidential_transfer)
+              declare_and_deploy "ConfidentialTransfer" "$DEPLOYER_ADDRESS" "0x0" "0x0" "$UPGRADE_DELAY"
+              ;;
+            dark_pool_auction)
+              declare_and_deploy "DarkPoolAuction" "$DEPLOYER_ADDRESS"
+              ;;
+            stealth_registry)
+              declare_and_deploy "StealthRegistry" "$DEPLOYER_ADDRESS" "${{ secrets.SAGE_TOKEN_ADDRESS }}"
+              ;;
+            privacy_router)
+              declare_and_deploy "PrivacyRouter" "$DEPLOYER_ADDRESS" "${{ secrets.SAGE_TOKEN_ADDRESS }}" "0x0"
+              ;;
+            shielded_swap_router)
+              if [ "$NETWORK" = "mainnet" ]; then
+                EKUBO="0x00000005dd3d2f4429af886cd1a3b08289dbcea99a294197e9eb43b0e0325b4b"
+              else
+                EKUBO="0x0444a09d96389aa7148f1aada508e30b71299ffe650d9c97fdaae38cb9a23384"
+              fi
+              declare_and_deploy "ShieldedSwapRouter" "$DEPLOYER_ADDRESS" "$EKUBO"
+              ;;
+            vm31_confidential_bridge)
+              declare_and_deploy "VM31ConfidentialBridge" "$DEPLOYER_ADDRESS" "0x0" "0x0" "${{ secrets.CONFIDENTIAL_TRANSFER_ADDRESS }}"
+              ;;
+            all)
+              echo "For full deployment, use: contracts/scripts/deploy-mainnet.sh"
+              echo "CI 'all' deployment is not supported — deploy contracts individually."
+              exit 1
+              ;;
+            *)
+              echo "Unknown contract: $CONTRACT"
+              exit 1
+              ;;
+          esac
+
+          echo "=== Deployment complete ==="
+
+      - name: Cleanup secrets
+        if: always()
+        run: |
+          rm -f contracts/deployment/sncast_accounts.json
+          echo "Account credentials cleaned up"
+
+      - name: Verify deployment
+        if: success()
+        working-directory: contracts
+        run: |
+          echo "=== Post-deploy verification ==="
+          # Log all deployed addresses from env for audit trail
+          env | grep -E '_(ADDRESS|CLASS_HASH)=' | sort || echo "No deployment env vars found"

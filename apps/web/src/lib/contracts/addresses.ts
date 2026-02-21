@@ -465,7 +465,7 @@ export const NETWORK_CONFIG = {
   mainnet: {
     chainId: "0x534e5f4d41494e",
     name: "Starknet Mainnet",
-    rpcUrl: "https://starknet-mainnet.public.blastapi.io",
+    rpcUrl: process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://starknet-mainnet.public.blastapi.io",
     explorerUrl: "https://starkscan.co",
   },
 };
