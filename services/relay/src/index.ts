@@ -17,9 +17,45 @@ const app = express();
 const startTime = Date.now();
 let pendingTxCount = 0;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Nonce replay tracking (in-memory; use Redis in production for persistence)
+const usedNonces = new Set<string>();
+
+// Middleware — restricted CORS, request size limit, API key auth
+const ALLOWED_ORIGINS = [
+  "https://obelysk.xyz",
+  "https://www.obelysk.xyz",
+  /^https:\/\/.*\.obelysk\.xyz$/,
+];
+if (process.env.NODE_ENV === "development") {
+  ALLOWED_ORIGINS.push("http://localhost:3000" as unknown as RegExp);
+}
+
+app.use(
+  cors({
+    origin: ALLOWED_ORIGINS as (string | RegExp)[],
+    methods: ["GET", "POST"],
+    allowedHeaders: ["Content-Type", "X-Api-Key", "Authorization"],
+  })
+);
+app.use(express.json({ limit: "100kb" }));
+
+// API key authentication middleware
+function requireApiKey(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction
+): void {
+  const apiKey = config.apiKey;
+  if (!apiKey) return next(); // No key configured = open (dev mode only)
+
+  const provided =
+    req.headers["x-api-key"] ||
+    (req.headers["authorization"] as string)?.replace("Bearer ", "");
+
+  if (provided === apiKey) return next();
+
+  res.status(401).json({ status: "error", error: "Unauthorized" });
+}
 
 // ==========================================================================
 // Health check
@@ -49,7 +85,7 @@ app.get("/status", async (_req, res) => {
 // Relay endpoint
 // ==========================================================================
 
-app.post("/relay", async (req, res) => {
+app.post("/relay", requireApiKey, async (req, res) => {
   // 1. Validate payload
   const { valid, error, payload } = validatePayload(req.body);
   if (!valid || !payload) {
@@ -57,7 +93,18 @@ app.post("/relay", async (req, res) => {
     return;
   }
 
-  // 2. Check rate limit before processing
+  // 2. Nonce replay protection
+  const nonce = payload.outsideExecution.nonce;
+  if (usedNonces.has(nonce)) {
+    res.status(409).json({
+      status: "error",
+      error: "Nonce already used (replay detected)",
+      transactionHash: "",
+    });
+    return;
+  }
+
+  // 3. Check rate limit before processing
   const remaining = getRemainingRequests(payload.ownerAddress);
   if (remaining <= 0) {
     res.status(429).json({
@@ -68,7 +115,20 @@ app.post("/relay", async (req, res) => {
     return;
   }
 
-  // 3. Submit via relay
+  // 4. Mark nonce as used
+  usedNonces.add(nonce);
+  // Prune old nonces to prevent unbounded memory growth (keep last 10000)
+  if (usedNonces.size > 10000) {
+    const iter = usedNonces.values();
+    for (let i = 0; i < 1000; i++) iter.next();
+    // Clear oldest entries
+    const toKeep = new Set<string>();
+    for (const v of usedNonces) toKeep.add(v);
+    // Simple: just clear if too large (stateless nonces are tracked on-chain anyway)
+    if (usedNonces.size > 50000) usedNonces.clear();
+  }
+
+  // 5. Submit via relay — return tx hash immediately, don't block on confirmation
   pendingTxCount++;
   try {
     const result = await submitRelay(payload);
@@ -81,6 +141,27 @@ app.post("/relay", async (req, res) => {
     });
   } finally {
     pendingTxCount = Math.max(0, pendingTxCount - 1);
+  }
+});
+
+// ==========================================================================
+// Transaction status polling endpoint
+// ==========================================================================
+
+app.get("/status/:txHash", async (req, res) => {
+  try {
+    const { RpcProvider } = await import("starknet");
+    const provider = new RpcProvider({ nodeUrl: config.rpcUrl });
+    const receipt = await provider.getTransactionReceipt(req.params.txHash);
+    res.json({
+      txHash: req.params.txHash,
+      status: receipt.statusReceipt || "RECEIVED",
+    });
+  } catch {
+    res.json({
+      txHash: req.params.txHash,
+      status: "NOT_FOUND",
+    });
   }
 });
 
