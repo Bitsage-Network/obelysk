@@ -31,6 +31,7 @@ import {
   compressPoint,
   decompressPoint,
   generateKeyPair,
+  tonelliShanks,
 } from '../elgamal';
 import {
   STARK_PRIME,
@@ -358,17 +359,47 @@ describe('pointToFelts() / feltsToPoint()', () => {
   });
 });
 
-describe('compressPoint() / decompressPoint()', () => {
-  // NOTE: decompressPoint() uses modPow(y2, (p+1)/4, p) which is the
-  // correct square root algorithm ONLY when p ≡ 3 (mod 4).
-  // The Stark prime p ≡ 1 (mod 4), so this simplified sqrt is broken.
-  // These tests document the bug. A proper Tonelli-Shanks implementation
-  // is needed for decompressPoint to work reliably.
+describe('tonelliShanks()', () => {
+  it('computes sqrt for small prime p ≡ 1 (mod 4)', () => {
+    // p = 5, 4 ≡ 1 (mod 5) → sqrt = 2 or 3
+    const root = tonelliShanks(4n, 5n);
+    expect(root).not.toBeNull();
+    expect(mod(root! * root!, 5n)).toBe(4n);
+  });
 
+  it('computes sqrt for the STARK prime', () => {
+    // y^2 for the generator point G
+    const g = getGenerator();
+    const y2 = mod(g.y * g.y, STARK_PRIME);
+    const root = tonelliShanks(y2, STARK_PRIME);
+    expect(root).not.toBeNull();
+    expect(mod(root! * root!, STARK_PRIME)).toBe(y2);
+    // root should be either g.y or -g.y
+    expect(root === g.y || root === mod(-g.y, STARK_PRIME)).toBe(true);
+  });
+
+  it('computes sqrt for Pedersen H point', () => {
+    const h = getPedersenH();
+    const y2 = mod(h.y * h.y, STARK_PRIME);
+    const root = tonelliShanks(y2, STARK_PRIME);
+    expect(root).not.toBeNull();
+    expect(mod(root! * root!, STARK_PRIME)).toBe(y2);
+  });
+
+  it('returns null for a quadratic non-residue', () => {
+    // 2 is a non-residue mod 5
+    expect(tonelliShanks(2n, 5n)).toBeNull();
+  });
+
+  it('returns 0 for n = 0', () => {
+    expect(tonelliShanks(0n, STARK_PRIME)).toBe(0n);
+  });
+});
+
+describe('compressPoint() / decompressPoint()', () => {
   it('compressPoint produces a valid compressed encoding', () => {
     const g = getGenerator();
     const compressed = compressPoint(g);
-    // Should start with "02" or "03" (sign prefix) followed by 64 hex chars
     expect(compressed).toMatch(/^0[23][0-9a-f]{64}$/);
   });
 
@@ -386,13 +417,39 @@ describe('compressPoint() / decompressPoint()', () => {
     expect(decompressed.x).toBe(g.x);
   });
 
-  it.skip('decompressPoint roundtrip fails for Stark prime (p ≡ 1 mod 4) — known bug', () => {
-    // This test documents the known bug: sqrt via (p+1)/4 is incorrect
-    // for the Stark prime. A full Tonelli-Shanks is needed.
+  it('decompressPoint roundtrip recovers G exactly', () => {
     const g = getGenerator();
     const compressed = compressPoint(g);
     const decompressed = decompressPoint(compressed);
+    expect(decompressed.x).toBe(g.x);
     expect(decompressed.y).toBe(g.y);
+  });
+
+  it('decompressPoint roundtrip recovers H exactly', () => {
+    const h = getPedersenH();
+    const compressed = compressPoint(h);
+    const decompressed = decompressPoint(compressed);
+    expect(decompressed.x).toBe(h.x);
+    expect(decompressed.y).toBe(h.y);
+  });
+
+  it('decompressPoint roundtrip works for arbitrary on-curve points', () => {
+    // Test with several scalar multiples of G
+    const g = getGenerator();
+    for (const k of [2n, 7n, 42n, 1000n]) {
+      const p = scalarMult(k, g);
+      const compressed = compressPoint(p);
+      const decompressed = decompressPoint(compressed);
+      expect(decompressed.x).toBe(p.x);
+      expect(decompressed.y).toBe(p.y);
+    }
+  });
+
+  it('decompressed point is on the curve', () => {
+    const g = getGenerator();
+    const compressed = compressPoint(g);
+    const decompressed = decompressPoint(compressed);
+    expect(isOnCurve(decompressed)).toBe(true);
   });
 });
 
