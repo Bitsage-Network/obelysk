@@ -18,6 +18,9 @@ export const config = {
   // Rate limiting
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || "20", 10),
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "300000", 10), // 5 minutes
+
+  // Redis (optional — falls back to in-memory if not set)
+  redisUrl: process.env.REDIS_URL || "",
 };
 
 export function validateConfig(): void {

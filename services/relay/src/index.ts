@@ -11,14 +11,14 @@ import cors from "cors";
 import { config, validateConfig } from "./config";
 import { validatePayload } from "./validation";
 import { submitRelay, getRelayerBalance } from "./relay";
-import { getRemainingRequests } from "./rateLimiter";
+import { initStore, getNonceStore, getRateLimitStore, shutdownStore } from "./store";
 
 const app = express();
 const startTime = Date.now();
 let pendingTxCount = 0;
 
-// Nonce replay tracking (in-memory; use Redis in production for persistence)
-const usedNonces = new Set<string>();
+// Initialize persistent store (Redis or in-memory fallback)
+const { nonceStore, rateLimitStore } = initStore();
 
 // Middleware — restricted CORS, request size limit, API key auth
 const ALLOWED_ORIGINS = [
@@ -95,7 +95,7 @@ app.post("/relay", requireApiKey, async (req, res) => {
 
   // 2. Nonce replay protection
   const nonce = payload.outsideExecution.nonce;
-  if (usedNonces.has(nonce)) {
+  if (await nonceStore.hasNonce(nonce)) {
     res.status(409).json({
       status: "error",
       error: "Nonce already used (replay detected)",
@@ -105,7 +105,7 @@ app.post("/relay", requireApiKey, async (req, res) => {
   }
 
   // 3. Check rate limit before processing
-  const remaining = getRemainingRequests(payload.ownerAddress);
+  const remaining = await rateLimitStore.remaining(payload.ownerAddress);
   if (remaining <= 0) {
     res.status(429).json({
       status: "error",
@@ -115,18 +115,9 @@ app.post("/relay", requireApiKey, async (req, res) => {
     return;
   }
 
-  // 4. Mark nonce as used
-  usedNonces.add(nonce);
-  // Prune old nonces to prevent unbounded memory growth (keep last 10000)
-  if (usedNonces.size > 10000) {
-    const iter = usedNonces.values();
-    for (let i = 0; i < 1000; i++) iter.next();
-    // Clear oldest entries
-    const toKeep = new Set<string>();
-    for (const v of usedNonces) toKeep.add(v);
-    // Simple: just clear if too large (stateless nonces are tracked on-chain anyway)
-    if (usedNonces.size > 50000) usedNonces.clear();
-  }
+  // 4. Mark nonce as used + increment rate limit (atomic before submission)
+  await nonceStore.addNonce(nonce);
+  await rateLimitStore.increment(payload.ownerAddress);
 
   // 5. Submit via relay — return tx hash immediately, don't block on confirmation
   pendingTxCount++;
@@ -171,10 +162,21 @@ app.get("/status/:txHash", async (req, res) => {
 
 validateConfig();
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`[Relay] Obelysk Dark Pool Relay Service`);
   console.log(`[Relay] Listening on port ${config.port}`);
   console.log(`[Relay] Dark Pool: ${config.darkPoolAddress}`);
   console.log(`[Relay] Relayer: ${config.relayAccountAddress || "(not configured)"}`);
   console.log(`[Relay] Rate limit: ${config.rateLimitMax} req / ${config.rateLimitWindowMs / 1000}s per owner`);
 });
+
+// Graceful shutdown — close Redis connection
+function shutdown() {
+  console.log("[Relay] Shutting down...");
+  server.close(() => {
+    shutdownStore().then(() => process.exit(0));
+  });
+  setTimeout(() => process.exit(1), 5000);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
