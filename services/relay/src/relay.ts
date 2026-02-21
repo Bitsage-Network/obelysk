@@ -104,10 +104,8 @@ export async function submitRelay(payload: RelayPayload): Promise<RelayResult> {
     const allCalls = [authCall, ...operationCalls];
     const response = await account.execute(allCalls);
 
-    // 5. Wait for inclusion
-    const p = getProvider();
-    await p.waitForTransaction(response.transaction_hash);
-
+    // 5. Return tx hash immediately — don't block on confirmation
+    // Clients can poll /status/:txHash for confirmation status
     return {
       transactionHash: response.transaction_hash,
       status: "submitted",
