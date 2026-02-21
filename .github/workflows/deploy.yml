@@ -18,6 +18,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -46,12 +48,57 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  deploy:
-    name: Deploy to VPS
+  deploy-staging:
+    name: Deploy to Staging
     needs: docker-build
     runs-on: ubuntu-latest
+    environment: staging
     steps:
-      - name: Deploy via SSH
+      - name: Deploy to staging via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            cd /opt/obelysk-staging && docker compose up -d --force-recreate
+
+      - name: Health check (staging)
+        run: |
+          echo "Waiting for staging to be ready..."
+          sleep 15
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.STAGING_URL }}/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Staging health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: status=$STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Staging health check failed after 5 attempts"
+          exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Tag previous image for rollback
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            CURRENT=$(docker inspect --format='{{.Image}}' obelysk-web 2>/dev/null || echo "none")
+            if [ "$CURRENT" != "none" ]; then
+              docker tag "$CURRENT" ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rollback 2>/dev/null || true
+            fi
+
+      - name: Deploy to production
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.DEPLOY_HOST }}
@@ -60,3 +107,32 @@ jobs:
           script: |
             docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
             cd /opt/obelysk && docker compose up -d --force-recreate
+
+      - name: Health check (production)
+        run: |
+          echo "Waiting for production to be ready..."
+          sleep 15
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PRODUCTION_URL }}/api/health" || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "Production health check passed (attempt $i)"
+              exit 0
+            fi
+            echo "Attempt $i: status=$STATUS, retrying in 10s..."
+            sleep 10
+          done
+          echo "Production health check failed - triggering rollback"
+          exit 1
+
+      - name: Rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            echo "Rolling back to previous image..."
+            docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:rollback ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest 2>/dev/null || true
+            cd /opt/obelysk && docker compose up -d --force-recreate
+            echo "Rollback complete"
