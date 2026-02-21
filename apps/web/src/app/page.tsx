@@ -121,18 +121,15 @@ const stats = [
   { label: "Network", value: "Starknet", icon: Layers },
   { label: "Privacy Model", value: "ElGamal + STARK", icon: Shield },
   { label: "Settlement", value: "On-chain", icon: Activity },
-  { label: "Privacy Score", value: "100%", icon: CheckCircle2 },
+  { label: "Status", value: "Beta", icon: CheckCircle2 },
 ];
 
 const supportedAssets = [
-  { name: "Bitcoin", symbol: "BTC", logo: "/tokens/btc.svg" },
-  { name: "Starknet", symbol: "STRK", logo: "/tokens/strk.svg" },
+  { name: "Bitcoin (Wrapped)", symbol: "wBTC", logo: "/tokens/btc.svg" },
   { name: "Ethereum", symbol: "ETH", logo: "/tokens/eth.svg" },
-  { name: "Solana", symbol: "SOL", logo: "/tokens/sol.svg" },
+  { name: "Starknet", symbol: "STRK", logo: "/tokens/strk.svg" },
   { name: "BitSage", symbol: "SAGE", logo: "/tokens/sage.svg" },
   { name: "USDC", symbol: "USDC", logo: "/tokens/usdc.svg" },
-  { name: "Tether", symbol: "USDT", logo: "/tokens/usdt.svg" },
-  { name: "NEAR", symbol: "NEAR", logo: "/tokens/near.svg" },
 ];
 
 export default function HomePage() {
@@ -158,8 +155,8 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-9 flex items-center justify-between text-xs">
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-2 text-gray-400">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              All systems operational
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              Beta
             </span>
           </div>
           <div className="hidden sm:flex items-center gap-4 text-gray-500">
@@ -977,7 +974,7 @@ export default function HomePage() {
                         </div>
                       </div>
                       <div className="text-xs text-gray-500">
-                        Sufficient liquidity for trades up to ~50 BTC without significant impact
+                        Liquidity sourced from on-chain pools. Trade sizes may be limited during beta.
                       </div>
                     </div>
 
@@ -1402,7 +1399,7 @@ export default function HomePage() {
                   { label: "Order Privacy", icon: EyeOff },
                   { label: "No Front-Running", icon: Shield },
                   { label: "MEV Protected", icon: Lock },
-                  { label: "Post-Quantum Safe", icon: Zap },
+                  { label: "On-chain Proofs", icon: Zap },
                 ].map((item, i) => (
                   <div key={item.label} className="flex items-center gap-2 px-4 py-2 rounded-full bg-surface-elevated border border-surface-border">
                     <item.icon className="w-4 h-4 text-emerald-400" />
@@ -1635,8 +1632,8 @@ export default function HomePage() {
                 Discord
               </a>
               <div className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="hidden sm:inline">All systems operational</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                <span className="hidden sm:inline">Beta</span>
               </div>
             </div>
           </div>

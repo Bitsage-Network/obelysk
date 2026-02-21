@@ -763,8 +763,8 @@ export default function SendPage() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">Transaction fee</span>
-              <span className="text-emerald-400 flex items-center gap-1">
-                <Zap className="w-3 h-3" /> Sponsored (AA)
+              <span className="text-gray-300 flex items-center gap-1">
+                <Zap className="w-3 h-3" /> Gas fee applies
               </span>
             </div>
             <div className="flex items-center justify-between text-sm">
@@ -1054,8 +1054,8 @@ export default function SendPage() {
                       </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-400">Fee</span>
-                        <span className="text-emerald-400 flex items-center gap-1">
-                          <Zap className="w-3 h-3" /> Sponsored
+                        <span className="text-gray-300 flex items-center gap-1">
+                          <Zap className="w-3 h-3" /> Gas fee applies
                         </span>
                       </div>
                     </div>
