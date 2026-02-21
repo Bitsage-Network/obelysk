@@ -1,0 +1,30 @@
+# Obelysk Protocol — Code Ownership
+# These owners will be requested for review when PRs touch their areas.
+
+# Default: core team reviews everything
+* @Bitsage-Network/core
+
+# Smart contracts — require crypto-aware review
+contracts/                     @Bitsage-Network/contracts
+contracts/src/elgamal.cairo    @Bitsage-Network/crypto
+contracts/src/confidential_transfer.cairo  @Bitsage-Network/crypto
+contracts/src/dark_pool_auction.cairo      @Bitsage-Network/crypto
+contracts/src/vm31_confidential_bridge.cairo @Bitsage-Network/crypto
+contracts/src/stealth_*.cairo  @Bitsage-Network/crypto
+
+# Frontend application
+apps/web/                      @Bitsage-Network/frontend
+apps/web/src/lib/crypto/       @Bitsage-Network/crypto @Bitsage-Network/frontend
+
+# Relay services — infrastructure team
+services/                      @Bitsage-Network/infra
+
+# CI/CD and DevOps
+.github/                       @Bitsage-Network/devops
+Dockerfile                     @Bitsage-Network/devops
+docker-compose*.yml            @Bitsage-Network/devops
+
+# Deployment configs — require additional sign-off
+contracts/deployment/          @Bitsage-Network/contracts @Bitsage-Network/devops
+.github/workflows/deploy.yml  @Bitsage-Network/devops @Bitsage-Network/core
+.github/workflows/contracts-deploy.yml @Bitsage-Network/contracts @Bitsage-Network/devops

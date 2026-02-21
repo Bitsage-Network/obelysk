@@ -54,14 +54,37 @@ jobs:
           retention-days: 7
 
   contracts:
-    name: Build Contracts
+    name: Build & Test Contracts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: software-mansion/setup-scarb@v1
         with:
           scarb-version: "2.12.0"
-      - run: cd contracts && scarb build
+
+      - uses: software-mansion/setup-snfoundry@v3
+
+      - name: Check Cairo formatting
+        run: cd contracts && scarb fmt --check
+        continue-on-error: true
+
+      - name: Build contracts
+        run: cd contracts && scarb build
+
+      - name: Run contract tests
+        run: cd contracts && scarb test
+
+      - name: Check contract artifact sizes
+        run: |
+          echo "=== Contract Artifact Sizes ==="
+          for f in contracts/target/dev/*.contract_class.json; do
+            if [ -f "$f" ]; then
+              SIZE_KB=$(du -k "$f" | cut -f1)
+              echo "$(basename "$f"): ${SIZE_KB}KB"
+            fi
+          done
+
       - uses: actions/upload-artifact@v4
         with:
           name: contract-artifacts
