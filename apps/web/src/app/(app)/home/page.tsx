@@ -140,8 +140,30 @@ export default function HomePage() {
 
   const recentTx = useMemo(() => transactions.slice(0, 5), [transactions]);
 
+  // DEBUG: temporary — remove after balance fix confirmed
+  const debugInfo = useMemo(() => {
+    const info: Record<string, unknown> = { address: address ?? "none", network };
+    for (const t of TOKENS) {
+      const bal = balances[t.symbol as keyof typeof balances];
+      if (bal && typeof bal === "object") {
+        const b = bal as Record<string, unknown>;
+        info[t.symbol] = {
+          data: b.data === undefined ? "undefined" : typeof b.data === "bigint" ? b.data.toString() : b.data,
+          isLoading: b.isLoading,
+          error: b.error ? String(b.error) : null,
+        };
+      }
+    }
+    return JSON.stringify(info, null, 2);
+  }, [address, network, balances]);
+
   return (
     <div className="space-y-6 pb-24 md:pb-6">
+      {/* DEBUG BANNER — remove after fix */}
+      <details className="bg-yellow-900/30 border border-yellow-500/40 rounded-lg p-3 text-[10px]">
+        <summary className="text-yellow-400 cursor-pointer font-mono">Balance Debug</summary>
+        <pre className="text-yellow-300/80 mt-2 overflow-x-auto whitespace-pre-wrap break-all font-mono">{debugInfo}</pre>
+      </details>
       {/* Portfolio Value Header */}
       <motion.div
         initial={{ opacity: 0, y: -10 }}
