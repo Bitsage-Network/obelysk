@@ -55,6 +55,7 @@ export function useSageBalance(address: string | undefined, network: NetworkType
     functionName: "balance_of",
     args: address ? [address] : undefined,
     enabled: !!address,
+    watch: true,
   });
 }
 
@@ -80,14 +81,13 @@ export function useSageAllowance(
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
-// Standard ERC20 ABI for balance_of (Starknet Cairo format)
-// Uses state_mutability (snake_case) per Starknet ABI spec
+// Standard ERC20 ABI for balanceOf (camelCase matches starknet.js v8 resolution)
 const ERC20_BALANCE_ABI = [
   {
-    name: "balance_of",
+    name: "balanceOf",
     type: "function",
     inputs: [{ name: "account", type: "core::starknet::contract_address::ContractAddress" }],
-    outputs: [{ name: "balance", type: "core::integer::u256" }],
+    outputs: [{ type: "core::integer::u256" }],
     state_mutability: "view",
   },
 ] as Abi;
@@ -100,9 +100,10 @@ export function useEthBalance(address: string | undefined, network: NetworkType 
   return useReadContract({
     address: tokenAddress,
     abi: ERC20_BALANCE_ABI,
-    functionName: "balance_of",
+    functionName: "balanceOf",
     args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress,
+    watch: true,
   });
 }
 
@@ -114,9 +115,10 @@ export function useStrkBalance(address: string | undefined, network: NetworkType
   return useReadContract({
     address: tokenAddress,
     abi: ERC20_BALANCE_ABI,
-    functionName: "balance_of",
+    functionName: "balanceOf",
     args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress,
+    watch: true,
   });
 }
 
@@ -128,9 +130,10 @@ export function useUsdcBalance(address: string | undefined, network: NetworkType
   return useReadContract({
     address: tokenAddress,
     abi: ERC20_BALANCE_ABI,
-    functionName: "balance_of",
+    functionName: "balanceOf",
     args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
@@ -142,9 +145,10 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
   return useReadContract({
     address: tokenAddress,
     abi: ERC20_BALANCE_ABI,
-    functionName: "balance_of",
+    functionName: "balanceOf",
     args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
@@ -162,9 +166,10 @@ export function useTokenBalance(
   return useReadContract({
     address,
     abi: ERC20_BALANCE_ABI,
-    functionName: "balance_of",
+    functionName: "balanceOf",
     args: userAddress ? [userAddress] : undefined,
     enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
