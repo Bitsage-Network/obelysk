@@ -706,6 +706,14 @@ export default function BtcVaultPage() {
           }
         : buildPlaceholderMerkleData();
 
+      // Block withdrawal with placeholder (all-zero) merkle data — prover will reject it
+      if (isMerkleDataPlaceholder(merkleData.merkleRoot)) {
+        throw new Error(
+          "Withdrawal requires a Merkle proof. Your deposit is confirmed but the proof " +
+          "has not been indexed yet. Please wait for the next batch sync or try again later."
+        );
+      }
+
       await vault.withdraw({
         amount: BigInt(selectedNote.amount),
         assetSymbol: selectedNote.symbol,

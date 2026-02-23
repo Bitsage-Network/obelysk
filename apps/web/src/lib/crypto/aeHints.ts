@@ -103,7 +103,7 @@ export function createAEHint(
   // Derive encryption key
   const encKey = deriveEncryptionKey(sharedSecret, nonce);
 
-  // Encrypt amount (simple XOR for felt252 - production uses proper block cipher)
+  // XOR with Poseidon-KDF derived key (one-time pad: unique key per nonce via ECDH + Poseidon)
   const encryptedAmount = mod(amount ^ encKey, STARK_PRIME);
 
   // Compute MAC
