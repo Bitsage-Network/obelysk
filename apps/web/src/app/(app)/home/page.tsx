@@ -34,6 +34,21 @@ const TOKENS = [
   { symbol: "SAGE", name: "SAGE Token", pricePair: "SAGE_USD" },
 ] as const;
 
+function parseU256(value: unknown): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return BigInt(Math.floor(value));
+  if (typeof value === 'string') return BigInt(value);
+  if (value && typeof value === 'object') {
+    if ('low' in value && 'high' in value) {
+      const low = BigInt((value as any).low);
+      const high = BigInt((value as any).high);
+      return low + (high << 128n);
+    }
+    if ('balance' in value) return parseU256((value as any).balance);
+  }
+  return 0n;
+}
+
 function formatBalance(raw: bigint | undefined, decimals: number): string {
   if (!raw || raw === 0n) return "0.00";
   const divisor = 10n ** BigInt(decimals);
@@ -77,10 +92,10 @@ export default function HomePage() {
   const tokenData = useMemo(() => {
     return TOKENS.map((t) => {
       const bal = balances[t.symbol as keyof typeof balances];
-      const raw = bal && typeof bal === "object" && "data" in bal ? (bal.data as bigint | undefined) : undefined;
       const decimals = bal && typeof bal === "object" && "decimals" in bal ? (bal.decimals as number) : 18;
+      const raw = bal && typeof bal === "object" && "data" in bal ? parseU256(bal.data) : 0n;
       const formatted = formatBalance(raw, decimals);
-      const numBalance = raw ? Number(raw) / Math.pow(10, decimals) : 0;
+      const numBalance = Number(raw) / Math.pow(10, decimals);
       const price = prices[t.symbol] || 0;
       const usdValue = (numBalance * price).toFixed(2);
       return {
