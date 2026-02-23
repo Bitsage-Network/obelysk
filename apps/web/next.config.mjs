@@ -25,7 +25,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.bitsage.network wss://*.bitsage.network",
+              "connect-src 'self' https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

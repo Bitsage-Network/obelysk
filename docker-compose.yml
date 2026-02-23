@@ -31,6 +31,31 @@ services:
     volumes:
       - vm31-data:/var/lib/vm31
 
+  relay:
+    build:
+      context: services/relay
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+    env_file:
+      - services/relay/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+
+  audit-relay:
+    build:
+      context: services/audit-relay
+      dockerfile: Dockerfile
+    env_file:
+      - services/audit-relay/.env
+    ports:
+      - "3002:3002"
+    restart: unless-stopped
+
 volumes:
   redis-data:
   vm31-data:

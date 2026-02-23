@@ -22,6 +22,9 @@ import {
   AlertCircle,
   ChevronDown,
   Filter,
+  Scan,
+  Fingerprint,
+  Shield,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -31,7 +34,10 @@ import { useAccount } from "@starknet-react/core";
 import { useStealthOnChain, type ClaimParams } from "@/lib/hooks/useStealthOnChain";
 import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
 
-// Time ranges for scanning
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
 const TIME_RANGES = [
   { id: "1h", label: "Last Hour" },
   { id: "24h", label: "Last 24 Hours" },
@@ -39,6 +45,19 @@ const TIME_RANGES = [
   { id: "30d", label: "Last 30 Days" },
   { id: "all", label: "All Time" },
 ];
+
+// Stagger animation
+const stagger = {
+  container: { animate: { transition: { staggerChildren: 0.06 } } },
+  item: {
+    initial: { opacity: 0, y: 12 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] } },
+  },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Page
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function StealthAddressesPage() {
   const { address } = useAccount();
@@ -52,7 +71,6 @@ export default function StealthAddressesPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | "unclaimed" | "claimed">("all");
   const [claimError, setClaimError] = useState<string | null>(null);
 
-  // Use on-chain event scanner (replaces offline coordinator API)
   const {
     metaAddress: metaAddressData,
     payments,
@@ -66,7 +84,6 @@ export default function StealthAddressesPage() {
     registryDeployed,
   } = useStealthOnChain(address);
 
-  // Get meta address or fallback to placeholder
   const metaAddress = {
     spendingPubKey: metaAddressData?.spending_pub_key || "Connect wallet to view",
     viewingPubKey: metaAddressData?.viewing_pub_key || "Connect wallet to view",
@@ -81,25 +98,15 @@ export default function StealthAddressesPage() {
   const handleScan = async () => {
     if (!address) return;
     setScanProgress(0);
-
-    // Start scan via API
     scan({ address, timeRange: selectedTimeRange.id });
-
-    // Simulate progress while scanning
     const progressInterval = setInterval(() => {
       setScanProgress(prev => {
-        if (prev >= 90) {
-          clearInterval(progressInterval);
-          return 90;
-        }
+        if (prev >= 90) { clearInterval(progressInterval); return 90; }
         return prev + 10;
       });
     }, 200);
-
-    // Clean up when scan completes (handled by mutation state)
   };
 
-  // Reset progress when scan completes
   useMemo(() => {
     if (!isScanning && scanProgress > 0) {
       setScanProgress(100);
@@ -116,12 +123,7 @@ export default function StealthAddressesPage() {
         setClaimError("Failed to unlock stealth keys. Please set up privacy keys first.");
         return;
       }
-      claim({
-        address,
-        paymentIds: selectedPayments,
-        spendingKey: keyPair.privateKey,
-        viewingKey: keyPair.privateKey, // viewing key derived from same keypair
-      });
+      claim({ address, paymentIds: selectedPayments, spendingKey: keyPair.privateKey, viewingKey: keyPair.privateKey });
       setSelectedPayments([]);
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : "Failed to claim");
@@ -137,12 +139,7 @@ export default function StealthAddressesPage() {
         setClaimError("Failed to unlock stealth keys. Please set up privacy keys first.");
         return;
       }
-      claim({
-        address,
-        paymentIds: [paymentId],
-        spendingKey: keyPair.privateKey,
-        viewingKey: keyPair.privateKey,
-      });
+      claim({ address, paymentIds: [paymentId], spendingKey: keyPair.privateKey, viewingKey: keyPair.privateKey });
     } catch (err) {
       setClaimError(err instanceof Error ? err.message : "Failed to claim");
     }
@@ -167,7 +164,6 @@ export default function StealthAddressesPage() {
   }, [payments, filterStatus]);
 
   const unclaimedPayments = payments.filter(p => !p.claimed);
-  // Stealth amounts are encrypted on-chain; totalUnclaimedValue may be "0" when amounts are unknown
   const totalUnclaimed = parseFloat(totalUnclaimedValue) / 1e18;
   const hasEncryptedAmounts = payments.length > 0 && totalUnclaimedValue === "0";
 
@@ -180,141 +176,173 @@ export default function StealthAddressesPage() {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand-500 to-accent-fuchsia flex items-center justify-center">
-              <Eye className="w-5 h-5 text-white" />
+    <motion.div
+      variants={stagger.container}
+      initial="initial"
+      animate="animate"
+      className="max-w-6xl mx-auto space-y-6 px-4 sm:px-6 pb-24 lg:pb-8 relative"
+    >
+      {/* Ambient background */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" aria-hidden>
+        <div className="absolute top-0 left-1/3 w-[500px] h-[250px] bg-indigo-500/[0.03] rounded-full blur-[120px]" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[300px] bg-fuchsia-500/[0.02] rounded-full blur-[100px]" />
+      </div>
+
+      {/* ── Header ── */}
+      <motion.div variants={stagger.item} className="relative flex items-center justify-between pt-2">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-fuchsia-500/15 border border-indigo-500/20 flex items-center justify-center shadow-lg shadow-indigo-500/10">
+              <EyeOff className="w-7 h-7 text-indigo-400" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-white">Stealth Addresses</h1>
-              <p className="text-gray-400 text-sm mt-0.5">
-                Receive private payments with one-time stealth addresses
-              </p>
+            <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-surface-dark border-2 border-surface-card flex items-center justify-center">
+              <Shield className="w-2.5 h-2.5 text-indigo-400" />
             </div>
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-white tracking-tight">Stealth Addresses</h1>
+            <p className="text-[13px] text-gray-500 mt-0.5">
+              Receive private payments with one-time stealth addresses
+            </p>
           </div>
         </div>
         <Link
           href="/wallet"
-          className="px-4 py-2 rounded-lg bg-surface-elevated border border-surface-border text-gray-300 hover:text-white transition-colors"
+          className="text-[10px] text-gray-600 hover:text-indigo-400 transition-colors uppercase tracking-[0.2em] font-medium"
         >
-          Back to Wallet
+          Wallet
         </Link>
-      </div>
+      </motion.div>
 
-      {/* Registry Not Deployed Banner */}
+      {/* ── Registry Not Deployed Banner ── */}
       {!registryDeployed && (
-        <div className="p-4 rounded-xl bg-orange-500/10 border border-orange-500/30">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+        <motion.div
+          variants={stagger.item}
+          className="relative overflow-hidden rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-950/20 to-surface-card/90 p-4"
+        >
+          <div className="absolute -top-12 -left-12 w-24 h-24 bg-amber-500/8 rounded-full blur-2xl pointer-events-none" />
+          <div className="relative flex items-start gap-3">
+            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-medium text-orange-300">Stealth Registry Pending Deployment</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-sm font-semibold text-amber-300 tracking-tight">Stealth Registry Pending Deployment</p>
+              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
                 The StealthRegistry contract is awaiting compilation and deployment to Sepolia.
                 Once live, you can register your meta-address, receive stealth payments, and scan for incoming transfers.
               </p>
             </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
-      {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="glass-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-brand-500/20 flex items-center justify-center">
-              <ArrowDownToLine className="w-5 h-5 text-brand-400" />
+      {/* ── Stats Overview ── */}
+      <motion.div variants={stagger.item} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {[
+          {
+            label: "Unclaimed Payments",
+            value: isLoading ? null : unclaimedCount.toString(),
+            icon: ArrowDownToLine,
+            color: "text-indigo-400",
+            glow: "bg-indigo-500/8",
+          },
+          {
+            label: "Total Unclaimed Value",
+            value: isLoading ? null : hasEncryptedAmounts ? "Encrypted" : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAGE`,
+            icon: hasEncryptedAmounts ? Lock : Wallet,
+            color: "text-emerald-400",
+            glow: "bg-emerald-500/8",
+          },
+          {
+            label: "Total Claimed",
+            value: isLoading ? null : payments.filter(p => p.claimed).length.toString(),
+            icon: CheckCircle2,
+            color: "text-fuchsia-400",
+            glow: "bg-fuchsia-500/8",
+          },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <div
+              key={stat.label}
+              className="relative overflow-hidden rounded-2xl border border-white/[0.05] bg-surface-card/80 p-4"
+            >
+              <div className="flex items-center gap-3.5">
+                <div className={cn("w-11 h-11 rounded-xl flex items-center justify-center", stat.glow)}>
+                  <Icon className={cn("w-5 h-5", stat.color)} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">{stat.label}</p>
+                  <p className="text-lg font-bold text-white mt-0.5">
+                    {stat.value === null ? (
+                      <Loader2 className="w-4 h-4 animate-spin inline text-gray-600" />
+                    ) : stat.value === "Encrypted" ? (
+                      <span className="flex items-center gap-1.5 text-indigo-400">
+                        <Lock className="w-4 h-4" /> Encrypted
+                      </span>
+                    ) : (
+                      stat.value
+                    )}
+                  </p>
+                </div>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-gray-400">Unclaimed Payments</p>
-              <p className="text-lg font-bold text-white">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : unclaimedCount}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="glass-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
-              <Wallet className="w-5 h-5 text-emerald-400" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-400">Total Unclaimed Value</p>
-              <p className="text-lg font-bold text-white">
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin inline" />
-                ) : hasEncryptedAmounts ? (
-                  <span className="flex items-center gap-1.5">
-                    <Lock className="w-4 h-4 text-brand-400" />
-                    Encrypted
-                  </span>
-                ) : (
-                  `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAGE`
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="glass-card p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-accent-fuchsia/20 flex items-center justify-center">
-              <CheckCircle2 className="w-5 h-5 text-accent-fuchsia" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-400">Total Claimed</p>
-              <p className="text-lg font-bold text-white">
-                {isLoading ? <Loader2 className="w-4 h-4 animate-spin inline" /> : payments.filter(p => p.claimed).length}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
+          );
+        })}
+      </motion.div>
 
-      {/* Main Content Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left Column - Meta Address & Scanner */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Meta Address Display */}
-          <div className="glass-card p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Your Stealth Meta-Address</h3>
+      {/* ── Main Content Grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left Column */}
+        <div className="lg:col-span-2 space-y-5">
+
+          {/* ── Meta Address Display ── */}
+          <motion.div
+            variants={stagger.item}
+            className="relative overflow-hidden rounded-2xl border border-white/[0.05] bg-gradient-to-br from-surface-card via-surface-card to-indigo-950/10 p-6 space-y-5"
+          >
+            <div className="absolute -top-24 -right-24 w-48 h-48 bg-indigo-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative flex items-center justify-between">
+              <h3 className="text-lg font-bold text-white tracking-tight">Your Stealth Meta-Address</h3>
               <button
                 onClick={() => setShowQRCode(!showQRCode)}
-                className="p-2 rounded-lg bg-surface-elevated hover:bg-surface-card transition-colors"
+                className={cn(
+                  "p-2.5 rounded-xl border transition-all",
+                  showQRCode
+                    ? "bg-indigo-500/10 border-indigo-500/20 text-indigo-400"
+                    : "bg-white/[0.03] border-white/[0.04] text-gray-500 hover:text-white hover:border-white/[0.08]"
+                )}
               >
-                <QrCode className="w-5 h-5 text-gray-400" />
+                <QrCode className="w-4.5 h-4.5" />
               </button>
             </div>
 
-            <p className="text-sm text-gray-400">
+            <p className="text-[13px] text-gray-500 leading-relaxed">
               Share this meta-address to receive private payments. Senders will derive a unique one-time address for each payment.
             </p>
 
             {/* Viewing Key */}
             <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Eye className="w-4 h-4 text-brand-400" />
-                <label className="text-sm font-medium text-gray-300">Viewing Public Key</label>
+                <Eye className="w-3.5 h-3.5 text-indigo-400" />
+                <label className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Viewing Public Key</label>
               </div>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-elevated border border-surface-border">
-                <code className="text-sm text-gray-300 flex-1 font-mono truncate">
+              <div className="flex items-center gap-2 p-3.5 rounded-xl bg-black/30 border border-white/[0.06]">
+                <code className="text-[13px] text-gray-300 flex-1 font-mono truncate">
                   {metaAddress.viewingPubKey}
                 </code>
                 <button
                   onClick={() => handleCopy(metaAddress.viewingPubKey)}
-                  className="p-1.5 rounded-md hover:bg-surface-card transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors shrink-0"
                 >
                   {copiedValue === metaAddress.viewingPubKey ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
                   ) : (
-                    <Copy className="w-4 h-4 text-gray-400" />
+                    <Copy className="w-3.5 h-3.5 text-gray-500" />
                   )}
                 </button>
               </div>
-              <p className="text-xs text-gray-500">
-                Safe to share - allows scanning for incoming payments
+              <p className="text-[10px] text-gray-600 pl-0.5">
+                Safe to share — allows scanning for incoming payments
               </p>
             </div>
 
@@ -322,65 +350,75 @@ export default function StealthAddressesPage() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Key className="w-4 h-4 text-accent-fuchsia" />
-                  <label className="text-sm font-medium text-gray-300">Spending Public Key</label>
+                  <Key className="w-3.5 h-3.5 text-fuchsia-400" />
+                  <label className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">Spending Public Key</label>
                 </div>
                 <button
                   onClick={() => setShowSpendingKey(!showSpendingKey)}
-                  className="text-xs text-brand-400 flex items-center gap-1"
+                  className="text-[10px] text-indigo-400/80 hover:text-indigo-400 flex items-center gap-1.5 transition-colors"
                 >
                   {showSpendingKey ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                   {showSpendingKey ? "Hide" : "Show"}
                 </button>
               </div>
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-surface-elevated border border-surface-border">
-                <code className="text-sm text-gray-300 flex-1 font-mono truncate">
+              <div className="flex items-center gap-2 p-3.5 rounded-xl bg-black/30 border border-white/[0.06]">
+                <code className="text-[13px] text-gray-300 flex-1 font-mono truncate">
                   {showSpendingKey ? metaAddress.spendingPubKey : "••••••••••••••••••••••••••••••••••••••••••••"}
                 </code>
                 <button
                   onClick={() => handleCopy(metaAddress.spendingPubKey)}
-                  className="p-1.5 rounded-md hover:bg-surface-card transition-colors"
+                  className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors shrink-0"
                 >
                   {copiedValue === metaAddress.spendingPubKey ? (
-                    <Check className="w-4 h-4 text-emerald-400" />
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
                   ) : (
-                    <Copy className="w-4 h-4 text-gray-400" />
+                    <Copy className="w-3.5 h-3.5 text-gray-500" />
                   )}
                 </button>
               </div>
-              <p className="text-xs text-gray-500">
-                Required for receiving - keep this secure
+              <p className="text-[10px] text-gray-600 pl-0.5">
+                Required for receiving — keep this secure
               </p>
             </div>
 
-            {/* QR Code Modal */}
+            {/* QR Code */}
             <AnimatePresence>
               {showQRCode && (
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                  className="p-6 rounded-xl bg-white mx-auto w-fit"
+                  initial={{ opacity: 0, scale: 0.95, height: 0 }}
+                  animate={{ opacity: 1, scale: 1, height: "auto" }}
+                  exit={{ opacity: 0, scale: 0.95, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="overflow-hidden"
                 >
-                  <QRCodeSVG
-                    value={`st:starknet:${metaAddress.spendingPubKey}:${metaAddress.viewingPubKey}`}
-                    size={192}
-                    level="M"
-                    bgColor="#ffffff"
-                    fgColor="#000000"
-                  />
-                  <p className="text-center text-gray-600 text-sm mt-2">Scan to get meta-address</p>
+                  <div className="p-6 rounded-xl bg-white mx-auto w-fit">
+                    <QRCodeSVG
+                      value={`st:starknet:${metaAddress.spendingPubKey}:${metaAddress.viewingPubKey}`}
+                      size={192}
+                      level="M"
+                      bgColor="#ffffff"
+                      fgColor="#000000"
+                    />
+                    <p className="text-center text-gray-600 text-[11px] mt-2 font-medium">Scan to get meta-address</p>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
-          {/* Payment Scanner */}
-          <div className="glass-card p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Payment Scanner</h3>
+          {/* ── Payment Scanner ── */}
+          <motion.div
+            variants={stagger.item}
+            className="rounded-2xl border border-white/[0.05] bg-surface-card/90 p-6 space-y-5"
+          >
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                  <Scan className="w-4 h-4 text-indigo-400" />
+                </div>
+                <h3 className="text-lg font-bold text-white tracking-tight">Payment Scanner</h3>
+              </div>
               <div className="flex items-center gap-2">
-                {/* Time Range Selector */}
                 <div className="relative">
                   <select
                     value={selectedTimeRange.id}
@@ -388,36 +426,34 @@ export default function StealthAddressesPage() {
                       const range = TIME_RANGES.find(r => r.id === e.target.value);
                       if (range) setSelectedTimeRange(range);
                     }}
-                    className="appearance-none pl-3 pr-8 py-2 rounded-lg bg-surface-elevated border border-surface-border text-sm text-white focus:outline-none focus:border-brand-500"
+                    className="appearance-none pl-3 pr-8 py-2.5 rounded-xl bg-black/30 border border-white/[0.06] text-xs text-white focus:outline-none focus:border-indigo-500/30 transition-all"
                   >
                     {TIME_RANGES.map((range) => (
-                      <option key={range.id} value={range.id}>
-                        {range.label}
-                      </option>
+                      <option key={range.id} value={range.id}>{range.label}</option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-600 pointer-events-none" />
                 </div>
 
                 <button
                   onClick={handleScan}
                   disabled={isScanning || !address}
                   className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all",
+                    "flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200",
                     isScanning || !address
-                      ? "bg-gray-600 cursor-not-allowed text-gray-300"
-                      : "bg-brand-600 hover:bg-brand-500 text-white"
+                      ? "bg-white/[0.03] text-gray-600 cursor-not-allowed border border-white/[0.04]"
+                      : "bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 border border-indigo-500/20 active:scale-[0.98]"
                   )}
                 >
                   {isScanning ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Scanning ({scanProgress}%)
                     </>
                   ) : (
                     <>
-                      <Search className="w-4 h-4" />
-                      {address ? "Scan for Payments" : "Connect Wallet"}
+                      <Search className="w-3.5 h-3.5" />
+                      {address ? "Scan" : "Connect Wallet"}
                     </>
                   )}
                 </button>
@@ -427,33 +463,33 @@ export default function StealthAddressesPage() {
             {/* Scanning Progress */}
             {isScanning && (
               <div className="space-y-2">
-                <div className="h-2 rounded-full bg-surface-elevated overflow-hidden">
+                <div className="h-1.5 rounded-full bg-white/[0.03] overflow-hidden">
                   <motion.div
-                    className="h-full bg-gradient-to-r from-brand-500 to-accent-fuchsia"
+                    className="h-full bg-gradient-to-r from-indigo-500 to-fuchsia-500"
                     initial={{ width: 0 }}
                     animate={{ width: `${scanProgress}%` }}
                     transition={{ duration: 0.2 }}
                   />
                 </div>
-                <p className="text-sm text-gray-400">
+                <p className="text-[11px] text-gray-500">
                   Scanning blockchain for payments using your viewing key...
                 </p>
               </div>
             )}
 
-            {/* Filter */}
-            <div className="flex items-center gap-2">
-              <Filter className="w-4 h-4 text-gray-400" />
-              <div className="flex gap-1 p-1 bg-surface-elevated rounded-lg">
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-2.5">
+              <Filter className="w-3.5 h-3.5 text-gray-600" />
+              <div className="flex gap-1 p-1 rounded-xl bg-black/20 border border-white/[0.04]">
                 {(["all", "unclaimed", "claimed"] as const).map((status) => (
                   <button
                     key={status}
                     onClick={() => setFilterStatus(status)}
                     className={cn(
-                      "px-3 py-1.5 rounded-md text-sm font-medium transition-colors capitalize",
+                      "px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 capitalize",
                       filterStatus === status
-                        ? "bg-brand-500 text-white"
-                        : "text-gray-400 hover:text-white"
+                        ? "bg-indigo-500/12 text-indigo-400 border border-indigo-500/15"
+                        : "text-gray-600 hover:text-gray-300 border border-transparent"
                     )}
                   >
                     {status}
@@ -462,40 +498,44 @@ export default function StealthAddressesPage() {
               </div>
             </div>
 
-            {/* Detected Payments */}
-            <div className="space-y-3">
+            {/* Payment List */}
+            <div className="space-y-2">
               {isLoading ? (
-                <div className="text-center py-8">
-                  <Loader2 className="w-12 h-12 text-brand-400 mx-auto mb-3 animate-spin" />
-                  <p className="text-gray-400">Loading payments...</p>
+                <div className="text-center py-12">
+                  <Loader2 className="w-8 h-8 text-indigo-400/40 mx-auto mb-3 animate-spin" />
+                  <p className="text-sm text-gray-500">Loading payments...</p>
                 </div>
               ) : filteredPayments.length === 0 ? (
-                <div className="text-center py-8">
-                  <Search className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400">No payments found</p>
-                  <p className="text-sm text-gray-500 mt-1">
+                <div className="text-center py-12">
+                  <div className="w-14 h-14 rounded-2xl bg-white/[0.02] border border-white/[0.04] flex items-center justify-center mx-auto mb-4">
+                    <Search className="w-7 h-7 text-gray-700" />
+                  </div>
+                  <p className="text-sm text-gray-400 font-medium">No payments found</p>
+                  <p className="text-xs text-gray-600 mt-1">
                     {!address ? "Connect your wallet to view payments" : "Try scanning with a different time range"}
                   </p>
                 </div>
               ) : (
                 filteredPayments.map((payment) => (
-                  <div
+                  <motion.div
                     key={payment.id}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
                     className={cn(
-                      "flex items-center gap-4 p-4 rounded-lg border transition-all",
+                      "flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 group",
                       payment.claimed
-                        ? "bg-surface-elevated/50 border-surface-border"
-                        : "bg-surface-elevated border-surface-border hover:border-brand-500/50"
+                        ? "bg-black/10 border-white/[0.03] opacity-60"
+                        : "bg-black/20 border-white/[0.05] hover:border-indigo-500/20 hover:bg-white/[0.02]"
                     )}
                   >
                     {!payment.claimed && (
                       <button
                         onClick={() => togglePaymentSelection(payment.id)}
                         className={cn(
-                          "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-colors",
+                          "w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all shrink-0",
                           selectedPayments.includes(payment.id)
-                            ? "bg-brand-500 border-brand-500"
-                            : "border-gray-500 hover:border-gray-400"
+                            ? "bg-indigo-500 border-indigo-500"
+                            : "border-gray-600 hover:border-gray-400"
                         )}
                       >
                         {selectedPayments.includes(payment.id) && (
@@ -505,118 +545,122 @@ export default function StealthAddressesPage() {
                     )}
 
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-white">
+                      <div className="flex items-center gap-2.5">
+                        <span className="font-semibold text-white text-sm tracking-tight">
                           {payment.amount_formatted} {payment.token_symbol}
                         </span>
                         {payment.claimed && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+                          <span className="text-[9px] px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400/80 border border-emerald-500/15 uppercase tracking-wider font-medium">
                             Claimed
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1">
-                        <span className="text-xs text-gray-400 truncate max-w-[200px]">
-                          Stealth: {payment.stealth_address}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[10px] text-gray-500 truncate max-w-[200px] font-mono">
+                          {payment.stealth_address}
                         </span>
-                        <span className="text-xs text-gray-500">
-                          View Tag: {payment.view_tag}
+                        <span className="text-[10px] text-gray-600 font-mono">
+                          Tag: {payment.view_tag}
                         </span>
                       </div>
                     </div>
 
-                    <div className="text-right">
-                      <p className="text-sm text-gray-400">{formatTimeAgo(payment.timestamp * 1000)}</p>
+                    <div className="text-right shrink-0">
+                      <p className="text-[11px] text-gray-500 font-mono">{formatTimeAgo(payment.timestamp * 1000)}</p>
                       {!payment.claimed && (
                         <button
                           onClick={() => handleClaimSingle(payment.id)}
                           disabled={isClaiming}
-                          className="mt-1 text-xs text-brand-400 hover:text-brand-300"
+                          className="mt-1.5 text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold uppercase tracking-wider transition-colors"
                         >
                           {isClaiming ? <Loader2 className="w-3 h-3 animate-spin inline" /> : "Claim"}
                         </button>
                       )}
                     </div>
-                  </div>
+                  </motion.div>
                 ))
               )}
             </div>
 
             {/* Claim Error */}
             {claimError && (
-              <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-red-300">{claimError}</p>
-                </div>
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-500/[0.05] border border-red-500/15">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-400/80">{claimError}</p>
               </div>
             )}
 
             {/* Keys Required Notice */}
             {!hasKeys && unclaimedPayments.length > 0 && (
-              <div className="p-3 rounded-lg bg-orange-500/10 border border-orange-500/30">
-                <div className="flex items-start gap-2">
-                  <Key className="w-4 h-4 text-orange-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-sm text-orange-300">
-                    Privacy keys required to claim payments. Your wallet will prompt you to sign a message to derive your stealth keys.
-                  </p>
-                </div>
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-500/[0.05] border border-amber-500/12">
+                <Key className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-400/80">
+                  Privacy keys required to claim payments. Your wallet will prompt you to sign a message to derive your stealth keys.
+                </p>
               </div>
             )}
 
-            {/* Batch Claim */}
-            {selectedPayments.length > 0 && (
-              <div className="flex items-center justify-between p-4 rounded-lg bg-brand-500/10 border border-brand-500/30">
-                <div>
-                  <p className="font-medium text-white">
-                    {selectedPayments.length} payment{selectedPayments.length > 1 ? "s" : ""} selected
-                  </p>
-                  <p className="text-sm text-gray-400">
-                    Max 20 payments per batch claim
-                  </p>
-                </div>
-                <button
-                  onClick={handleClaimSelected}
-                  disabled={isClaiming}
-                  className={cn(
-                    "flex items-center gap-2 px-6 py-2.5 rounded-lg font-medium transition-all",
-                    isClaiming
-                      ? "bg-gray-600 cursor-not-allowed text-gray-300"
-                      : "bg-brand-600 hover:bg-brand-500 text-white"
-                  )}
+            {/* Batch Claim Bar */}
+            <AnimatePresence>
+              {selectedPayments.length > 0 && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 8 }}
+                  className="flex items-center justify-between p-4 rounded-xl bg-indigo-500/[0.06] border border-indigo-500/15"
                 >
-                  {isClaiming ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Claiming...
-                    </>
-                  ) : (
-                    <>
-                      <ArrowDownToLine className="w-4 h-4" />
-                      Claim Selected
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
+                  <div>
+                    <p className="font-semibold text-white text-sm tracking-tight">
+                      {selectedPayments.length} payment{selectedPayments.length > 1 ? "s" : ""} selected
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Max 20 payments per batch claim</p>
+                  </div>
+                  <button
+                    onClick={handleClaimSelected}
+                    disabled={isClaiming}
+                    className={cn(
+                      "flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold transition-all duration-200",
+                      isClaiming
+                        ? "bg-white/[0.03] text-gray-600 cursor-not-allowed"
+                        : "bg-indigo-500/15 text-indigo-400 hover:bg-indigo-500/25 border border-indigo-500/20 active:scale-[0.98]"
+                    )}
+                  >
+                    {isClaiming ? (
+                      <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Claiming...</>
+                    ) : (
+                      <><ArrowDownToLine className="w-3.5 h-3.5" /> Claim Selected</>
+                    )}
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         </div>
 
-        {/* Right Column - Info & Export */}
-        <div className="space-y-6">
-          {/* Key Export */}
-          <div className="glass-card p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-white">Detection Key Export</h3>
-            <p className="text-sm text-gray-400">
+        {/* ── Right Column ── */}
+        <div className="space-y-5">
+
+          {/* Detection Key Export */}
+          <motion.div
+            variants={stagger.item}
+            className="rounded-2xl border border-white/[0.05] bg-surface-card/80 p-5 space-y-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 flex items-center justify-center">
+                <Download className="w-4 h-4 text-indigo-400" />
+              </div>
+              <h3 className="text-sm font-bold text-white tracking-tight">Detection Key Export</h3>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
               Export your viewing key for third-party scanning services. This allows servers to detect payments on your behalf without access to spending authority.
             </p>
 
-            <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/30">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
+            <div className="p-3.5 rounded-xl bg-amber-500/[0.04] border border-amber-500/10">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 text-amber-400/70 shrink-0 mt-0.5" />
                 <div>
-                  <p className="text-sm font-medium text-orange-300">Privacy Note</p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-[11px] font-medium text-amber-300/90">Privacy Note</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
                     Sharing your viewing key allows detecting your payments but not spending them.
                   </p>
                 </div>
@@ -645,54 +689,63 @@ export default function StealthAddressesPage() {
               }}
               disabled={!metaAddressData?.viewing_pub_key}
               className={cn(
-                "w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-surface-elevated border border-surface-border hover:bg-surface-card transition-colors font-medium",
-                metaAddressData?.viewing_pub_key ? "text-white" : "text-gray-500 cursor-not-allowed"
+                "w-full flex items-center justify-center gap-2 py-3 rounded-xl border text-xs font-semibold transition-all",
+                metaAddressData?.viewing_pub_key
+                  ? "bg-white/[0.03] border-white/[0.06] text-white hover:bg-white/[0.06] hover:border-white/[0.08]"
+                  : "bg-white/[0.01] border-white/[0.03] text-gray-600 cursor-not-allowed"
               )}
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5" />
               Export Detection Key
             </button>
-          </div>
+          </motion.div>
 
           {/* FMD Info */}
-          <div className="glass-card p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-white">Fuzzy Message Detection</h3>
-            <p className="text-sm text-gray-400">
+          <motion.div
+            variants={stagger.item}
+            className="rounded-2xl border border-white/[0.05] bg-surface-card/80 p-5 space-y-4"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-fuchsia-500/10 flex items-center justify-center">
+                <Fingerprint className="w-4 h-4 text-fuchsia-400" />
+              </div>
+              <h3 className="text-sm font-bold text-white tracking-tight">Fuzzy Message Detection</h3>
+            </div>
+            <p className="text-xs text-gray-500 leading-relaxed">
               Your scanning uses FMD with view tags for efficient detection. Configure your detection precision in wallet settings.
             </p>
 
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 rounded-lg bg-surface-elevated">
-                <span className="text-sm text-gray-300">Detection Precision</span>
-                <span className="text-sm font-medium text-white">16 bits</span>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-black/20 border border-white/[0.04]">
+                <span className="text-xs text-gray-400">Detection Precision</span>
+                <span className="text-xs font-mono text-white font-semibold">16 bits</span>
               </div>
-              <div className="flex items-center justify-between p-3 rounded-lg bg-surface-elevated">
-                <span className="text-sm text-gray-300">False Positive Rate</span>
-                <span className="text-sm font-medium text-white">~0.0015%</span>
+              <div className="flex items-center justify-between p-3 rounded-xl bg-black/20 border border-white/[0.04]">
+                <span className="text-xs text-gray-400">False Positive Rate</span>
+                <span className="text-xs font-mono text-white font-semibold">~0.0015%</span>
               </div>
             </div>
-
-            <p className="text-center text-sm text-gray-500">
-              FMD precision is fixed at 16 bits for optimal detection accuracy.
-            </p>
-          </div>
+          </motion.div>
 
           {/* Info Card */}
-          <div className="glass-card p-4">
+          <motion.div
+            variants={stagger.item}
+            className="rounded-2xl border border-white/[0.04] bg-surface-card/60 p-4"
+          >
             <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-brand-400 flex-shrink-0 mt-0.5" />
+              <Info className="w-4 h-4 text-indigo-400/60 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm text-gray-300">
-                  <strong className="text-white">Stealth Addresses</strong> enable receiving payments where each sender creates a unique one-time address. Only you can detect and claim these payments.
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  <span className="text-gray-300 font-semibold">Stealth Addresses</span> enable receiving payments where each sender creates a unique one-time address. Only you can detect and claim these payments.
                 </p>
-                <Link href="/docs/stealth-addresses" className="text-brand-400 text-sm hover:underline mt-2 inline-block">
+                <Link href="/docs/stealth-addresses" className="text-indigo-400/80 text-[11px] hover:text-indigo-400 mt-2 inline-block transition-colors">
                   Learn more →
                 </Link>
               </div>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
