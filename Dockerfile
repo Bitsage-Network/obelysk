@@ -7,7 +7,7 @@ COPY apps/web/package.json ./apps/web/
 COPY packages/crypto/package.json ./packages/crypto/
 COPY packages/sdk/package.json ./packages/sdk/
 
-RUN npm ci
+RUN npm ci --ignore-scripts
 
 # ── Stage 2: Build ──
 FROM node:20-alpine AS builder
@@ -15,6 +15,9 @@ WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Reinstall to ensure workspace symlinks and postinstall scripts run
+RUN npm ci --ignore-scripts
 
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx turbo build --filter=@obelysk/web
