@@ -10,8 +10,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useReadContract } from "@starknet-react/core";
+import { useReadContract, useProvider } from "@starknet-react/core";
 import type { Abi } from "starknet";
+import { CallData } from "starknet";
 import { getContractAddresses, type NetworkType } from "../contracts";
 import PrivacyPoolsABI from "../contracts/abis/PrivacyPools.json";
 
@@ -115,6 +116,7 @@ export function useASPRegistry(options: UseASPRegistryOptions = {}): UseASPRegis
   const { network = "sepolia", filterStatus, refreshInterval } = options;
 
   const addresses = getContractAddresses(network);
+  const { provider } = useProvider();
   const [asps, setASPs] = useState<ASPInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,9 +134,9 @@ export function useASPRegistry(options: UseASPRegistryOptions = {}): UseASPRegis
     return Number(aspCountData);
   }, [aspCountData]);
 
-  // Fetch all ASP info
+  // Fetch all ASP info on-chain via provider.callContract
   const fetchASPs = useCallback(async () => {
-    if (aspCount === 0) {
+    if (aspCount === 0 || !provider) {
       setASPs([]);
       setIsLoading(false);
       return;
@@ -144,35 +146,41 @@ export function useASPRegistry(options: UseASPRegistryOptions = {}): UseASPRegis
     setError(null);
 
     try {
-      // We need to fetch each ASP individually
-      // The contract stores ASPs by their ID, which is generated on registration
-      // For now, we'll try to fetch ASPs by index (0 to aspCount-1)
-      // This assumes ASP IDs are sequential or we have a list function
-
       const fetchedASPs: ASPInfo[] = [];
+      const contractAddress = addresses.PRIVACY_POOLS;
 
-      // Fetch ASP info for each index
-      // Note: In production, the contract should have a get_asp_by_index function
-      // For now, we'll use a workaround by trying common ASP IDs
-
-      // Try fetching by sequential indices (works if ASP IDs are sequential)
-      for (let i = 0; i < aspCount && i < 50; i++) {
+      // ASP IDs are sequential felt252 values (1-indexed)
+      for (let i = 1; i <= aspCount && i <= 50; i++) {
         try {
-          const response = await fetch(`/api/v1/privacy/asp/${i}`);
-          if (response.ok) {
-            const data = await response.json();
-            if (data.asp) {
-              fetchedASPs.push(parseASPData(data.asp));
-            }
+          const result = await provider.callContract({
+            contractAddress,
+            entrypoint: "get_asp_info",
+            calldata: CallData.compile([i.toString()]),
+          });
+
+          if (result && result.length > 0) {
+            // Parse the raw felt array into ASPInfo
+            // Contract returns ASPInfo struct fields sequentially
+            fetchedASPs.push({
+              aspId: result[0] || "0x0",
+              nameHash: result[1] || "0x0",
+              displayName: decodeName(result[1] || "0x0"),
+              publicKey: {
+                x: result[2] || "0x0",
+                y: result[3] || "0x0",
+              },
+              metadataUriHash: result[4] || "0x0",
+              status: parseASPStatus({ [decodeStatusVariant(result[5])]: {} }),
+              registeredAt: Number(BigInt(result[6] || 0)),
+              stakedAmount: parseU256({ low: result[7], high: result[8] }),
+              approvalVotes: Number(BigInt(result[9] || 0)),
+              totalSets: Number(BigInt(result[10] || 0)),
+              listIndex: i - 1,
+            });
           }
         } catch {
-          // Skip failed fetches
+          // ASP at this index may not exist, skip
         }
-      }
-
-      // If API fetch failed, report empty — no fake data
-      if (fetchedASPs.length === 0) {
-        console.warn("[ASPRegistry] No ASPs available — API offline and no on-chain indexer configured");
       }
 
       setASPs(fetchedASPs);
@@ -181,26 +189,13 @@ export function useASPRegistry(options: UseASPRegistryOptions = {}): UseASPRegis
     } finally {
       setIsLoading(false);
     }
-  }, [aspCount]);
+  }, [aspCount, provider, addresses.PRIVACY_POOLS]);
 
-  // Parse ASP data from contract or API response
-  function parseASPData(data: Record<string, unknown>): ASPInfo {
-    return {
-      aspId: String(data.asp_id || data.aspId || "0x0"),
-      nameHash: String(data.name_hash || data.nameHash || "0x0"),
-      displayName: decodeName(String(data.name_hash || data.nameHash || "0x0")),
-      publicKey: {
-        x: String((data.public_key as Record<string, unknown>)?.x || "0x0"),
-        y: String((data.public_key as Record<string, unknown>)?.y || "0x0"),
-      },
-      metadataUriHash: String(data.metadata_uri_hash || data.metadataUriHash || "0x0"),
-      status: parseASPStatus(data.status),
-      registeredAt: Number(data.registered_at || data.registeredAt || 0),
-      stakedAmount: parseU256(data.staked_amount || data.stakedAmount),
-      approvalVotes: Number(data.approval_votes || data.approvalVotes || 0),
-      totalSets: Number(data.total_sets || data.totalSets || 0),
-      listIndex: Number(data.list_index || data.listIndex || 0),
-    };
+  // Decode status variant index from felt to enum key
+  function decodeStatusVariant(felt: string | undefined): string {
+    const val = Number(BigInt(felt || 0));
+    const variants = ["Pending", "Active", "Suspended", "Revoked"];
+    return variants[val] || "Pending";
   }
 
   // Initial fetch and refresh interval
