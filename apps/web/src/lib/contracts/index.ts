@@ -81,14 +81,28 @@ export function useSageAllowance(
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
-// Standard ERC20 ABI with snake_case balance_of (Starknet Sepolia contracts)
+// Standard Starknet ERC20 ABI for balance_of (snake_case, with u256 struct)
 const ERC20_BALANCE_OF_ABI = [
   {
-    name: "balance_of",
-    type: "function",
-    inputs: [{ name: "account", type: "core::starknet::contract_address::ContractAddress" }],
-    outputs: [{ type: "core::integer::u256" }],
-    state_mutability: "view",
+    type: "struct",
+    name: "core::integer::u256",
+    members: [
+      { name: "low", type: "core::integer::u128" },
+      { name: "high", type: "core::integer::u128" },
+    ],
+  },
+  {
+    type: "interface",
+    name: "ERC20Balance",
+    items: [
+      {
+        type: "function",
+        name: "balance_of",
+        inputs: [{ name: "account", type: "core::starknet::contract_address::ContractAddress" }],
+        outputs: [{ type: "core::integer::u256" }],
+        state_mutability: "view",
+      },
+    ],
   },
 ] as Abi;
 
