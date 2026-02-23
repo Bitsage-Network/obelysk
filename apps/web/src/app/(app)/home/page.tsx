@@ -37,14 +37,40 @@ const TOKENS = [
 function parseU256(value: unknown): bigint {
   if (typeof value === 'bigint') return value;
   if (typeof value === 'number') return BigInt(Math.floor(value));
-  if (typeof value === 'string') return BigInt(value);
-  if (value && typeof value === 'object') {
-    if ('low' in value && 'high' in value) {
-      const low = BigInt((value as any).low);
-      const high = BigInt((value as any).high);
-      return low + (high << 128n);
+  if (typeof value === 'string') {
+    try { return BigInt(value); } catch { return 0n; }
+  }
+  if (Array.isArray(value)) {
+    if (value.length >= 2) {
+      // starknet.js raw felt array: [low, high]
+      try {
+        const low = BigInt(value[0]);
+        const high = BigInt(value[1]);
+        return low + (high << 128n);
+      } catch { /* fall through */ }
     }
-    if ('balance' in value) return parseU256((value as any).balance);
+    if (value.length === 1) {
+      return parseU256(value[0]);
+    }
+  }
+  if (value && typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    // {low, high} u256 struct
+    if ('low' in v && 'high' in v) {
+      try {
+        const low = BigInt(v.low as any);
+        const high = BigInt(v.high as any);
+        return low + (high << 128n);
+      } catch { return 0n; }
+    }
+    // Single-field wrappers
+    if ('balance' in v) return parseU256(v.balance);
+    if ('amount' in v) return parseU256(v.amount);
+    // starknet-react Result wrapper
+    if ('value' in v) return parseU256(v.value);
+  }
+  if (value !== undefined && value !== null) {
+    console.warn('[parseU256] Unknown balance shape:', typeof value, value);
   }
   return 0n;
 }
