@@ -1,0 +1,36 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  vm31-relayer:
+    build:
+      context: .
+      dockerfile: services/vm31-relayer/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      VM31_HOST: "0.0.0.0"
+      VM31_PORT: "3080"
+      VM31_TREE_CACHE_PATH: /var/lib/vm31/tree_cache.json
+      VM31_TREE_SYNC_INTERVAL: "15"
+    env_file:
+      - services/vm31-relayer/.env
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3080:3080"
+    volumes:
+      - vm31-data:/var/lib/vm31
+
+volumes:
+  redis-data:
+  vm31-data:

@@ -289,6 +289,41 @@ export const TRADING_PAIRS = [
 // Assets available for privacy pools
 export const PRIVACY_POOL_ASSETS = ["SAGE", "USDC", "STRK"];
 
+// BTC-backed assets available for VM31 Privacy Vaults
+export const BTC_VAULT_ASSETS = ["wBTC", "LBTC", "tBTC", "SolvBTC"] as const;
+export type BtcVaultAssetSymbol = (typeof BTC_VAULT_ASSETS)[number];
+
+// BTC variant asset definitions (beyond the base wBTC already in SUPPORTED_ASSETS)
+export const BTC_VARIANT_ASSETS: Record<string, Omit<Asset, "contractAddress">> = {
+  LBTC: {
+    id: "LBTC",
+    name: "Lombard Staked BTC",
+    symbol: "LBTC",
+    decimals: 8,
+    icon: "",
+    color: "#5B21B6",
+    coingeckoId: "lombard-staked-btc",
+  },
+  tBTC: {
+    id: "tBTC",
+    name: "Threshold BTC",
+    symbol: "tBTC",
+    decimals: 8,
+    icon: "",
+    color: "#4338CA",
+    coingeckoId: "tbtc",
+  },
+  SolvBTC: {
+    id: "SolvBTC",
+    name: "Solv BTC",
+    symbol: "SolvBTC",
+    decimals: 8,
+    icon: "",
+    color: "#DC2626",
+    coingeckoId: "solv-btc",
+  },
+};
+
 // Assets available for staking rewards
 export const STAKING_REWARD_ASSETS = ["SAGE", "USDC"];
 

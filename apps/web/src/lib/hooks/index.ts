@@ -54,12 +54,6 @@ export {
   type UseGaslessPrivacyDepositResult,
 } from './useGaslessPrivacyDeposit';
 
-export {
-  useEnhancedPrivacyDeposit,
-  type EnhancedDepositState,
-  type DepositOptions,
-  type UseEnhancedPrivacyDepositResult,
-} from './useEnhancedPrivacyDeposit';
 // Explicit exports from useConfidentialTransfer to avoid AssetId collision
 export {
   useConfidentialTransfer,
@@ -159,8 +153,6 @@ export {
   useTradeHistory,
   useMarketStats,
   useTWAP,
-  useTradingWithWebSocket,
-
   // Governance
   useProposals,
   useProposal,
@@ -170,8 +162,6 @@ export {
   useGovernanceStats,
   useCouncilMembers,
   useGovernanceDashboard,
-  useGovernanceWithWebSocket,
-
   // Staking
   useStakeInfo,
   useClaimRewards,
@@ -200,7 +190,6 @@ export {
 
   // Wallet
   useWalletActivity,
-  useWalletWithWebSocket,
   useWalletDbTransactions,
   useWalletDbSummary,
   useWalletPageData,

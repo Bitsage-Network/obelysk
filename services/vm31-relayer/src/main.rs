@@ -5,6 +5,7 @@ mod error;
 mod prover;
 mod routes;
 mod store;
+mod tree_sync_service;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -26,6 +27,7 @@ use crate::config::RelayerConfig;
 use crate::prover::ProverService;
 use crate::routes::AppState;
 use crate::store::build_store;
+use crate::tree_sync_service::TreeSyncService;
 
 #[tokio::main]
 async fn main() {
@@ -100,6 +102,14 @@ async fn main() {
         config.bridge_contract.clone(),
     );
 
+    // Build PoolClientConfig for TreeSyncService
+    let tree_pool_config = PoolClientConfig {
+        rpc_url: config.rpc_url.clone(),
+        pool_address: config.pool_contract.clone(),
+        network: "sepolia".to_string(),
+        verify_rpc_urls: vec![],
+    };
+
     // Build ProverService and spawn batch processor
     let prover = ProverService::new(
         backend,
@@ -111,6 +121,25 @@ async fn main() {
     tokio::spawn(async move {
         prover.run(rx).await;
     });
+
+    // Build TreeSyncService and spawn background sync loop
+    let tree_sync = match TreeSyncService::new(
+        tree_pool_config,
+        store.clone(),
+        config.tree_cache_path.clone(),
+        config.tree_sync_interval_secs,
+    ) {
+        Ok(ts) => {
+            let ts = Arc::new(ts);
+            let ts_clone = Arc::clone(&ts);
+            tokio::spawn(async move { ts_clone.run().await });
+            Some(ts)
+        }
+        Err(e) => {
+            warn!(error = %e, "tree sync service disabled (failed to initialize)");
+            None
+        }
+    };
 
     // Build CORS layer
     let cors = if config.allowed_origins.is_empty() {
@@ -136,6 +165,7 @@ async fn main() {
         queue,
         store,
         config: config.clone(),
+        tree_sync,
     });
 
     let app = Router::new()
@@ -144,6 +174,7 @@ async fn main() {
         .route("/submit", axum::routing::post(routes::submit))
         .route("/batch/{id}", axum::routing::get(routes::get_batch))
         .route("/prove", axum::routing::post(routes::force_prove))
+        .route("/merkle-path/{commitment}", axum::routing::get(routes::get_merkle_path))
         .layer(RequestBodyLimitLayer::new(100 * 1024)) // 100KB
         .layer(cors)
         .layer(TraceLayer::new_for_http())

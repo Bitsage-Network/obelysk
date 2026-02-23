@@ -827,7 +827,7 @@ function DarkPoolActivityFeed({
 // Main Component
 // ============================================================================
 
-export function PrivateAuction() {
+export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
   const { address, connector } = useAccount();
   const { connect, connectors } = useConnect();
   const { network } = useNetwork();
@@ -854,8 +854,15 @@ export function PrivateAuction() {
 
   const txReview = usePrivacyTransactionReview();
 
+  // Resolve initialPair (e.g. "ETH_USDC") to matching DARK_POOL_PAIRS entry
+  const resolvedInitialPair = useMemo(() => {
+    if (!initialPair) return DARK_POOL_PAIRS[0];
+    const normalized = initialPair.toUpperCase().replace(/[^A-Z]/g, "_");
+    return DARK_POOL_PAIRS.find((p) => p.label.toUpperCase().replace("/", "_") === normalized) || DARK_POOL_PAIRS[0];
+  }, [initialPair]);
+
   // Local UI state
-  const [selectedPair, setSelectedPair] = useState<TradingPairInfo>(DARK_POOL_PAIRS[0]);
+  const [selectedPair, setSelectedPair] = useState<TradingPairInfo>(resolvedInitialPair);
   const [side, setSide] = useState<"buy" | "sell">("buy");
   const [priceInput, setPriceInput] = useState("");
   const [amountInput, setAmountInput] = useState("");

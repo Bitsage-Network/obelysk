@@ -11,7 +11,46 @@ use stwo_ml::privacy::tx_builder::{PendingTx, TxBuilder};
 
 use crate::batch_queue::ReadyBatch;
 use crate::bridge::BridgeService;
-use crate::store::{BatchRecord, BatchStatus, BatchStore, InMemoryStore, StatusUpdate};
+use crate::store::{
+    BatchRecord, BatchStatus, BatchStore, InMemoryStore, MerklePathRecord, NoteRecord, NoteStore,
+    StatusUpdate,
+};
+
+/// Deposit note info extracted before the proving step (which moves txs).
+struct DepositNoteInfo {
+    owner_pubkey: [u32; 4],
+    asset_id: u32,
+    amount: u64,
+    blinding: [u32; 4],
+}
+
+impl DepositNoteInfo {
+    /// Compute a deterministic commitment key via FNV-1a hash of note fields.
+    fn commitment_key(&self) -> String {
+        let mut state: u64 = 0xcbf29ce484222325;
+        for &v in &self.owner_pubkey {
+            for b in v.to_le_bytes() {
+                state ^= b as u64;
+                state = state.wrapping_mul(0x100000001b3);
+            }
+        }
+        for b in self.asset_id.to_le_bytes() {
+            state ^= b as u64;
+            state = state.wrapping_mul(0x100000001b3);
+        }
+        for b in self.amount.to_le_bytes() {
+            state ^= b as u64;
+            state = state.wrapping_mul(0x100000001b3);
+        }
+        for &v in &self.blinding {
+            for b in v.to_le_bytes() {
+                state ^= b as u64;
+                state = state.wrapping_mul(0x100000001b3);
+            }
+        }
+        format!("{:016x}", state)
+    }
+}
 
 /// Orchestrates batch proving and on-chain submission.
 pub struct ProverService {
@@ -93,8 +132,9 @@ impl ProverService {
                 ?;
         }
 
-        // ── Step 2: Extract withdrawal recipients before proving ───────────
+        // ── Step 2: Extract withdrawal recipients + deposit note info before proving ──
         let withdrawal_recipients = Self::extract_withdrawal_recipients(&txs);
+        let deposit_notes = Self::extract_deposit_notes(&txs);
 
         // Update status to Proving
         self.store
@@ -249,6 +289,35 @@ impl ProverService {
             .await
             .map_err(|e| ProverError::Store(e.to_string()))?;
 
+        // ── Step 7: Store note records for deposit notes ──────────────────
+        // Non-fatal: batch is already finalized, so log and continue on failure.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        for note_info in &deposit_notes {
+            let commitment = note_info.commitment_key();
+            let record = NoteRecord {
+                commitment: commitment.clone(),
+                merkle_path: MerklePathRecord {
+                    siblings: vec![], // Populated by TreeSyncService backfill
+                    index: 0,
+                },
+                merkle_root: [0; 8], // Populated by TreeSyncService backfill
+                batch_id: batch_id.to_string(),
+                created_at: now,
+                commitment_digest: None, // Set by TreeSyncService when matched to on-chain event
+            };
+            if let Err(e) = self.store.save_note(&commitment, &record).await {
+                warn!(
+                    batch_id = %batch_id,
+                    commitment = %commitment,
+                    error = %e,
+                    "failed to save note record (non-fatal)"
+                );
+            }
+        }
+
         info!(batch_id = %batch_id, "batch finalized");
         Ok(())
     }
@@ -311,6 +380,33 @@ impl ProverService {
             }
         }
         Ok(())
+    }
+
+    /// Extracts deposit note info before the proving step (which moves txs).
+    fn extract_deposit_notes(txs: &[PendingTx]) -> Vec<DepositNoteInfo> {
+        let mut notes = Vec::new();
+        for tx in txs {
+            if let PendingTx::Deposit {
+                amount,
+                asset_id,
+                recipient_pubkey,
+                ..
+            } = tx
+            {
+                notes.push(DepositNoteInfo {
+                    owner_pubkey: [
+                        recipient_pubkey[0].0,
+                        recipient_pubkey[1].0,
+                        recipient_pubkey[2].0,
+                        recipient_pubkey[3].0,
+                    ],
+                    asset_id: *asset_id,
+                    amount: *amount,
+                    blinding: [0, 0, 0, 0], // Blinding is generated server-side by TxBuilder
+                });
+            }
+        }
+        notes
     }
 
     /// Extracts withdrawal recipients from the pending transactions.

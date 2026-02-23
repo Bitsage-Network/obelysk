@@ -76,7 +76,7 @@ const features = [
     title: "Dark Pool Trading",
     description: "Execute large trades without market impact. Orders are encrypted with ElGamal and matched using ZK proofs—no one sees your strategy.",
     benefits: ["Zero slippage on large orders", "Hidden order flow", "MEV protection"],
-    href: "/trade",
+    href: "/darkpool",
     tech: "ElGamal + STARK Proofs",
     gradient: "from-cyan-500/20 to-emerald-500/20",
     accentColor: "cyan",
@@ -87,10 +87,32 @@ const features = [
     title: "Privacy Wallets",
     description: "Fully encrypted wallet infrastructure. Your balances and transaction history remain private while maintaining auditability.",
     benefits: ["Encrypted balances", "Private transaction history", "Selective disclosure"],
-    href: "/wallet",
+    href: "/home",
     tech: "Homomorphic Encryption",
     gradient: "from-emerald-500/20 to-teal-500/20",
     accentColor: "emerald",
+    status: "live",
+  },
+  {
+    icon: EyeOff,
+    title: "Stealth Payments",
+    description: "Receive payments to one-time addresses. Senders can't link payments to your identity, and only you can detect incoming funds.",
+    benefits: ["One-time addresses", "Fuzzy message detection", "Batch claiming"],
+    href: "/wallet/stealth",
+    tech: "DKSAP + View Tags",
+    gradient: "from-indigo-500/20 to-cyan-500/20",
+    accentColor: "indigo",
+    status: "live",
+  },
+  {
+    icon: Layers,
+    title: "Privacy Pools",
+    description: "Deposit into compliance-tiered pools with zero-knowledge range proofs. Withdraw privately while maintaining regulatory compatibility.",
+    benefits: ["ASP compliance tiers", "Range proof verification", "Emergency ragequit"],
+    href: "/wallet/privacy-pool",
+    tech: "Merkle + Range Proofs",
+    gradient: "from-teal-500/20 to-emerald-500/20",
+    accentColor: "teal",
     status: "live",
   },
   {
@@ -110,18 +132,29 @@ const features = [
     description: "Send tokens with full privacy over the Stark Curve. Recipients, amounts, and timing are all encrypted end-to-end.",
     benefits: ["Hidden recipients", "Encrypted amounts", "Provable transfers"],
     href: "/send",
-    tech: "Same-Encryption Proofs",
+    tech: "ElGamal + Schnorr Proofs",
     gradient: "from-violet-500/20 to-purple-500/20",
     accentColor: "violet",
+    status: "live",
+  },
+  {
+    icon: Bitcoin,
+    title: "BTC Privacy Vaults",
+    description: "Shield Bitcoin in VM31 UTXO notes. Deposit wBTC, LBTC, tBTC, or SolvBTC and transact privately with STARK proofs.",
+    benefits: ["Multi-BTC variant support", "STWO STARK proofs", "Private transfers & withdrawals"],
+    href: "/wallet/btc-vault",
+    tech: "VM31 + STWO Proofs",
+    gradient: "from-orange-500/20 to-amber-500/20",
+    accentColor: "orange",
     status: "live",
   },
 ];
 
 const stats = [
   { label: "Network", value: "Starknet", icon: Layers },
-  { label: "Privacy Model", value: "ElGamal + STARK", icon: Shield },
-  { label: "Settlement", value: "On-chain", icon: Activity },
-  { label: "Status", value: "Beta", icon: CheckCircle2 },
+  { label: "Privacy", value: "Dual-Track", icon: Shield },
+  { label: "Features Live", value: "7", icon: CheckCircle2 },
+  { label: "Status", value: "Testnet", icon: Activity },
 ];
 
 const supportedAssets = [
@@ -191,10 +224,10 @@ export default function HomePage() {
             {/* Center: Nav Links (Desktop) */}
             <div className="hidden lg:flex items-center gap-1">
               <Link
-                href="/wallet"
+                href="/home"
                 className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
               >
-                Wallet
+                Home
               </Link>
               <Link
                 href="/trade"
@@ -352,7 +385,7 @@ export default function HomePage() {
 
               {/* Launch App Button */}
               <Link
-                href="/wallet"
+                href="/home"
                 className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white hover:bg-gray-100 text-gray-900 text-sm font-medium rounded-lg transition-all"
               >
                 Launch App
@@ -383,11 +416,11 @@ export default function HomePage() {
               >
                 <div className="py-4 space-y-1">
                   <Link
-                    href="/wallet"
+                    href="/home"
                     className="block px-4 py-3 text-sm font-medium text-gray-300 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
                     onClick={() => setMobileMenuOpen(false)}
                   >
-                    Wallet
+                    Home
                   </Link>
                   <Link
                     href="/trade"
@@ -443,7 +476,7 @@ export default function HomePage() {
 
                   <div className="pt-3">
                     <Link
-                      href="/wallet"
+                      href="/home"
                       className="flex items-center justify-center gap-2 mx-4 py-3 bg-white hover:bg-gray-100 text-gray-900 text-sm font-medium rounded-lg transition-all"
                       onClick={() => setMobileMenuOpen(false)}
                     >
@@ -527,7 +560,7 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/wallet">
+              <Link href="/home">
                 <button className="px-8 py-4 bg-white hover:bg-gray-100 text-gray-900 font-semibold rounded-xl transition-all duration-200 flex items-center justify-center gap-2 w-full sm:w-auto">
                   <Wallet className="w-5 h-5" />
                   Launch App
@@ -558,6 +591,14 @@ export default function HomePage() {
               <div className="flex items-center gap-2">
                 <Zap className="w-4 h-4 text-gray-400" />
                 <span>Zero-Knowledge Proofs</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-gray-400" />
+                <span>Gasless Transactions</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <ArrowUpDown className="w-4 h-4 text-gray-400" />
+                <span>DEX Aggregation</span>
               </div>
             </motion.div>
           </motion.div>
@@ -1441,7 +1482,7 @@ export default function HomePage() {
             </p>
           </motion.div>
 
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature, index) => (
               <motion.div
                 key={feature.title}
@@ -1547,6 +1588,8 @@ export default function HomePage() {
                   { name: "ElGamal", icon: Lock },
                   { name: "Pedersen", icon: Layers },
                   { name: "Stark Curve", icon: Zap },
+                  { name: "Poseidon", icon: Cpu },
+                  { name: "Schnorr", icon: CheckCircle2 },
                 ].map((tech) => (
                   <div
                     key={tech.name}
@@ -1583,7 +1626,7 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/wallet">
+              <Link href="/home">
                 <button className="px-8 py-4 bg-white hover:bg-gray-100 text-gray-900 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 w-full sm:w-auto">
                   Launch Obelysk
                   <ArrowRight className="w-5 h-5" />

@@ -30,6 +30,10 @@ pub struct RelayerConfig {
 
     // CORS
     pub allowed_origins: Vec<String>,
+
+    // Tree sync
+    pub tree_cache_path: Option<String>,
+    pub tree_sync_interval_secs: u64,
 }
 
 impl RelayerConfig {
@@ -83,6 +87,12 @@ impl RelayerConfig {
             return Err(ConfigError::Invalid("VM31_RATE_LIMIT".into(), "must be > 0".into()));
         }
 
+        let tree_cache_path = env::var("VM31_TREE_CACHE_PATH").ok().filter(|s| !s.is_empty());
+        let tree_sync_interval_secs: u64 = parse_env_or("VM31_TREE_SYNC_INTERVAL", 15)?;
+        if tree_sync_interval_secs == 0 {
+            return Err(ConfigError::Invalid("VM31_TREE_SYNC_INTERVAL".into(), "must be > 0".into()));
+        }
+
         Ok(Self {
             host: env::var("VM31_HOST").unwrap_or_else(|_| "0.0.0.0".into()),
             port: env::var("VM31_PORT")
@@ -102,6 +112,8 @@ impl RelayerConfig {
             redis_url,
             rate_limit_per_min,
             allowed_origins,
+            tree_cache_path,
+            tree_sync_interval_secs,
         })
     }
 

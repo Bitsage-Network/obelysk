@@ -235,13 +235,14 @@ interface AvnuSwapPanelProps {
   onSuccess?: () => void;
   onError?: (err: string) => void;
   className?: string;
+  initialSellToken?: string;
 }
 
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
 
-export function AvnuSwapPanel({ onSuccess, onError, className }: AvnuSwapPanelProps) {
+export function AvnuSwapPanel({ onSuccess, onError, className, initialSellToken }: AvnuSwapPanelProps) {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const { network } = useNetwork();
@@ -291,15 +292,20 @@ export function AvnuSwapPanel({ onSuccess, onError, className }: AvnuSwapPanelPr
   // High-impact confirmation gate
   const [showImpactConfirm, setShowImpactConfirm] = useState(false);
 
-  // Auto-select ETH → STRK defaults
+  // Auto-select defaults (honor initialSellToken from searchParams)
   useEffect(() => {
     if (supportedTokens.length >= 2 && !sellToken) {
+      const initial = initialSellToken
+        ? supportedTokens.find((t) => t.symbol.toLowerCase() === initialSellToken.toLowerCase())
+        : null;
       const eth = supportedTokens.find((t) => t.symbol === "ETH");
       const strk = supportedTokens.find((t) => t.symbol === "STRK");
-      if (eth) setSellToken(eth);
-      if (strk) setBuyToken(strk);
+      const sell = initial || eth;
+      const buy = initial && initial.symbol === "STRK" ? eth : strk;
+      if (sell) setSellToken(sell);
+      if (buy) setBuyToken(buy);
     }
-  }, [supportedTokens, sellToken]);
+  }, [supportedTokens, sellToken, initialSellToken]);
 
   // Fetch quotes when inputs change + dismiss stale impact confirmation
   useEffect(() => {

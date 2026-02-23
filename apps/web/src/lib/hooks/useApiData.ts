@@ -3,7 +3,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   getValidatorStatus,
   getGPUMetrics,
@@ -92,11 +92,6 @@ import {
   getDashboardStatsFromDb,
   JobDbAnalytics,
   DashboardDbStats,
-  // WebSocket types (kept for type compatibility, connections replaced by polling)
-  TradingWsMessage,
-  GovernanceWsMessage,
-  PrivacyWsMessage,
-  StakingWsMessage,
   // Price Feed API
   getSagePrice,
   getTokenPrice,
@@ -198,17 +193,17 @@ export function useSageUsdValue(amountSage: number | string | undefined) {
 
   const usdValue = useMemo(() => {
     const amount = typeof amountSage === 'string' ? parseFloat(amountSage) : amountSage;
-    if (!amount || isNaN(amount) || !priceData) return 0;
+    if (!amount || isNaN(amount) || !priceData?.price_usd) return null;
     return amount * priceData.price_usd;
   }, [amountSage, priceData]);
 
   return {
     usdValue,
-    formattedUsd: `$${usdValue.toFixed(2)}`,
+    formattedUsd: usdValue !== null ? `$${usdValue.toFixed(2)}` : "Price unavailable",
     pricePerSage: priceData?.price_usd ?? 0,
     priceChange24h: priceData?.price_change_pct_24h ?? 0,
     isLoading,
-    isFallback: priceData?.source === 'fallback',
+    isFallback: !priceData,
   };
 }
 
@@ -947,99 +942,6 @@ export function useStealthPageData(address?: string) {
 // Uses starknet_getEvents RPC — no coordinator dependency
 // ============================================================================
 
-/**
- * Hook for real-time trading updates via on-chain polling
- * Polls OTC Orderbook contract events at regular intervals
- */
-export function useWebSocketTrading(pairId?: string, address?: string) {
-  // Replaced WebSocket with on-chain polling — returns compatible interface
-  const [isConnected] = useState(false);
-  const [lastMessage] = useState<TradingWsMessage | null>(null);
-  return { isConnected, lastMessage };
-}
-
-/**
- * Hook for real-time governance updates via on-chain polling
- * Polls SAGE Token governance events at regular intervals
- */
-export function useWebSocketGovernance(proposalId?: string, address?: string) {
-  const [isConnected] = useState(false);
-  const [lastMessage] = useState<GovernanceWsMessage | null>(null);
-  return { isConnected, lastMessage };
-}
-
-/**
- * Hook for real-time privacy updates via on-chain polling
- * See usePrivacyEvents from useProtocolEvents.ts for the working replacement
- */
-export function useWebSocketPrivacy(address?: string) {
-  const [isConnected] = useState(false);
-  const [lastMessage] = useState<PrivacyWsMessage | null>(null);
-  return { isConnected, lastMessage };
-}
-
-/**
- * Hook for real-time staking updates via on-chain polling
- * See useStakingEvents from useProtocolEvents.ts for the working replacement
- */
-export function useWebSocketStaking(address?: string) {
-  const [isConnected] = useState(false);
-  const [lastMessage] = useState<StakingWsMessage | null>(null);
-  return { isConnected, lastMessage };
-}
-
-/**
- * Combined hook for trading page with real-time updates
- */
-export function useTradingWithWebSocket(pairId: string, address?: string) {
-  const orderBook = useOrderBook(pairId);
-  const marketStats = useMarketStats(pairId);
-  const tradeHistory = useTradeHistory(pairId, 20);
-  const userOrders = useUserOrders(address);
-  const { isConnected, lastMessage } = useWebSocketTrading(pairId, address);
-
-  return {
-    orderBook: orderBook.data,
-    marketStats: marketStats.data,
-    tradeHistory: tradeHistory.data,
-    userOrders: userOrders.data,
-    isLoading: orderBook.isLoading || marketStats.isLoading,
-    isError: orderBook.isError || marketStats.isError,
-    wsConnected: isConnected,
-    lastWsMessage: lastMessage,
-    refetch: () => {
-      orderBook.refetch();
-      marketStats.refetch();
-      tradeHistory.refetch();
-      if (address) userOrders.refetch();
-    },
-  };
-}
-
-/**
- * Combined hook for governance page with real-time updates
- */
-export function useGovernanceWithWebSocket(address?: string, proposalId?: string) {
-  const proposals = useProposals();
-  const stats = useGovernanceStats();
-  const votingPower = useVotingPower(address);
-  const { isConnected, lastMessage } = useWebSocketGovernance(proposalId, address);
-
-  return {
-    proposals: proposals.data?.proposals || [],
-    stats: stats.data,
-    votingPower: votingPower.data,
-    isLoading: proposals.isLoading || stats.isLoading,
-    isError: proposals.isError || stats.isError,
-    wsConnected: isConnected,
-    lastWsMessage: lastMessage,
-    refetch: () => {
-      proposals.refetch();
-      stats.refetch();
-      if (address) votingPower.refetch();
-    },
-  };
-}
 
 // ============================================================================
 // Earnings & Wallet Activity Hooks
@@ -1136,45 +1038,6 @@ export function useWalletActivity(address?: string, limit = 20) {
   });
 }
 
-/**
- * Combined hook for wallet page with real-time updates via privacy WebSocket
- */
-export function useWalletWithWebSocket(address?: string) {
-  const queryClient = useQueryClient();
-  const activity = useWalletActivity(address, 20);
-  const earnings = useEarningsSummary(address);
-  const transfers = useTransferHistory(address, { limit: 10 });
-  const privacyAccount = usePrivacyAccount(address);
-  const { isConnected, lastMessage } = useWebSocketPrivacy(address);
-
-  // Invalidate cache on relevant WebSocket events
-  useEffect(() => {
-    if (lastMessage) {
-      if (lastMessage.type === 'privacy_event') {
-        queryClient.invalidateQueries({ queryKey: ['walletActivity', address] });
-        queryClient.invalidateQueries({ queryKey: ['transferHistory', address] });
-        queryClient.invalidateQueries({ queryKey: ['earningsSummary', address] });
-      }
-    }
-  }, [lastMessage, queryClient, address]);
-
-  return {
-    activity: activity.data || [],
-    earnings: earnings.data,
-    transfers: transfers.data || [],
-    privacyAccount: privacyAccount.data,
-    isLoading: activity.isLoading || earnings.isLoading,
-    isError: activity.isError || earnings.isError,
-    wsConnected: isConnected,
-    lastWsMessage: lastMessage,
-    refetch: () => {
-      activity.refetch();
-      earnings.refetch();
-      transfers.refetch();
-      if (address) privacyAccount.refetch();
-    },
-  };
-}
 
 // ============================================================================
 // Jobs Analytics Hooks
@@ -1713,13 +1576,12 @@ export function useProofsPageData(params?: {
 }
 
 /**
- * Combined hook for staking page with database data and real-time updates
+ * Combined hook for staking page with database data
  */
 export function useStakingPageData(address?: string) {
   const stats = useStakingDbStats();
   const history = useStakingHistoryDb(address, { limit: 20 });
   const leaderboard = useStakingLeaderboard({ limit: 10 });
-  const { isConnected, lastMessage } = useWebSocketStaking(address);
 
   return {
     stats: stats.data,
@@ -1727,8 +1589,6 @@ export function useStakingPageData(address?: string) {
     leaderboard: leaderboard.data || [],
     isLoading: stats.isLoading,
     isError: stats.isError,
-    wsConnected: isConnected,
-    lastWsMessage: lastMessage,
     refetch: () => {
       stats.refetch();
       if (address) history.refetch();
@@ -1809,22 +1669,9 @@ export function useWalletDbSummary(address?: string) {
  * Combined hook for wallet page with database-backed transaction history
  */
 export function useWalletPageData(address?: string) {
-  const queryClient = useQueryClient();
   const transactions = useWalletDbTransactions(address, { limit: 50 });
   const summary = useWalletDbSummary(address);
   const earnings = useEarningsSummary(address);
-  const { isConnected, lastMessage } = useWebSocketPrivacy(address);
-
-  // Invalidate cache on relevant WebSocket events
-  useEffect(() => {
-    if (lastMessage) {
-      if (lastMessage.type === 'privacy_event') {
-        queryClient.invalidateQueries({ queryKey: ['walletDbTransactions', address] });
-        queryClient.invalidateQueries({ queryKey: ['walletDbSummary', address] });
-        queryClient.invalidateQueries({ queryKey: ['earningsSummary', address] });
-      }
-    }
-  }, [lastMessage, queryClient, address]);
 
   return {
     transactions: transactions.data?.transactions || [],
@@ -1833,8 +1680,6 @@ export function useWalletPageData(address?: string) {
     earnings: earnings.data,
     isLoading: transactions.isLoading || summary.isLoading,
     isError: transactions.isError || summary.isError,
-    wsConnected: isConnected,
-    lastWsMessage: lastMessage,
     refetch: () => {
       transactions.refetch();
       summary.refetch();

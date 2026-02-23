@@ -275,6 +275,14 @@ export function useCancelRagequit(): UseCancelRagequitResult {
         ragequitRequest.commitment
       );
 
+      // Guard: reject empty Merkle proofs that would revert on-chain
+      if (!inclusionProof.siblings || inclusionProof.siblings.length === 0) {
+        throw new Error(
+          "Cannot cancel ragequit: Merkle inclusion proof unavailable. " +
+          "Event indexer required to generate valid proof."
+        );
+      }
+
       // Build the cancel ragequit transaction
       const call = buildCancelRagequitCall(
         ragequitRequest.requestId,

@@ -1216,24 +1216,14 @@ export const getTokenPrices = (symbols?: string[]) =>
     params: symbols ? { symbols: symbols.join(',') } : undefined,
   });
 
-// Get SAGE/USD price specifically (convenience function with fallback)
-export const getSagePrice = async (): Promise<TokenPrice> => {
+// Get SAGE/USD price specifically (returns null when API unavailable)
+export const getSagePrice = async (): Promise<TokenPrice | null> => {
   try {
     const response = await getTokenPrice('SAGE');
     return response.data;
-  } catch (error) {
-    // Return zero price when API unavailable — UI should show "unavailable"
-    console.warn('[PriceFeed] Failed to fetch SAGE price, API offline');
-    return {
-      token: 'SAGE',
-      symbol: 'SAGE',
-      price_usd: 0,
-      price_change_24h: 0,
-      price_change_pct_24h: 0,
-      volume_24h: 0,
-      last_updated: new Date().toISOString(),
-      source: 'fallback',
-    };
+  } catch {
+    console.warn('[PriceFeed] SAGE price API unavailable');
+    return null;
   }
 };
 
