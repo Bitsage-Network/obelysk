@@ -14,9 +14,6 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules 2>/dev/null || true
-COPY --from=deps /app/packages/crypto/node_modules ./packages/crypto/node_modules 2>/dev/null || true
-
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
