@@ -242,6 +242,13 @@ const DARK_POOL_ABI = [
     outputs: [{ name: "key", type: "core::felt252" }],
     state_mutability: "view",
   },
+  {
+    name: "get_epoch_duration",
+    type: "function",
+    inputs: [],
+    outputs: [{ name: "duration", type: "core::integer::u64" }],
+    state_mutability: "view",
+  },
 ] as const;
 
 // ============================================================================
@@ -267,8 +274,8 @@ export async function readEpochFromContract(
   const provider = getProvider(network);
 
   try {
-    // Parallel reads: epoch, phase, block number
-    const [epochResult, phaseResult, blockResult] = await Promise.all([
+    // D11: Parallel reads: epoch, phase, block number, epoch_duration
+    const [epochResult, phaseResult, blockResult, durationResult] = await Promise.all([
       provider.callContract({
         contractAddress,
         entrypoint: "get_current_epoch",
@@ -280,6 +287,11 @@ export async function readEpochFromContract(
         calldata: [],
       }),
       provider.getBlockNumber(),
+      provider.callContract({
+        contractAddress,
+        entrypoint: "get_epoch_duration",
+        calldata: [],
+      }).catch(() => null), // Fall back to default if view doesn't exist (pre-upgrade)
     ]);
 
     const epoch = Number(BigInt(epochResult[0]));
@@ -289,10 +301,11 @@ export async function readEpochFromContract(
     const phaseMap: ContractEpochPhase[] = ["Commit", "Reveal", "Settle", "Closed"];
     const phase = phaseMap[phaseIndex] ?? "Closed";
 
+    // D11: Read epoch_duration from contract, fall back to 10 for pre-upgrade contracts
     // Estimate blocks remaining in phase
     // Contract uses: epoch_duration per phase, 3 phases per epoch
     // phase = ((current_block - genesis_block) % (3 * epoch_duration)) / epoch_duration
-    const epochDuration = 10; // blocks per phase (~40s per phase)
+    const epochDuration = durationResult ? Number(BigInt(durationResult[0])) || 10 : 10;
     const totalEpochBlocks = 3 * epochDuration;
     const phaseOffset = phaseIndex * epochDuration;
     const blocksInPhase = epochDuration;
@@ -643,18 +656,26 @@ export function parseOrderIdFromReceipt(
   if (!receipt?.events) return null;
 
   // OrderCommitted event selector = sn_keccak("OrderCommitted")
-  const orderCommittedSelector = hash.getSelectorFromName("OrderCommitted");
+  // D4: Use BigInt comparison to handle leading-zero differences in felt-hex
+  const orderCommittedSelectorBigInt = BigInt(hash.getSelectorFromName("OrderCommitted"));
 
   // Keys: [event_selector, order_id_low, order_id_high, trader]
   for (const event of receipt.events) {
     const keys = event.keys ?? [];
-    // Check selector matches OrderCommitted
-    if (keys.length >= 3 && keys[0] === orderCommittedSelector) {
+    if (keys.length < 3) continue;
+
+    try {
+      // D4: Normalize both sides with BigInt() — avoids hex leading-zero mismatches
+      if (BigInt(keys[0]) !== orderCommittedSelectorBigInt) continue;
+
       // In Cairo: #[key] order_id: u256 → emitted as 2 keys (low, high)
-      const orderIdLow = BigInt(keys[1] || "0");
-      const orderIdHigh = BigInt(keys[2] || "0");
+      const orderIdLow = BigInt(keys[1]);
+      const orderIdHigh = BigInt(keys[2]);
       const orderId = (orderIdHigh << 128n) | orderIdLow;
       if (orderId > 0n) return orderId;
+    } catch {
+      // Malformed event data — skip
+      continue;
     }
   }
 
@@ -1142,10 +1163,37 @@ export async function storeOrderNote(note: DarkPoolOrderNote, trader?: string): 
 }
 
 /**
- * Load order notes from IndexedDB, optionally filtered by trader address.
- * When `trader` is provided, only notes belonging to that wallet are returned.
+ * Deserialize a raw IndexedDB record into a DarkPoolOrderNote.
+ * Returns null if the record is corrupted.
  */
-export async function loadOrderNotes(trader?: string): Promise<DarkPoolOrderNote[]> {
+function deserializeOrderNote(raw: unknown): DarkPoolOrderNote | null {
+  try {
+    const r = raw as Record<string, unknown>;
+    const orderRaw = r.order as Record<string, string>;
+    return {
+      ...r,
+      orderId: BigInt(r.orderId as string),
+      order: {
+        ...orderRaw,
+        price: BigInt(orderRaw.price),
+        amount: BigInt(orderRaw.amount),
+        salt: BigInt(orderRaw.salt),
+        amountBlinding: BigInt(orderRaw.amountBlinding),
+      },
+      fillAmount: r.fillAmount ? BigInt(r.fillAmount as string) : undefined,
+      clearingPrice: r.clearingPrice ? BigInt(r.clearingPrice as string) : undefined,
+    } as DarkPoolOrderNote;
+  } catch {
+    console.warn("[DarkPool] Skipping corrupted order note in IndexedDB");
+    return null;
+  }
+}
+
+/**
+ * Load order notes from IndexedDB, scoped to the given trader address.
+ * D7: `trader` is required to prevent cross-wallet data leakage on shared machines.
+ */
+export async function loadOrderNotes(trader: string): Promise<DarkPoolOrderNote[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
@@ -1154,30 +1202,13 @@ export async function loadOrderNotes(trader?: string): Promise<DarkPoolOrderNote
     request.onsuccess = () => {
       const notes: DarkPoolOrderNote[] = [];
       for (const raw of request.result || []) {
-        try {
-          const r = raw as Record<string, unknown>;
-          // Filter by trader address if provided
-          if (trader && r.trader && (r.trader as string).toLowerCase() !== trader.toLowerCase()) {
-            continue;
-          }
-          const orderRaw = r.order as Record<string, string>;
-          notes.push({
-            ...r,
-            orderId: BigInt(r.orderId as string),
-            order: {
-              ...orderRaw,
-              price: BigInt(orderRaw.price),
-              amount: BigInt(orderRaw.amount),
-              salt: BigInt(orderRaw.salt),
-              amountBlinding: BigInt(orderRaw.amountBlinding),
-            },
-            fillAmount: r.fillAmount ? BigInt(r.fillAmount as string) : undefined,
-            clearingPrice: r.clearingPrice ? BigInt(r.clearingPrice as string) : undefined,
-          } as DarkPoolOrderNote);
-        } catch {
-          // Skip corrupted entry — invalid BigInt or missing fields
-          console.warn("[DarkPool] Skipping corrupted order note in IndexedDB");
+        const r = raw as Record<string, unknown>;
+        // D7: Always filter by trader — never return cross-wallet notes
+        if (r.trader && (r.trader as string).toLowerCase() !== trader.toLowerCase()) {
+          continue;
         }
+        const note = deserializeOrderNote(raw);
+        if (note) notes.push(note);
       }
       resolve(notes);
     };
@@ -1186,18 +1217,47 @@ export async function loadOrderNotes(trader?: string): Promise<DarkPoolOrderNote
 }
 
 /**
- * Update an order note status
+ * Update an order note status.
+ * D8: Uses direct IndexedDB get(orderId) instead of getAll() — O(1) instead of O(n).
+ * D7: Requires trader to scope the update and prevent cross-wallet writes.
  */
 export async function updateOrderNote(
   orderId: bigint,
   updates: Partial<DarkPoolOrderNote>,
+  trader: string,
 ): Promise<void> {
-  const notes = await loadOrderNotes();
-  const note = notes.find((n) => n.orderId === orderId);
-  if (!note) return;
+  const db = await openDB();
+  const orderIdStr = orderId.toString();
 
-  const updated = { ...note, ...updates };
-  await storeOrderNote(updated);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(orderIdStr);
+
+    getReq.onsuccess = () => {
+      if (!getReq.result) {
+        resolve();
+        return;
+      }
+
+      const raw = getReq.result as Record<string, unknown>;
+      // D7: Verify the note belongs to this trader before updating
+      if (raw.trader && (raw.trader as string).toLowerCase() !== trader.toLowerCase()) {
+        resolve();
+        return;
+      }
+
+      const note = deserializeOrderNote(raw);
+      if (!note) {
+        resolve();
+        return;
+      }
+
+      const updated = { ...note, ...updates };
+      storeOrderNote(updated, trader).then(resolve).catch(reject);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
 }
 
 // ============================================================================
@@ -1205,24 +1265,27 @@ export async function updateOrderNote(
 // ============================================================================
 
 /**
- * Format a price from 18-decimal fixed point to human-readable
+ * Format a price from 18-decimal fixed point to human-readable.
+ * D9: Uses toFixed() for proper rounding instead of string truncation.
  */
 export function formatPrice(price: bigint, precision: number = 6): string {
   const whole = price / BigInt(1e18);
   const frac = price % BigInt(1e18);
-  const fracStr = frac.toString().padStart(18, "0").slice(0, precision);
-  return `${whole}.${fracStr}`;
+  // Build full decimal string, then use Number + toFixed for correct rounding
+  const fullStr = `${whole}.${frac.toString().padStart(18, "0")}`;
+  return Number(fullStr).toFixed(precision);
 }
 
 /**
- * Format an amount in token decimals to human-readable
+ * Format an amount in token decimals to human-readable.
+ * D9: Uses toFixed() for proper rounding instead of string truncation.
  */
 export function formatAmount(amount: bigint, decimals: number = 18, precision: number = 6): string {
   const divisor = BigInt(10 ** decimals);
   const whole = amount / divisor;
   const frac = amount % divisor;
-  const fracStr = frac.toString().padStart(decimals, "0").slice(0, precision);
-  return `${whole}.${fracStr}`;
+  const fullStr = `${whole}.${frac.toString().padStart(decimals, "0")}`;
+  return Number(fullStr).toFixed(precision);
 }
 
 /**

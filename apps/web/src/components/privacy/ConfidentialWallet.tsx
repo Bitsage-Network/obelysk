@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { useConfidentialTransfer, ASSET_IDS, type AssetId } from "@/lib/hooks/useConfidentialTransfer";
 import { useAccount } from "@starknet-react/core";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { getExplorerTxUrl, type NetworkType } from "@/lib/contracts/addresses";
 
 // Asset display config
 const ASSET_CONFIG: Record<AssetId, { name: string; symbol: string; decimals: number; color: string }> = {
@@ -40,6 +42,7 @@ type Tab = "balances" | "transfer" | "fund" | "withdraw";
 
 export function ConfidentialWallet() {
   const { address, isConnected } = useAccount();
+  const { network } = useNetwork();
   const {
     state,
     register,
@@ -519,7 +522,7 @@ export function ConfidentialWallet() {
                 </div>
                 {txResult.hash && (
                   <a
-                    href={`https://sepolia.starkscan.co/tx/${txResult.hash}`}
+                    href={getExplorerTxUrl(txResult.hash, network as NetworkType)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-purple-400 hover:text-purple-300 mt-1 inline-flex items-center gap-1"

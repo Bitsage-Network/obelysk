@@ -19,6 +19,8 @@ import {
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { getExplorerTxUrl, type NetworkType } from "@/lib/contracts/addresses";
 
 interface ProofDetailsProps {
   // Pedersen commitment
@@ -48,6 +50,7 @@ export function ProofDetails({
   symbol = "SAGE",
   className,
 }: ProofDetailsProps) {
+  const { network } = useNetwork();
   const [isExpanded, setIsExpanded] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -244,7 +247,7 @@ export function ProofDetails({
                   <span>Client-side ZK proving (no trusted setup)</span>
                 </div>
                 <a
-                  href={`https://sepolia.starkscan.co/tx/${txHash}`}
+                  href={getExplorerTxUrl(txHash, network as NetworkType)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center gap-1 text-sm text-brand-400 hover:text-brand-300 transition-colors"

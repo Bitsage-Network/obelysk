@@ -41,12 +41,61 @@ export interface RelayHealthStatus {
   uptime?: number;
 }
 
+/** Check if a hostname resolves to a private/internal IP range */
+function isPrivateHost(hostname: string): boolean {
+  // Reject private IP ranges: 10.x, 172.16-31.x, 192.168.x, 127.x (except localhost), 0.0.0.0, ::1
+  const privatePatterns = [
+    /^10\./,
+    /^172\.(1[6-9]|2\d|3[01])\./,
+    /^192\.168\./,
+    /^127\./,
+    /^0\.0\.0\.0$/,
+    /^::1$/,
+    /^\[::1\]$/,
+  ];
+  // Allow "localhost" explicitly (dev use)
+  if (hostname === "localhost") return false;
+  return privatePatterns.some((p) => p.test(hostname));
+}
+
+/** Validate a relay URL: must parse, must be https (http://localhost allowed for dev), no private IPs */
+function validateRelayUrl(relayUrl: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(relayUrl);
+  } catch {
+    throw new Error(`Invalid relay URL: ${relayUrl}`);
+  }
+
+  // Allow http only for localhost (dev)
+  if (parsed.protocol === "http:" && parsed.hostname !== "localhost") {
+    throw new Error(
+      "Relay URL must use HTTPS. HTTP is only allowed for localhost during development.",
+    );
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error(`Relay URL must use HTTPS. Got: ${parsed.protocol}`);
+  }
+
+  // Reject private/internal IPs (SSRF protection)
+  if (isPrivateHost(parsed.hostname)) {
+    throw new Error(
+      `Relay URL points to a private/internal IP (${parsed.hostname}). This is not allowed.`,
+    );
+  }
+
+  return parsed.origin + parsed.pathname.replace(/\/$/, "");
+}
+
+const TX_HASH_PATTERN = /^0x[0-9a-fA-F]{1,64}$/;
+const MAX_PAYLOAD_BYTES = 100_000; // 100KB — generous for any legitimate dark pool tx
+
 export class RelayClient {
   private baseUrl: string;
 
   constructor(relayUrl: string) {
-    // Strip trailing slash
-    this.baseUrl = relayUrl.replace(/\/$/, "");
+    this.baseUrl = validateRelayUrl(relayUrl);
   }
 
   /**
@@ -63,10 +112,20 @@ export class RelayClient {
       ownerAddress,
     };
 
+    // D12: Reject oversized payloads before sending
+    const body = JSON.stringify(payload);
+    if (body.length > MAX_PAYLOAD_BYTES) {
+      throw new Error(
+        `Relay payload too large (${body.length} bytes, max ${MAX_PAYLOAD_BYTES}). Check calldata construction.`,
+      );
+    }
+
+    // D2: 30s timeout — generous for relay to broadcast + get tx hash
     const response = await fetch(`${this.baseUrl}/relay`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body,
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (!response.ok) {
@@ -77,6 +136,16 @@ export class RelayClient {
     const result: RelayResult = await response.json();
     if (result.status === "error") {
       throw new Error(result.error || "Relay submission failed");
+    }
+
+    // D3: Validate transactionHash shape — don't trust arbitrary JSON from relay
+    if (
+      typeof result.transactionHash !== "string" ||
+      !TX_HASH_PATTERN.test(result.transactionHash)
+    ) {
+      throw new Error(
+        "Relay returned invalid transaction hash. Expected 0x-prefixed hex string.",
+      );
     }
 
     return { transactionHash: result.transactionHash };

@@ -28,6 +28,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAccount } from "@starknet-react/core";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { getExplorerTxUrl, type NetworkType } from "@/lib/contracts/addresses";
 import {
   useGaslessPrivacyDeposit,
   type GasPaymentMethod,
@@ -99,6 +101,7 @@ export function GaslessDepositPanel({
   className,
 }: GaslessDepositPanelProps) {
   const { isConnected } = useAccount();
+  const { network } = useNetwork();
   const {
     state,
     deposit,
@@ -248,7 +251,7 @@ export function GaslessDepositPanel({
                   </div>
                   <div className="pt-2 border-t border-surface-border">
                     <a
-                      href={`https://sepolia.starkscan.co/tx/${state.txHash}`}
+                      href={getExplorerTxUrl(state.txHash, network as NetworkType)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-2 text-sm text-brand-400 hover:text-brand-300"

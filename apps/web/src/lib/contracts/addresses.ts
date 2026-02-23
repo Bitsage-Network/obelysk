@@ -541,6 +541,16 @@ export function getPrivacyPoolAddress(
 }
 
 /**
+ * Get the explorer transaction URL for a given network.
+ * Uses NETWORK_CONFIG explorerUrl (per-network).
+ */
+export function getExplorerTxUrl(txHash: string, network: NetworkType): string {
+  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl;
+  if (!explorerUrl) return "";
+  return `${explorerUrl}/tx/${txHash}`;
+}
+
+/**
  * Get the token address for a symbol (including SAGE).
  */
 export function getTokenAddressForSymbol(
