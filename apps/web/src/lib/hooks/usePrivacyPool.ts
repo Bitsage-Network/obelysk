@@ -313,10 +313,6 @@ interface UsePrivacyPoolReturn {
   refreshStats: () => Promise<void>;
   refreshPoolStats: () => Promise<void>; // Alias for refreshStats
   resetDepositState: () => void; // Reset deposit state to idle
-
-  // Ragequit operations (use contract calls directly - these are stubs for interface compatibility)
-  initiateRagequit: (depositIndex: number) => Promise<string>;
-  executeRagequit: (depositIndex: number) => Promise<string>;
 }
 
 export function usePrivacyPool(): UsePrivacyPoolReturn {
@@ -1044,30 +1040,6 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
     }
   }, [address, isKeysDerived, refreshStats]);
 
-  // Ragequit stub functions - actual implementation uses contract calls directly
-  // These are provided for interface compatibility
-  const initiateRagequit = useCallback(
-    async (depositIndex: number): Promise<string> => {
-      console.warn(
-        "initiateRagequit from usePrivacyPool is a stub. " +
-        "Use buildPrivacyPoolRagequitCall from @/lib/contracts for actual ragequit."
-      );
-      throw new Error("Use buildPrivacyPoolRagequitCall for ragequit operations");
-    },
-    []
-  );
-
-  const executeRagequit = useCallback(
-    async (depositIndex: number): Promise<string> => {
-      console.warn(
-        "executeRagequit from usePrivacyPool is a stub. " +
-        "Use buildExecuteRagequitCall from @/lib/contracts for actual ragequit."
-      );
-      throw new Error("Use buildExecuteRagequitCall for ragequit operations");
-    },
-    []
-  );
-
   // Reset deposit state to idle (for "Deposit Another" flow)
   const resetDepositState = useCallback(() => {
     setDepositState({
@@ -1104,10 +1076,6 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
     refreshStats,
     refreshPoolStats: refreshStats, // Alias for compatibility
     resetDepositState,
-
-    // Ragequit stubs
-    initiateRagequit,
-    executeRagequit,
   };
 }
 

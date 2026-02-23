@@ -450,9 +450,10 @@ export class PrivacySessionManager {
 
     // Check for wallet signature
     if (session.walletSignature && session.walletSignature.length > 0) {
-      // Signature is present - in production, we would verify it cryptographically
-      // For now, presence of signature is considered valid authorization
-      return { verified: true, method: "signature" };
+      // Signature present but cannot be cryptographically verified client-side
+      // without the original message hash. Mark as unverified — on-chain
+      // verification via SESSION_MANAGER is the proper path for mainnet.
+      return { verified: false, method: "signature" };
     }
 
     // No verification available - session is client-only (not recommended for mainnet)

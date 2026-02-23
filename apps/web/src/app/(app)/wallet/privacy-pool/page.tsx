@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { Suspense, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   Shield,
   Lock,
@@ -27,6 +27,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useAccount } from "@starknet-react/core";
 
 // Enhanced UI Components
@@ -50,6 +51,7 @@ import { ProofDetails } from "@/components/privacy/ProofDetails";
 import { useCancelRagequit, type InclusionSet } from "@/lib/hooks/useCancelRagequit";
 import { useASPRegistry, type ASPInfo } from "@/lib/hooks/useASPRegistry";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination, type PrivacyNote } from "@/lib/crypto";
+import { getUnspentNotes } from "@/lib/crypto/keyStore";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 import { PrivacySessionCard, PrivacyActivityFeed } from "@/components/privacy";
 import {
@@ -112,11 +114,27 @@ type ComplianceLevel = typeof COMPLIANCE_LEVELS[number];
 type TabType = "deposit" | "withdraw" | "ragequit";
 
 export default function PrivacyPoolPage() {
+  return (
+    <Suspense fallback={<div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-gray-500 animate-spin" /></div>}>
+      <PrivacyPoolPageInner />
+    </Suspense>
+  );
+}
+
+function PrivacyPoolPageInner() {
+  const searchParams = useSearchParams();
   const { address, isConnected } = useAccount();
   const { network } = useNetwork();
   const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "https://sepolia.starkscan.co";
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
-  const [selectedAsset, setSelectedAsset] = useState(POOL_ASSETS[0]);
+  const [selectedAsset, setSelectedAsset] = useState(() => {
+    const assetParam = searchParams.get("asset");
+    if (assetParam) {
+      const found = POOL_ASSETS.find(a => a.id === assetParam);
+      if (found) return found;
+    }
+    return POOL_ASSETS[0];
+  });
   const [selectedDenomination, setSelectedDenomination] = useState<number>(10);
   const assetDenominations = useMemo(
     () => DENOMINATIONS_FOR_ASSET[selectedAsset.id] || DENOMINATIONS_FOR_ASSET.SAGE,
@@ -152,8 +170,8 @@ export default function PrivacyPoolPage() {
     gasTokens,
   } = useAVNUPaymaster();
 
-  // Paymaster availability - AVNU is available on Sepolia
-  const paymasterAvailable = true;
+  // Paymaster availability — derived from actual AVNU gas token support
+  const paymasterAvailable = Object.keys(gasTokens).length > 0;
   const [sponsoredGasAvailable, setSponsoredGasAvailable] = useState(false);
 
   // Check eligibility on mount
@@ -213,8 +231,6 @@ export default function PrivacyPoolPage() {
     availableDenominations,
     deposit,
     withdraw,
-    initiateRagequit,
-    executeRagequit,
     refreshPoolStats,
     resetDepositState,
   } = usePrivacyPool();
@@ -346,19 +362,16 @@ export default function PrivacyPoolPage() {
     setTimeout(() => setCopiedValue(null), 2000);
   };
 
-  // Generate audit key for auditable compliance
+  // Generate audit key using real STARK-curve EC keypair
   const generateAuditKey = async () => {
     setIsGeneratingAuditKey(true);
     try {
-      // Generate a random EC point for the audit key
-      // In production, this should use the same elliptic curve as the privacy system
-      const randomBytes = crypto.getRandomValues(new Uint8Array(32));
-      const keyX = "0x" + Array.from(randomBytes).map(b => b.toString(16).padStart(2, "0")).join("");
-
-      const randomBytesY = crypto.getRandomValues(new Uint8Array(32));
-      const keyY = "0x" + Array.from(randomBytesY).map(b => b.toString(16).padStart(2, "0")).join("");
-
-      const newAuditKey = { x: keyX, y: keyY };
+      const { generateKeyPair } = await import("@/lib/crypto/elgamal");
+      const { publicKey } = generateKeyPair();
+      const newAuditKey = {
+        x: "0x" + publicKey.x.toString(16),
+        y: "0x" + publicKey.y.toString(16),
+      };
       setAuditKey(newAuditKey);
 
       // Store in localStorage for persistence
@@ -511,30 +524,40 @@ export default function PrivacyPoolPage() {
 
   const handleInitiateRagequit = async () => {
     setShowRagequitWarning(false);
-    if (!isConnected) return;
+    if (!isConnected || !address) return;
     setIsProcessing(true);
     try {
-      const addresses = getContractAddresses("sepolia");
-      // Initiate ragequit with placeholder proof (populated by backend/prover in production)
-      const ragequitProof: PPRagequitProof = {
-        deposit_commitment: "0",
-        global_tree_proof: {
-          siblings: [],
-          path_indices: [],
-          leaf: "0",
-          root: "0",
-          tree_size: 0,
-        },
-        exclusion_proofs: [],
-        excluded_set_ids: [],
-        depositor_signature: ["0", "0"],
-        amount: BigInt(0),
-        recipient: address || "0x0",
-      };
-      const call = buildPrivacyPoolRagequitCall(ragequitProof);
-      await sendTransactionAsync([call]);
-      setRagequitStatus("pending");
-      setRagequitCountdown(24 * 60 * 60); // 24 hours in seconds
+      // Load unspent notes to populate real commitment data
+      const notes = await getUnspentNotes(address);
+      if (!notes || notes.length === 0) {
+        throw new Error("No unspent deposits found. You must have an active deposit to ragequit.");
+      }
+
+      // Use the first unspent note
+      const note = notes[0];
+
+      // Ragequit requires a Merkle proof (siblings) from the proof service.
+      // Without the event indexer running, we cannot generate valid siblings.
+      // Block submission of zeroed proofs to avoid wasting gas.
+      throw new Error(
+        "Ragequit requires a Merkle inclusion proof from the proof service, " +
+        "which is not yet available. Please try again once the event indexer is deployed."
+      );
+
+      // When proof service is available, this code will be reached:
+      // const ragequitProof: PPRagequitProof = {
+      //   deposit_commitment: note.commitment,
+      //   global_tree_proof: { siblings, path_indices, leaf, root, tree_size },
+      //   exclusion_proofs: [],
+      //   excluded_set_ids: [],
+      //   depositor_signature: ["0", "0"],
+      //   amount: BigInt(note.denomination) * BigInt(10 ** 18),
+      //   recipient: address,
+      // };
+      // const call = buildPrivacyPoolRagequitCall(ragequitProof);
+      // await sendTransactionAsync([call]);
+      // setRagequitStatus("pending");
+      // setRagequitCountdown(24 * 60 * 60);
     } catch (error) {
       console.error("Ragequit initiation failed:", error);
     } finally {
