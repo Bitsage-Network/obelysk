@@ -8,7 +8,7 @@
  */
 
 import { useMemo } from 'react';
-import { useAccount, useBalance, useReadContract } from '@starknet-react/core';
+import { useAccount, useReadContract } from '@starknet-react/core';
 import { Abi } from 'starknet';
 
 // ============================================================================
@@ -32,25 +32,25 @@ export type QuoteToken = keyof typeof QUOTE_TOKEN_ADDRESSES;
 
 const ERC20_ABI: Abi = [
   {
-    type: 'function',
-    name: 'balanceOf',
-    inputs: [{ name: 'account', type: 'core::starknet::contract_address::ContractAddress' }],
-    outputs: [{ type: 'core::integer::u256' }],
-    state_mutability: 'view',
+    type: 'struct',
+    name: 'core::integer::u256',
+    members: [
+      { name: 'low', type: 'core::integer::u128' },
+      { name: 'high', type: 'core::integer::u128' },
+    ],
   },
   {
-    type: 'function',
-    name: 'decimals',
-    inputs: [],
-    outputs: [{ type: 'core::integer::u8' }],
-    state_mutability: 'view',
-  },
-  {
-    type: 'function',
-    name: 'symbol',
-    inputs: [],
-    outputs: [{ type: 'core::felt252' }],
-    state_mutability: 'view',
+    type: 'interface',
+    name: 'ERC20Balance',
+    items: [
+      {
+        type: 'function',
+        name: 'balance_of',
+        inputs: [{ name: 'account', type: 'core::starknet::contract_address::ContractAddress' }],
+        outputs: [{ type: 'core::integer::u256' }],
+        state_mutability: 'view',
+      },
+    ],
   },
 ];
 
@@ -127,7 +127,7 @@ export function useQuoteBalance(
   const { data, isLoading, error, refetch } = useReadContract({
     address: tokenAddress,
     abi: ERC20_ABI,
-    functionName: 'balanceOf',
+    functionName: 'balance_of',
     args: targetAddress ? [targetAddress] : undefined,
     watch: true,
   });
@@ -203,33 +203,11 @@ export function useQuoteBalanceForPair(
 }
 
 // ============================================================================
-// Native ETH Balance Hook (using useBalance from starknet-react)
+// Native ETH Balance Hook (uses useReadContract with balance_of)
 // ============================================================================
 
 export function useNativeEthBalance(address?: string): QuoteBalanceResult {
-  const { address: connectedAddress } = useAccount();
-  const targetAddress = address || connectedAddress;
-
-  const { data, isLoading, error, refetch } = useBalance({
-    address: targetAddress as `0x${string}`,
-    token: QUOTE_TOKEN_ADDRESSES.ETH as `0x${string}`,
-    watch: true,
-  });
-
-  return useMemo(() => {
-    const balance = data?.value || 0n;
-
-    return {
-      balance,
-      balanceFormatted: formatBalance(balance, 18),
-      balanceNumber: balanceToNumber(balance, 18),
-      decimals: 18,
-      symbol: 'ETH' as QuoteToken,
-      isLoading,
-      error: error as Error | null,
-      refetch,
-    };
-  }, [data, isLoading, error, refetch]);
+  return useQuoteBalance('ETH', address);
 }
 
 // ============================================================================
