@@ -9,6 +9,8 @@ import {
   ChevronRight,
   Loader2,
   BarChart3,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { useEpochHistory, type EpochHistoryEntry } from "@/lib/hooks/useEpochHistory";
 
@@ -96,7 +98,7 @@ function EpochRow({ entry }: { entry: EpochHistoryEntry }) {
 }
 
 export function EpochHistoryPanel() {
-  const { epochs, isLoading, refresh } = useEpochHistory(10);
+  const { epochs, isLoading, isError, refresh } = useEpochHistory(10);
 
   if (isLoading && epochs.length === 0) {
     return (
@@ -104,6 +106,25 @@ export function EpochHistoryPanel() {
         <div className="flex items-center gap-2 text-gray-500 text-xs">
           <Loader2 className="w-3.5 h-3.5 animate-spin" />
           Loading epoch history...
+        </div>
+      </div>
+    );
+  }
+
+  // D10: Show error state with retry button when fetch failed
+  if (isError && !isLoading && epochs.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
+        <div className="flex flex-col items-center gap-3 py-4">
+          <AlertTriangle className="w-5 h-5 text-amber-400" />
+          <p className="text-xs text-gray-400">Failed to load epoch history</p>
+          <button
+            onClick={refresh}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-gray-300 hover:text-white transition-colors"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Retry
+          </button>
         </div>
       </div>
     );

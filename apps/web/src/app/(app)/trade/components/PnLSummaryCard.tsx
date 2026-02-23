@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import {
@@ -9,6 +9,8 @@ import {
   Trophy,
   Target,
   BarChart2,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import type { OrderView } from "@/lib/hooks/useDarkPool";
 
@@ -27,12 +29,16 @@ interface PnLEntry {
   pnlPercent: number;
 }
 
-function parseFormattedNumber(s: string): number {
+/** D6: Returns null on parse failure instead of 0, so callers can distinguish bad data from real zero */
+function parseFormattedNumber(s: string): number | null {
   const n = parseFloat(s);
-  return isNaN(n) ? 0 : n;
+  return isNaN(n) ? null : n;
 }
 
 export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
+  // D5: Privacy toggle — hide sensitive P&L values by default
+  const [showValues, setShowValues] = useState(false);
+
   const pnlData = useMemo(() => {
     // Only compute P&L for claimed/filled orders with clearing price and fill data
     const entries: PnLEntry[] = [];
@@ -50,6 +56,11 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
       const clearingPrice = parseFormattedNumber(order.clearingPrice);
       const fillAmount = parseFormattedNumber(order.fillAmount);
 
+      // D6: Skip entries with corrupted data (null = parse failure) and log for debugging
+      if (entryPrice === null || clearingPrice === null || fillAmount === null) {
+        console.warn(`[PnL] Skipping order ${order.orderId}: malformed price data`);
+        continue;
+      }
       if (entryPrice === 0 || clearingPrice === 0 || fillAmount === 0) continue;
 
       // P&L calculation
@@ -111,7 +122,7 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
 
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] overflow-hidden">
-      <div className="px-5 py-4 border-b border-white/[0.06]">
+      <div className="px-5 py-4 border-b border-white/[0.06] flex items-center justify-between">
         <h4 className="text-[11px] font-bold text-gray-400 uppercase tracking-widest flex items-center gap-2">
           <BarChart2 className="w-3.5 h-3.5 text-violet-400" />
           P&L Summary
@@ -119,6 +130,14 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
             {pnlData.length} trades
           </span>
         </h4>
+        <button
+          onClick={() => setShowValues((v) => !v)}
+          className="p-1.5 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
+          title={showValues ? "Hide P&L values" : "Show P&L values"}
+          aria-label={showValues ? "Hide P&L values" : "Show P&L values"}
+        >
+          {showValues ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+        </button>
       </div>
 
       {/* Total P&L */}
@@ -132,8 +151,16 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
           initial={{ opacity: 0, y: 5 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          {isProfitable ? "+" : ""}{stats.totalPnl.toFixed(6)}
-          <span className="text-xs text-gray-500 ml-1">tokens</span>
+          {showValues ? (
+            <>
+              {isProfitable ? "+" : ""}{stats.totalPnl.toFixed(6)}
+              <span className="text-xs text-gray-500 ml-1">tokens</span>
+            </>
+          ) : (
+            <span className="select-none blur-sm" aria-hidden="true">
+              {"\u2022\u2022\u2022"}
+            </span>
+          )}
         </motion.div>
       </div>
 
@@ -172,9 +199,15 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
               <span className="text-[10px] text-gray-500">Best</span>
               <span className="text-[10px] text-gray-400 font-mono">{stats.bestTrade.pair}</span>
             </div>
-            <span className="text-[10px] font-mono text-emerald-400">
-              +{stats.bestTrade.pnl.toFixed(6)}
-            </span>
+            {showValues ? (
+              <span className="text-[10px] font-mono text-emerald-400">
+                +{stats.bestTrade.pnl.toFixed(6)}
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-emerald-400 select-none blur-sm" aria-hidden="true">
+                {"\u2022\u2022\u2022"}
+              </span>
+            )}
           </div>
         )}
         {stats.worstTrade && stats.worstTrade.pnl < 0 && (
@@ -184,9 +217,15 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
               <span className="text-[10px] text-gray-500">Worst</span>
               <span className="text-[10px] text-gray-400 font-mono">{stats.worstTrade.pair}</span>
             </div>
-            <span className="text-[10px] font-mono text-red-400">
-              {stats.worstTrade.pnl.toFixed(6)}
-            </span>
+            {showValues ? (
+              <span className="text-[10px] font-mono text-red-400">
+                {stats.worstTrade.pnl.toFixed(6)}
+              </span>
+            ) : (
+              <span className="text-[10px] font-mono text-red-400 select-none blur-sm" aria-hidden="true">
+                {"\u2022\u2022\u2022"}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -101,14 +101,19 @@ export function usePragmaPrice(
       return null;
     }
 
-    // Parse values
+    // Parse values (H1: guard against NaN/Infinity from malformed contract responses)
     const price = Number(priceRaw);
     const decimals = Number(decimalsRaw);
     const lastUpdatedTimestamp = Number(lastUpdatedRaw);
     const numSources = Number(numSourcesRaw);
 
+    if (!Number.isFinite(price) || !Number.isFinite(decimals)) return null;
+    if (!Number.isFinite(lastUpdatedTimestamp) || !Number.isFinite(numSources)) return null;
+
     // Convert price to human-readable (typically 8 decimals from Pragma)
     const priceHuman = price / Math.pow(10, decimals);
+
+    if (!Number.isFinite(priceHuman)) return null;
 
     // Check if price is stale (older than 1 hour)
     const now = Math.floor(Date.now() / 1000);
