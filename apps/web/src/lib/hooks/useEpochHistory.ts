@@ -47,17 +47,21 @@ export interface EpochHistoryEntry {
 export function useEpochHistory(limit: number = 10): {
   epochs: EpochHistoryEntry[];
   isLoading: boolean;
+  isError: boolean;
   refresh: () => Promise<void>;
 } {
   const { network } = useNetwork();
   const [epochs, setEpochs] = useState<EpochHistoryEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  // D10: Track fetch errors so UI can show failure state + retry
+  const [isError, setIsError] = useState(false);
 
   // Cache settled results — they never change
   const cacheRef = useRef<Map<number, EpochHistoryEntry>>(new Map());
 
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
+    setIsError(false);
     try {
       const epochInfo = await readEpochFromContract(network as NetworkType);
       if (!epochInfo || epochInfo.epoch <= 0) {
@@ -122,6 +126,7 @@ export function useEpochHistory(limit: number = 10): {
       setEpochs(results);
     } catch (err) {
       console.warn("[EpochHistory] Failed to fetch:", err);
+      setIsError(true);
     } finally {
       setIsLoading(false);
     }
@@ -131,5 +136,5 @@ export function useEpochHistory(limit: number = 10): {
     fetchHistory();
   }, [fetchHistory]);
 
-  return { epochs, isLoading, refresh: fetchHistory };
+  return { epochs, isLoading, isError, refresh: fetchHistory };
 }

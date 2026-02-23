@@ -25,6 +25,7 @@ import {
   Sparkles,
   Activity,
   Wallet,
+  Target,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -53,6 +54,12 @@ import {
   PrivacyTransactionReviewModal,
   usePrivacyTransactionReview,
 } from "@/components/privacy/PrivacyTransactionReviewModal";
+import { useDarkPoolOraclePrice } from "@/lib/hooks/useDarkPoolOraclePrice";
+import {
+  computeDeviation,
+  deviationSeverity,
+  formatCrossRate,
+} from "@/lib/darkpool/darkPoolCrossRate";
 
 // ============================================================================
 // Epoch Phase Display Config
@@ -505,6 +512,9 @@ function OrdersTable({
   explorerUrl: string;
   onReview: ReturnType<typeof usePrivacyTransactionReview>["review"];
 }) {
+  // M1: P&L visibility toggle (default hidden for privacy)
+  const [showPnL, setShowPnL] = useState(false);
+
   if (orders.length === 0) {
     return (
       <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02]">
@@ -555,7 +565,16 @@ function OrdersTable({
               <th className="px-3 py-3 text-right font-medium">Price</th>
               <th className="px-3 py-3 text-right font-medium">Amount</th>
               <th className="px-3 py-3 text-right font-medium">Fill Price</th>
-              <th className="px-3 py-3 text-right font-medium">P&L</th>
+              <th className="px-3 py-3 text-right font-medium">
+                <button
+                  onClick={() => setShowPnL(!showPnL)}
+                  className="inline-flex items-center gap-1 hover:text-white transition-colors"
+                  title={showPnL ? "Hide P&L values" : "Show P&L values"}
+                >
+                  P&L
+                  {showPnL ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+                </button>
+              </th>
               <th className="px-3 py-3 text-center font-medium">Status</th>
               <th className="px-3 py-3 text-center font-medium">Epoch</th>
               <th className="px-5 py-3 text-right font-medium">Action</th>
@@ -602,12 +621,15 @@ function OrdersTable({
                     {order.clearingPrice && order.fillAmount ? (() => {
                       const entry = parseFloat(order.price);
                       const fill = parseFloat(order.clearingPrice);
-                      const amount = parseFloat(order.fillAmount);
-                      if (!entry || !fill || !amount) return <span className="text-gray-600">-</span>;
+                      const amt = parseFloat(order.fillAmount);
+                      if (!Number.isFinite(entry) || !Number.isFinite(fill) || !Number.isFinite(amt)) return <span className="text-gray-600">-</span>;
                       const pnl = order.side === "buy"
-                        ? (entry - fill) * amount
-                        : (fill - entry) * amount;
+                        ? (entry - fill) * amt
+                        : (fill - entry) * amt;
                       const isProfit = pnl >= 0;
+                      if (!showPnL) {
+                        return <span className="text-gray-500" aria-hidden="true">&bull;&bull;&bull;</span>;
+                      }
                       return (
                         <span className={cn(isProfit ? "text-emerald-400" : "text-red-400")}>
                           {isProfit ? "+" : ""}{pnl.toFixed(4)}
@@ -806,7 +828,7 @@ function DarkPoolActivityFeed({
 // ============================================================================
 
 export function PrivateAuction() {
-  const { address } = useAccount();
+  const { address, connector } = useAccount();
   const { connect, connectors } = useConnect();
   const { network } = useNetwork();
   const {
@@ -839,6 +861,18 @@ export function PrivateAuction() {
   const [amountInput, setAmountInput] = useState("");
   const [showPairDropdown, setShowPairDropdown] = useState(false);
 
+  // Oracle cross-rate for the selected pair
+  const { crossRate: oracleRate, isLoading: oracleLoading, isError: oracleError } = useDarkPoolOraclePrice(
+    selectedPair, network as NetworkType,
+  );
+
+  const priceDeviation = useMemo(() => {
+    const userPrice = parseFloat(priceInput);
+    if (!Number.isFinite(userPrice) || userPrice <= 0 || !oracleRate) return null;
+    const deviation = computeDeviation(userPrice, oracleRate.rate);
+    return { percent: deviation, severity: deviationSeverity(deviation) };
+  }, [priceInput, oracleRate]);
+
   // Click-outside handler for pair dropdown
   const dropdownRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -865,7 +899,20 @@ export function PrivateAuction() {
 
   const isSubmitting = stage === "building" || stage === "committing" || stage === "revealing";
   const isBalanceOp = stage === "depositing" || stage === "withdrawing";
-  const canCommit = phase === "commit" && !isSubmitting && !!address;
+
+  // M3: Wallet chain validation
+  const expectedChainId = NETWORK_CONFIG[network as NetworkType]?.chainId;
+  const [walletChainId, setWalletChainId] = useState<string | null>(null);
+  useEffect(() => {
+    if (connector && typeof connector.chainId === "function") {
+      connector.chainId().then((id) => setWalletChainId(id ? `0x${BigInt(id).toString(16)}` : null)).catch(() => setWalletChainId(null));
+    } else if (connector && typeof (connector as unknown as { chainId: string }).chainId === "string") {
+      setWalletChainId((connector as unknown as { chainId: string }).chainId);
+    }
+  }, [connector, network]);
+  const isWrongNetwork = walletChainId !== null && expectedChainId !== undefined && walletChainId !== expectedChainId;
+
+  const canCommit = phase === "commit" && !isSubmitting && !!address && !isWrongNetwork;
 
   // Auto-settle: when settle phase begins and user has revealed orders, trigger once per epoch.
   // Use a ref to survive remounts and track which epoch was already auto-settled.
@@ -893,10 +940,27 @@ export function PrivateAuction() {
   // Handlers
   // --------------------------------------------------------------------------
 
+  // State for stale oracle confirmation dialog (C4)
+  const [showStaleConfirm, setShowStaleConfirm] = useState(false);
+  const [pendingOrderAction, setPendingOrderAction] = useState<(() => void) | null>(null);
+
   const handleSubmitOrder = () => {
     const price = parseFloat(priceInput);
     const amount = parseFloat(amountInput);
-    if (!price || !amount || price <= 0 || amount <= 0) return;
+    // C2: Explicit isFinite guard — parseFloat("abc") and parseFloat("") both return NaN
+    if (!Number.isFinite(price) || !Number.isFinite(amount) || price <= 0 || amount <= 0) return;
+
+    // C4: Warn if oracle data is stale or circuit breaker tripped
+    if (oracleRate?.isStale || oracleRate?.isCircuitBreakerTripped) {
+      setPendingOrderAction(() => () => doSubmitOrder(price, amount));
+      setShowStaleConfirm(true);
+      return;
+    }
+
+    doSubmitOrder(price, amount);
+  };
+
+  const doSubmitOrder = (price: number, amount: number) => {
 
     txReview.review({
       operationType: "commit",
@@ -1021,6 +1085,18 @@ export function PrivateAuction() {
         )}
       </AnimatePresence>
 
+      {/* M3: Wrong network warning */}
+      {isWrongNetwork && address && (
+        <div className="p-3.5 rounded-xl bg-amber-500/8 border border-amber-500/15 flex items-center gap-2.5">
+          <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+          <span className="text-xs text-amber-400">
+            Wrong network — your wallet is connected to a different chain. Switch to{" "}
+            <span className="font-semibold">{NETWORK_CONFIG[network as NetworkType]?.name ?? network}</span>{" "}
+            to submit orders.
+          </span>
+        </div>
+      )}
+
       {/* Stage Indicator */}
       <AnimatePresence>
         {stage !== "idle" && stage !== "error" && (
@@ -1140,6 +1216,62 @@ export function PrivateAuction() {
               </AnimatePresence>
             </div>
 
+            {/* Oracle Reference Rate Banner */}
+            <AnimatePresence>
+              {oracleLoading ? (
+                <div className="mb-4 px-4 py-3 rounded-xl bg-white/[0.02] border border-white/[0.06] animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded bg-white/[0.06]" />
+                    <div className="h-3 w-32 rounded bg-white/[0.06]" />
+                    <div className="ml-auto h-4 w-24 rounded bg-white/[0.06]" />
+                  </div>
+                </div>
+              ) : oracleRate ? (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-4 px-4 py-3 rounded-xl bg-white/[0.02] border border-white/[0.06] overflow-hidden"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <Activity className="w-3.5 h-3.5 text-violet-400" />
+                      <span className="text-[11px] text-gray-500 uppercase tracking-wider font-medium">
+                        Oracle Rate
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-mono text-white font-semibold">
+                        {formatCrossRate(oracleRate.rate, selectedPair)}
+                      </span>
+                      <span className="text-[10px] text-gray-500">
+                        {selectedPair.wantSymbol}/{selectedPair.giveSymbol}
+                      </span>
+                      {oracleRate.isStale && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-[9px] text-amber-400 font-semibold border border-amber-500/20">
+                          STALE
+                        </span>
+                      )}
+                      {oracleRate.isCircuitBreakerTripped && (
+                        <span className="px-1.5 py-0.5 rounded bg-red-500/10 text-[9px] text-red-400 font-semibold border border-red-500/20">
+                          CB TRIPPED
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              ) : null}
+              {/* H3: Oracle error notice */}
+              {oracleError && !oracleLoading && (
+                <div className="mb-4 px-4 py-2.5 rounded-xl bg-amber-500/5 border border-amber-500/15 flex items-center gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                  <span className="text-[11px] text-amber-400">
+                    Oracle unavailable — reference rate may be outdated
+                  </span>
+                </div>
+              )}
+            </AnimatePresence>
+
             {/* Buy / Sell Toggle */}
             <div className="grid grid-cols-2 gap-2 mb-4">
               <button
@@ -1168,21 +1300,65 @@ export function PrivateAuction() {
 
             {/* Price Input */}
             <div className="mb-3">
-              <label className="text-[11px] text-gray-500 mb-1.5 block font-medium uppercase tracking-wider">
-                Limit Price
-                <span className="lowercase tracking-normal ml-1 text-gray-600">
-                  ({selectedPair.wantSymbol} per {selectedPair.giveSymbol})
-                </span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">
+                  Limit Price
+                  <span className="lowercase tracking-normal ml-1 text-gray-600">
+                    ({selectedPair.wantSymbol} per {selectedPair.giveSymbol})
+                  </span>
+                </label>
+                {oracleRate && (
+                  <button
+                    onClick={() => setPriceInput(oracleRate.rate.toPrecision(6))}
+                    className="flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/10 border border-violet-500/20 text-[10px] text-violet-400 font-semibold hover:bg-violet-500/20 transition-colors"
+                    title="Pre-fill with current oracle rate"
+                  >
+                    <Target className="w-2.5 h-2.5" />
+                    Use Oracle
+                  </button>
+                )}
+              </div>
               <input
                 type="number"
                 value={priceInput}
                 onChange={(e) => setPriceInput(e.target.value)}
-                placeholder="0.00"
+                placeholder={oracleRate ? formatCrossRate(oracleRate.rate, selectedPair) : "0.00"}
                 step="any"
                 min="0"
                 className="w-full px-4 py-3.5 rounded-xl bg-white/[0.03] border border-white/[0.08] text-white font-mono text-sm placeholder:text-gray-600 focus:outline-none focus:border-cyan-500/40 focus:ring-1 focus:ring-cyan-500/10 transition-all"
               />
+              {/* Deviation Warning */}
+              <AnimatePresence>
+                {priceDeviation && priceDeviation.severity !== 'none' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div
+                      className={cn(
+                        "mt-2 px-3 py-2 rounded-lg border text-[11px] flex items-center gap-2",
+                        {
+                          "bg-blue-500/5 border-blue-500/15 text-blue-400": priceDeviation.severity === 'info',
+                          "bg-amber-500/5 border-amber-500/15 text-amber-400": priceDeviation.severity === 'warning',
+                          "bg-red-500/5 border-red-500/15 text-red-400": priceDeviation.severity === 'danger',
+                        },
+                      )}
+                    >
+                      <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                      <span>
+                        Your price is{" "}
+                        <span className="font-mono font-semibold">
+                          {Math.abs(priceDeviation.percent).toFixed(1)}%
+                        </span>
+                        {priceDeviation.percent > 0 ? " above" : " below"} oracle rate
+                        {priceDeviation.severity === 'danger' && " — double-check before committing"}
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Amount Input */}
@@ -1346,11 +1522,15 @@ export function PrivateAuction() {
                 <h4 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                   Epoch #{epochResult.epochId} Settlement
+                  {/* M5: Show pair context so switching pairs doesn't confuse */}
+                  <span className="text-[10px] text-gray-400 px-2 py-0.5 rounded-full bg-white/5 border border-white/10">
+                    {selectedPair.label}
+                  </span>
                   <span className="text-[10px] text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                     MATCHED
                   </span>
                 </h4>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] p-3">
                     <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider font-medium">Clearing Price</div>
                     <div className="text-sm font-mono text-white font-bold">{epochResult.clearingPrice}</div>
@@ -1363,6 +1543,14 @@ export function PrivateAuction() {
                     <div className="text-[10px] text-gray-500 mb-1 uppercase tracking-wider font-medium">Fills</div>
                     <div className="text-sm font-mono text-white font-bold">{epochResult.numFills}</div>
                   </div>
+                  {oracleRate && (
+                    <div className="rounded-xl bg-violet-500/5 border border-violet-500/10 p-3">
+                      <div className="text-[10px] text-violet-400/70 mb-1 uppercase tracking-wider font-medium">Pragma Live</div>
+                      <div className="text-sm font-mono text-violet-300 font-bold">
+                        {formatCrossRate(oracleRate.rate, selectedPair)}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
@@ -1490,6 +1678,62 @@ export function PrivateAuction() {
           {...txReview.props}
         />
       )}
+
+      {/* C4: Stale Oracle Confirmation Dialog */}
+      <AnimatePresence>
+        {showStaleConfirm && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={() => { setShowStaleConfirm(false); setPendingOrderAction(null); }}
+          >
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm mx-4 rounded-2xl bg-[#12121e] border border-amber-500/20 p-6 shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Stale Oracle Data</h3>
+                  <p className="text-[11px] text-gray-500">
+                    {oracleRate?.isCircuitBreakerTripped
+                      ? "Circuit breaker is tripped — prices may be unreliable"
+                      : "Oracle reference rate is over 1 hour old"}
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+                Your order will use a potentially outdated reference price. Are you sure you want to proceed?
+              </p>
+              <div className="flex gap-2.5">
+                <button
+                  onClick={() => { setShowStaleConfirm(false); setPendingOrderAction(null); }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-gray-400 bg-white/5 border border-white/10 hover:bg-white/10 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowStaleConfirm(false);
+                    pendingOrderAction?.();
+                    setPendingOrderAction(null);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold text-amber-400 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 transition-colors"
+                >
+                  Proceed Anyway
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
