@@ -91,21 +91,20 @@ const getNetworkFromEnv = (): "devnet" | "sepolia" | "mainnet" => {
   return "sepolia"; // Default for SSR
 };
 
-// Custom provider for devnet
-function devnetProvider() {
+// CORS-friendly RPC provider factory — used for ALL networks
+// BlastAPI (starknet-react default) blocks CORS from custom domains,
+// so we always use Alchemy or env-configured RPC.
+function corsProvider(network: "devnet" | "sepolia" | "mainnet") {
+  if (network === "devnet") {
+    return jsonRpcProvider({
+      rpc: () => ({ nodeUrl: NETWORK_CONFIG.devnet.rpcUrl }),
+    });
+  }
+  const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL
+    || NETWORK_CONFIG[network]?.rpcUrl
+    || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
   return jsonRpcProvider({
-    rpc: () => ({
-      nodeUrl: NETWORK_CONFIG.devnet.rpcUrl,
-    }),
-  });
-}
-
-// Use Alchemy RPC for Sepolia - CORS-friendly endpoint
-function sepoliaProvider() {
-  return jsonRpcProvider({
-    rpc: () => ({
-      nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo",
-    }),
+    rpc: () => ({ nodeUrl: rpcUrl }),
   });
 }
 
@@ -131,16 +130,8 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
     return [sepolia, mainnet];
   }, [network]);
 
-  // Use custom providers for CORS-friendly RPC
-  const provider = useMemo(() => {
-    if (network === "devnet") {
-      return devnetProvider();
-    }
-    if (network === "sepolia") {
-      return sepoliaProvider();
-    }
-    return publicProvider();
-  }, [network]);
+  // Always use CORS-friendly RPC — never fall back to publicProvider (BlastAPI)
+  const provider = useMemo(() => corsProvider(network), [network]);
 
   return (
     <StarknetConfig
