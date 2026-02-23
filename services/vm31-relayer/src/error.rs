@@ -6,6 +6,7 @@ use tracing::error;
 #[derive(Debug)]
 pub enum AppError {
     BadRequest(String),
+    NotFound(String),
     Unauthorized,
     RateLimited,
     BatchFull,
@@ -19,6 +20,7 @@ impl AppError {
     fn status_code(&self) -> StatusCode {
         match self {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            AppError::NotFound(_) => StatusCode::NOT_FOUND,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             AppError::BatchFull => StatusCode::SERVICE_UNAVAILABLE,
@@ -32,6 +34,7 @@ impl AppError {
     fn error_code(&self) -> &'static str {
         match self {
             AppError::BadRequest(_) => "BAD_REQUEST",
+            AppError::NotFound(_) => "NOT_FOUND",
             AppError::Unauthorized => "UNAUTHORIZED",
             AppError::RateLimited => "RATE_LIMITED",
             AppError::BatchFull => "BATCH_FULL",
@@ -47,6 +50,7 @@ impl AppError {
     fn public_message(&self) -> &'static str {
         match self {
             AppError::BadRequest(_) => "invalid request",
+            AppError::NotFound(_) => "not found",
             AppError::Unauthorized => "unauthorized",
             AppError::RateLimited => "rate limited",
             AppError::BatchFull => "service at capacity, try again later",
@@ -62,6 +66,7 @@ impl std::fmt::Display for AppError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AppError::BadRequest(msg) => write!(f, "bad request: {msg}"),
+            AppError::NotFound(msg) => write!(f, "not found: {msg}"),
             AppError::Unauthorized => write!(f, "unauthorized"),
             AppError::RateLimited => write!(f, "rate limited"),
             AppError::BatchFull => write!(f, "batch queue is full"),

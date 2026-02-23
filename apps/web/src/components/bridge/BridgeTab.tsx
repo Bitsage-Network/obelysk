@@ -51,7 +51,7 @@ const TOKEN_ICONS: Record<BridgeTokenSymbol, string> = {
 // BRIDGE TAB
 // ============================================================================
 
-export function BridgeTab() {
+export function BridgeTab({ initialToken }: { initialToken?: string }) {
   const { address: l2Address } = useAccount();
   const { network, isMainnet } = useNetwork();
   const bridgeNetwork = isMainnet ? "mainnet" : "sepolia";
@@ -63,7 +63,10 @@ export function BridgeTab() {
 
   // Form state
   const [direction, setDirection] = useState<BridgeDirection>("deposit");
-  const [selectedToken, setSelectedToken] = useState<BridgeTokenSymbol>("ETH");
+  const resolvedInitialToken = initialToken
+    ? BRIDGE_TOKENS.find((t) => t.toLowerCase() === initialToken.toLowerCase()) || "ETH"
+    : "ETH";
+  const [selectedToken, setSelectedToken] = useState<BridgeTokenSymbol>(resolvedInitialToken);
   const [amount, setAmount] = useState("");
   const [l1Recipient, setL1Recipient] = useState("");
 

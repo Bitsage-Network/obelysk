@@ -15,7 +15,8 @@ use stwo_ml::privacy::tx_builder::PendingTx;
 use crate::batch_queue::BatchQueue;
 use crate::config::RelayerConfig;
 use crate::error::AppError;
-use crate::store::{BatchStore, IdempotencyStore, InMemoryStore, RateLimitStore};
+use crate::store::{BatchStore, IdempotencyStore, InMemoryStore, MerklePathRecord, NoteStore, RateLimitStore};
+use crate::tree_sync_service::TreeSyncService;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -41,6 +42,7 @@ pub struct AppState {
     pub queue: BatchQueue,
     pub store: Arc<InMemoryStore>,
     pub config: RelayerConfig,
+    pub tree_sync: Option<Arc<TreeSyncService>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -479,4 +481,105 @@ pub async fn force_prove(
             "message": "no pending transactions to prove",
         }))),
     }
+}
+
+pub async fn get_merkle_path(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(commitment): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    require_auth(&headers, &state.config)?;
+
+    // Validate commitment format (hex string, reasonable length)
+    if commitment.is_empty() || commitment.len() > 128 || commitment.chars().any(|c| !c.is_ascii_hexdigit() && c != '-' && c != '_') {
+        return Err(AppError::BadRequest("invalid commitment format".into()));
+    }
+
+    // Try the store first
+    let record = state
+        .store
+        .get_note(&commitment)
+        .await
+        .map_err(|_| AppError::Internal("store error".into()))?;
+
+    if let Some(note) = record {
+        // If the note has a real merkle root, return it directly
+        if note.merkle_root != [0; 8] {
+            return Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "commitment": note.commitment,
+                    "merkle_path": {
+                        "siblings": note.merkle_path.siblings,
+                        "index": note.merkle_path.index,
+                    },
+                    "merkle_root": note.merkle_root,
+                    "batch_id": note.batch_id,
+                    "created_at": note.created_at,
+                })),
+            ));
+        }
+
+        // Note exists but merkle root is empty — try on-demand proof via TreeSyncService
+        if let Some(ref ts) = state.tree_sync {
+            if let Some(proof) = ts.get_proof(&commitment).await {
+                // Update the store record with the real proof
+                let mut updated = note.clone();
+                updated.merkle_path = MerklePathRecord {
+                    siblings: proof.siblings.clone(),
+                    index: proof.index,
+                };
+                updated.merkle_root = proof.root;
+                let _ = state.store.save_note(&commitment, &updated).await;
+
+                return Ok((
+                    StatusCode::OK,
+                    Json(json!({
+                        "commitment": updated.commitment,
+                        "merkle_path": {
+                            "siblings": proof.siblings,
+                            "index": proof.index,
+                        },
+                        "merkle_root": proof.root,
+                        "batch_id": updated.batch_id,
+                        "created_at": updated.created_at,
+                    })),
+                ));
+            }
+        }
+
+        // Note exists but proof not available yet — return pending status
+        return Ok((
+            StatusCode::OK,
+            Json(json!({
+                "commitment": note.commitment,
+                "merkle_path": null,
+                "merkle_root": null,
+                "batch_id": note.batch_id,
+                "created_at": note.created_at,
+                "status": "pending_sync",
+            })),
+        ));
+    }
+
+    // No store record — try on-demand from TreeSyncService directly
+    if let Some(ref ts) = state.tree_sync {
+        if let Some(proof) = ts.get_proof(&commitment).await {
+            return Ok((
+                StatusCode::OK,
+                Json(json!({
+                    "commitment": commitment,
+                    "merkle_path": {
+                        "siblings": proof.siblings,
+                        "index": proof.index,
+                    },
+                    "merkle_root": proof.root,
+                    "batch_id": null,
+                    "created_at": null,
+                })),
+            ));
+        }
+    }
+
+    Err(AppError::NotFound("note not indexed yet".into()))
 }

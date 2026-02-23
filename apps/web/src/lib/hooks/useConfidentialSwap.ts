@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useAccount, useContract, useSendTransaction } from "@starknet-react/core";
-import { Contract, RpcProvider } from "starknet";
+import { Contract, RpcProvider, shortString } from "starknet";
 import {
   encrypt,
   randomScalar,
@@ -32,6 +32,7 @@ import {
   type AEHint,
 } from "../crypto/aeHints";
 import { CONTRACTS } from "../contracts/addresses";
+import { poseidonHash } from "../crypto/nullifier";
 
 // Use centralized contract addresses
 const CONFIDENTIAL_SWAP_ADDRESS = CONTRACTS.sepolia.CONFIDENTIAL_SWAP;
@@ -159,17 +160,6 @@ export interface ProofBundleParams {
   wantAmount: bigint;
   balance: bigint;
   randomness: bigint;
-}
-
-// Poseidon hash helper (simplified - production uses proper implementation)
-function poseidonHash(inputs: bigint[]): bigint {
-  let state = 0n;
-  const STARK_PRIME = 0x800000000000011000000000000000000000000000000000000000000000001n;
-  for (const input of inputs) {
-    state = (state + input) % STARK_PRIME;
-    state = (state * state * state) % STARK_PRIME;
-  }
-  return state;
 }
 
 // Convert asset string to felt
@@ -1129,8 +1119,8 @@ function parseOrderResult(result: unknown): SwapOrder {
   return {
     orderId: BigInt(data[0]?.toString() || "0"),
     maker: String(data[1] || ""),
-    giveAsset: "SAGE", // Parse from felt
-    wantAsset: "USDC", // Parse from felt
+    giveAsset: shortString.decodeShortString(String(data[2] || "0x0")) as AssetId,
+    wantAsset: shortString.decodeShortString(String(data[3] || "0x0")) as AssetId,
     encryptedGive: {
       c1_x: BigInt(data[4]?.toString() || "0"),
       c1_y: BigInt(data[5]?.toString() || "0"),

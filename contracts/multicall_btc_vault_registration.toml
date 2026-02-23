@@ -1,0 +1,30 @@
+# BTC Privacy Vault — VM31Pool Asset Registration (Multicall)
+# Registers wBTC (and future LBTC/tBTC/SolvBTC) in the VM31Pool contract.
+#
+# Usage:
+#   sncast multicall run --path multicall_btc_vault_registration.toml
+#
+# Prerequisites:
+#   - VM31Pool deployed and address set below
+#   - Caller is VM31Pool owner/admin
+#
+# NOTE: Only wBTC is available on Sepolia. Other BTC variants will be
+# added when their Starknet deployments go live.
+
+# Step 1: Register wBTC in VM31Pool
+# Returns the assigned asset_id (u32) for wBTC within the VM31 UTXO system
+[[call]]
+call_type = "invoke"
+contract_address = "0x0"  # TODO: Set to deployed VM31Pool address
+function = "register_asset"
+inputs = ["0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e"]  # wBTC Sepolia
+
+# Step 2: Register wBTC bridge pair in VM31ConfidentialBridge
+# Maps: wBTC token → (vm31_asset_id, confidential_transfer_asset_id)
+# NOTE: Update the asset IDs after Step 1 returns the assigned vm31 ID
+# [[call]]
+# call_type = "invoke"
+# contract_address = "0x0"  # TODO: Set to deployed VM31ConfidentialBridge address
+# function = "register_asset_pair"
+# inputs = ["0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e", "1", "4"]
+# ^-- wBTC address, vm31_asset_id (from step 1), ct_asset_id (0x4 = wBTC in CT)

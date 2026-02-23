@@ -26,6 +26,7 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { QRCodeSVG } from "qrcode.react";
 import { useAccount } from "@starknet-react/core";
 import { useStealthOnChain, type ClaimParams } from "@/lib/hooks/useStealthOnChain";
 import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
@@ -361,10 +362,13 @@ export default function StealthAddressesPage() {
                   exit={{ opacity: 0, scale: 0.95 }}
                   className="p-6 rounded-xl bg-white mx-auto w-fit"
                 >
-                  {/* Placeholder for QR code */}
-                  <div className="w-48 h-48 bg-gray-100 flex items-center justify-center">
-                    <QrCode className="w-24 h-24 text-gray-400" />
-                  </div>
+                  <QRCodeSVG
+                    value={`st:starknet:${metaAddress.spendingPubKey}:${metaAddress.viewingPubKey}`}
+                    size={192}
+                    level="M"
+                    bgColor="#ffffff"
+                    fgColor="#000000"
+                  />
                   <p className="text-center text-gray-600 text-sm mt-2">Scan to get meta-address</p>
                 </motion.div>
               )}
@@ -619,7 +623,32 @@ export default function StealthAddressesPage() {
               </div>
             </div>
 
-            <button className="w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-surface-elevated border border-surface-border hover:bg-surface-card transition-colors text-white font-medium">
+            <button
+              onClick={() => {
+                if (!metaAddressData?.viewing_pub_key) return;
+                const payload = {
+                  version: 1,
+                  type: "stealth-detection-key",
+                  network: "starknet",
+                  viewingPublicKey: metaAddressData.viewing_pub_key,
+                  generatedAt: new Date().toISOString(),
+                  note: "This key allows detecting stealth payments but NOT spending them.",
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                const prefix = metaAddressData.viewing_pub_key.slice(0, 10);
+                a.download = `stealth-detection-key-${prefix}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={!metaAddressData?.viewing_pub_key}
+              className={cn(
+                "w-full flex items-center justify-center gap-2 py-3 rounded-lg bg-surface-elevated border border-surface-border hover:bg-surface-card transition-colors font-medium",
+                metaAddressData?.viewing_pub_key ? "text-white" : "text-gray-500 cursor-not-allowed"
+              )}
+            >
               <Download className="w-4 h-4" />
               Export Detection Key
             </button>
@@ -643,12 +672,9 @@ export default function StealthAddressesPage() {
               </div>
             </div>
 
-            <Link
-              href="/settings"
-              className="block text-center text-brand-400 text-sm hover:underline"
-            >
-              Configure FMD Settings →
-            </Link>
+            <p className="text-center text-sm text-gray-500">
+              FMD precision is fixed at 16 bits for optimal detection accuracy.
+            </p>
           </div>
 
           {/* Info Card */}

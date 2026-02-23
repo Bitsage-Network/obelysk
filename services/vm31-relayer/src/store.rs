@@ -95,6 +95,51 @@ pub trait RateLimitStore: Send + Sync + 'static {
     ) -> impl std::future::Future<Output = Result<bool, StoreError>> + Send;
 }
 
+// ---------------------------------------------------------------------------
+// Note types (per-note Merkle tracking)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NoteRecord {
+    pub commitment: String,
+    pub merkle_path: MerklePathRecord,
+    pub merkle_root: [u32; 8],
+    pub batch_id: String,
+    pub created_at: u64,
+    /// On-chain Poseidon2-M31 commitment digest (8 × u32).
+    /// `None` until we can match this note to an on-chain `NoteInserted` event.
+    #[serde(default)]
+    pub commitment_digest: Option<[u32; 8]>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MerklePathRecord {
+    pub siblings: Vec<[u32; 8]>,
+    pub index: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Note store trait
+// ---------------------------------------------------------------------------
+
+pub trait NoteStore: Send + Sync + 'static {
+    fn save_note(
+        &self,
+        commitment: &str,
+        record: &NoteRecord,
+    ) -> impl std::future::Future<Output = Result<(), StoreError>> + Send;
+
+    fn get_note(
+        &self,
+        commitment: &str,
+    ) -> impl std::future::Future<Output = Result<Option<NoteRecord>, StoreError>> + Send;
+
+    /// Returns all notes with an empty merkle root (pending backfill).
+    fn list_pending_notes(
+        &self,
+    ) -> impl std::future::Future<Output = Result<Vec<NoteRecord>, StoreError>> + Send;
+}
+
 /// Extra fields to set when updating batch status.
 #[derive(Default)]
 pub struct StatusUpdate {
@@ -136,6 +181,7 @@ pub struct InMemoryStore {
     batches: DashMap<String, BatchRecord>,
     idempotency: DashMap<String, (String, u64)>, // (result, created_epoch)
     rate_limits: DashMap<String, (u32, u64)>,     // (count, window_start_epoch)
+    notes: DashMap<String, NoteRecord>,
     eviction_counter: AtomicU64,
 }
 
@@ -145,6 +191,7 @@ impl InMemoryStore {
             batches: DashMap::new(),
             idempotency: DashMap::new(),
             rate_limits: DashMap::new(),
+            notes: DashMap::new(),
             eviction_counter: AtomicU64::new(0),
         }
     }
@@ -299,6 +346,26 @@ impl RateLimitStore for InMemoryStore {
     }
 }
 
+impl NoteStore for InMemoryStore {
+    async fn save_note(&self, commitment: &str, record: &NoteRecord) -> Result<(), StoreError> {
+        self.notes.insert(commitment.to_string(), record.clone());
+        Ok(())
+    }
+
+    async fn get_note(&self, commitment: &str) -> Result<Option<NoteRecord>, StoreError> {
+        Ok(self.notes.get(commitment).map(|r| r.value().clone()))
+    }
+
+    async fn list_pending_notes(&self) -> Result<Vec<NoteRecord>, StoreError> {
+        Ok(self
+            .notes
+            .iter()
+            .filter(|entry| entry.value().merkle_root == [0; 8])
+            .map(|entry| entry.value().clone())
+            .collect())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Redis implementation (feature-gated)
 // ---------------------------------------------------------------------------
@@ -434,6 +501,77 @@ impl RateLimitStore for RedisStore {
     }
 }
 
+#[cfg(feature = "redis")]
+impl NoteStore for RedisStore {
+    async fn save_note(&self, commitment: &str, record: &NoteRecord) -> Result<(), StoreError> {
+        let mut conn = self.conn().await?;
+        let json =
+            serde_json::to_string(record).map_err(|e| StoreError::Backend(e.to_string()))?;
+        redis::cmd("SET")
+            .arg(format!("note:{commitment}"))
+            .arg(&json)
+            .arg("EX")
+            .arg(86400u64 * 7) // 7-day TTL for note records
+            .exec_async(&mut conn)
+            .await
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+
+        // Track pending notes in a Redis set for efficient list_pending_notes()
+        if record.merkle_root == [0; 8] {
+            redis::cmd("SADD")
+                .arg("notes:pending")
+                .arg(commitment)
+                .exec_async(&mut conn)
+                .await
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+        } else {
+            redis::cmd("SREM")
+                .arg("notes:pending")
+                .arg(commitment)
+                .exec_async(&mut conn)
+                .await
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    async fn get_note(&self, commitment: &str) -> Result<Option<NoteRecord>, StoreError> {
+        let mut conn = self.conn().await?;
+        let val: Option<String> = redis::cmd("GET")
+            .arg(format!("note:{commitment}"))
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+        match val {
+            Some(json) => {
+                let rec: NoteRecord =
+                    serde_json::from_str(&json).map_err(|e| StoreError::Backend(e.to_string()))?;
+                Ok(Some(rec))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn list_pending_notes(&self) -> Result<Vec<NoteRecord>, StoreError> {
+        let mut conn = self.conn().await?;
+        let keys: Vec<String> = redis::cmd("SMEMBERS")
+            .arg("notes:pending")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| StoreError::Backend(e.to_string()))?;
+        let mut notes = Vec::with_capacity(keys.len());
+        for key in &keys {
+            if let Some(record) = self.get_note(key).await? {
+                // Only include if still actually pending (double-check)
+                if record.merkle_root == [0; 8] {
+                    notes.push(record);
+                }
+            }
+        }
+        Ok(notes)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
@@ -509,5 +647,64 @@ mod tests {
             assert!(store.check_rate("key-1", 3, 60).await.unwrap());
         }
         assert!(!store.check_rate("key-1", 3, 60).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_in_memory_note_store() {
+        let store = InMemoryStore::new();
+        let record = NoteRecord {
+            commitment: "abc123".into(),
+            merkle_path: MerklePathRecord {
+                siblings: vec![[1, 2, 3, 4, 5, 6, 7, 8]],
+                index: 0,
+            },
+            merkle_root: [10, 20, 30, 40, 50, 60, 70, 80],
+            batch_id: "batch-1".into(),
+            created_at: 1700000000,
+            commitment_digest: None,
+        };
+        store.save_note("abc123", &record).await.unwrap();
+
+        let fetched = store.get_note("abc123").await.unwrap().unwrap();
+        assert_eq!(fetched.commitment, "abc123");
+        assert_eq!(fetched.batch_id, "batch-1");
+        assert_eq!(fetched.merkle_path.siblings.len(), 1);
+
+        let missing = store.get_note("nonexistent").await.unwrap();
+        assert!(missing.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_list_pending_notes() {
+        let store = InMemoryStore::new();
+
+        // A pending note (zero merkle_root)
+        let pending = NoteRecord {
+            commitment: "pending1".into(),
+            merkle_path: MerklePathRecord { siblings: vec![], index: 0 },
+            merkle_root: [0; 8],
+            batch_id: "batch-1".into(),
+            created_at: 1700000000,
+            commitment_digest: None,
+        };
+        store.save_note("pending1", &pending).await.unwrap();
+
+        // A finalized note (non-zero merkle_root)
+        let finalized = NoteRecord {
+            commitment: "done1".into(),
+            merkle_path: MerklePathRecord {
+                siblings: vec![[1, 2, 3, 4, 5, 6, 7, 8]],
+                index: 0,
+            },
+            merkle_root: [10, 20, 30, 40, 50, 60, 70, 80],
+            batch_id: "batch-1".into(),
+            created_at: 1700000000,
+            commitment_digest: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+        };
+        store.save_note("done1", &finalized).await.unwrap();
+
+        let pending_notes = store.list_pending_notes().await.unwrap();
+        assert_eq!(pending_notes.len(), 1);
+        assert_eq!(pending_notes[0].commitment, "pending1");
     }
 }

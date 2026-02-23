@@ -82,6 +82,11 @@ export const CONTRACTS = {
 
     // Dark Pool (Commit-Reveal Batch Auction)
     DARK_POOL: "0x0",
+
+    // VM31 UTXO Privacy (BTC Vault + general shielded assets)
+    VM31_POOL: "0x0",
+    VM31_VERIFIER: "0x0",
+    VM31_BRIDGE: "0x0",
   },
 
   // Sepolia Testnet - ALL 37 CONTRACTS DEPLOYED
@@ -183,6 +188,12 @@ export const CONTRACTS = {
     // Redeployed: 2026-02-08 — class hash 0x38cebbcf4485a369113d4b75c61683a9d9ffad8ab43e0a272eb3073737acbca
     // Added: is_order_claimed view, 5min upgrade delay
     DARK_POOL: "0x03534599fbdfc28e12148560363fbe2551a6dfdea9901a9189f27e1f22b4ef94",
+
+    // VM31 UTXO Privacy (BTC Vault + general shielded assets)
+    // TODO: Deploy VM31Pool, VM31Verifier, VM31ConfidentialBridge to Sepolia
+    VM31_POOL: "0x0",
+    VM31_VERIFIER: "0x0",
+    VM31_BRIDGE: "0x0",
   },
   // Mainnet - Not yet deployed
   mainnet: {
@@ -240,6 +251,11 @@ export const CONTRACTS = {
 
     // Dark Pool (Commit-Reveal Batch Auction)
     DARK_POOL: "0x0",
+
+    // VM31 UTXO Privacy (BTC Vault + general shielded assets)
+    VM31_POOL: "0x0",
+    VM31_VERIFIER: "0x0",
+    VM31_BRIDGE: "0x0",
   },
 } as const;
 
@@ -272,6 +288,10 @@ export const EXTERNAL_TOKENS = {
     USDC: "0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080",
     // Wrapped BTC on Starknet (via StarkGate)
     wBTC: "0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e",
+    // BTC variants — not yet deployed on Sepolia
+    LBTC: "0x0",    // Lombard Staked BTC
+    tBTC: "0x0",    // Threshold BTC
+    SolvBTC: "0x0", // Solv BTC
   },
   mainnet: {
     // Native ETH on Starknet Mainnet
@@ -282,6 +302,10 @@ export const EXTERNAL_TOKENS = {
     USDC: "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
     // Wrapped BTC on Starknet Mainnet
     wBTC: "0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac",
+    // BTC variants — TBD on mainnet
+    LBTC: "0x0",    // Lombard Staked BTC
+    tBTC: "0x0",    // Threshold BTC
+    SolvBTC: "0x0", // Solv BTC
   },
   devnet: {
     // Devnet uses same addresses but they may not be deployed
@@ -289,6 +313,9 @@ export const EXTERNAL_TOKENS = {
     STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
     USDC: "0x0",
     wBTC: "0x0",
+    LBTC: "0x0",
+    tBTC: "0x0",
+    SolvBTC: "0x0",
   },
 } as const;
 
@@ -528,6 +555,15 @@ export const ASSET_ID_FOR_TOKEN: Record<string, string> = {
   STRK: "0x2",
   USDC: "0x3",
   wBTC: "0x4",
+};
+
+// VM31 UTXO pool asset IDs (assigned by VM31Pool.register_asset())
+// Populated after on-chain registration via register-btc-vault-assets.sh
+export const VM31_ASSET_ID_FOR_TOKEN: Record<string, number> = {
+  wBTC: 0,     // TODO: Update after register_asset() returns the assigned ID
+  LBTC: 0,     // Not yet registered
+  tBTC: 0,     // Not yet registered
+  SolvBTC: 0,  // Not yet registered
 };
 
 /**

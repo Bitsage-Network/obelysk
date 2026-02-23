@@ -62,6 +62,7 @@ interface ShieldedSwapPanelProps {
   onSuccess?: (txHash: string) => void;
   onError?: (error: string) => void;
   className?: string;
+  initialInputToken?: string;
 }
 
 // ============================================================================
@@ -175,6 +176,7 @@ export function ShieldedSwapPanel({
   onSuccess,
   onError,
   className,
+  initialInputToken,
 }: ShieldedSwapPanelProps) {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
@@ -220,15 +222,20 @@ export function ShieldedSwapPanel({
   // Privacy info
   const [showPrivacyInfo, setShowPrivacyInfo] = useState(false);
 
-  // Auto-select defaults
+  // Auto-select defaults (honor initialInputToken from searchParams)
   useEffect(() => {
     if (supportedTokens.length >= 2 && !inputToken) {
+      const initial = initialInputToken
+        ? supportedTokens.find((t) => t.symbol.toLowerCase() === initialInputToken.toLowerCase())
+        : null;
       const eth = supportedTokens.find((t) => t.symbol === "ETH");
       const strk = supportedTokens.find((t) => t.symbol === "STRK");
-      if (eth) setInputToken(eth);
-      if (strk) setOutputToken(strk);
+      const input = initial || eth;
+      const output = initial && initial.symbol === "STRK" ? eth : strk;
+      if (input) setInputToken(input);
+      if (output) setOutputToken(output);
     }
-  }, [supportedTokens, inputToken]);
+  }, [supportedTokens, inputToken, initialInputToken]);
 
   // Fetch privacy pool balance
   useEffect(() => {

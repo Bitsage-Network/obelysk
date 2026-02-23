@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { Suspense, useState, useMemo, useCallback, useEffect } from "react";
 import {
   Send,
   ArrowRight,
@@ -28,6 +28,7 @@ import { useSafeObelyskWallet } from "@/lib/obelysk/ObelyskWalletContext";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
 import { NETWORK_CONFIG } from "@/lib/contracts/addresses";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { SUPPORTED_ASSETS, type Asset, DEFAULT_ASSET } from "@/lib/contracts/assets";
 import { useAccount } from "@starknet-react/core";
 import { useSendPageData } from "@/lib/hooks/useApiData";
@@ -38,7 +39,24 @@ import { useToast } from "@/lib/providers/ToastProvider";
 import { parsePaymentUri, parseObelyskAddress } from "@/lib/obelysk/address";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
 
+function SendPageFallback() {
+  return (
+    <div className="flex justify-center py-20">
+      <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
+    </div>
+  );
+}
+
 export default function SendPage() {
+  return (
+    <Suspense fallback={<SendPageFallback />}>
+      <SendPageInner />
+    </Suspense>
+  );
+}
+
+function SendPageInner() {
+  const searchParams = useSearchParams();
   const { address } = useAccount();
   const { network } = useNetwork();
   const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "";
@@ -135,7 +153,14 @@ export default function SendPage() {
   const [isSending, setIsSending] = useState(false);
   const [sendSuccess, setSendSuccess] = useState(false);
   const [showContacts, setShowContacts] = useState(false);
-  const [selectedAsset, setSelectedAsset] = useState<Asset>(DEFAULT_ASSET);
+  const [selectedAsset, setSelectedAsset] = useState<Asset>(() => {
+    const assetParam = searchParams.get("asset");
+    if (assetParam) {
+      const found = SUPPORTED_ASSETS.find(a => a.id === assetParam || a.symbol === assetParam);
+      if (found) return found;
+    }
+    return DEFAULT_ASSET;
+  });
   const [showAssetDropdown, setShowAssetDropdown] = useState(false);
   const [privateSendTxHash, setPrivateSendTxHash] = useState<string | null>(null);
   const [privateSendNote, setPrivateSendNote] = useState<{
@@ -475,7 +500,7 @@ export default function SendPage() {
               </div>
             </div>
             <Link
-              href="/wallet"
+              href="/home"
               className="px-3 py-1.5 text-sm text-brand-400 hover:text-brand-300 border border-brand-500/30 rounded-lg hover:bg-brand-500/10 transition-colors"
             >
               Manage

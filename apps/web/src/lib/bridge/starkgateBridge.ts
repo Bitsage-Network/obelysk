@@ -278,7 +278,7 @@ export async function depositToL2(
 /** Estimate gas for a deposit */
 export async function estimateDepositGas(
   params: BridgeDepositParams
-): Promise<GasEstimate> {
+): Promise<GasEstimate | null> {
   const provider = getEthereumProvider();
   const { token, amount, l2Recipient, network } = params;
   const bridge = STARKGATE_BRIDGES[network][token];
@@ -322,12 +322,7 @@ export async function estimateDepositGas(
       gasGwei: (Number(gasPrice) / 1e9).toFixed(1),
     };
   } catch {
-    // Fallback estimate
-    return {
-      gasWei: BigInt(0),
-      gasEth: "~0.001",
-      gasGwei: "—",
-    };
+    return null;
   }
 }
 
