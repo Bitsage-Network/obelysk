@@ -29,6 +29,8 @@ import {
   Fingerprint,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { getExplorerTxUrl, type NetworkType } from "@/lib/contracts/addresses";
 
 // ============================================================================
 // TYPES
@@ -110,6 +112,7 @@ export function PrivacyTransactionReviewModal({
   warnings,
   className,
 }: PrivacyTransactionReviewModalProps) {
+  const { network } = useNetwork();
   const [phase, setPhase] = useState<ReviewPhase>("review");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -407,7 +410,7 @@ export function PrivacyTransactionReviewModal({
 
                   {txHash && (
                     <a
-                      href={`https://sepolia.starkscan.co/tx/${txHash}`}
+                      href={getExplorerTxUrl(txHash, network as NetworkType)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-1.5 mt-3 text-sm text-violet-400 hover:text-violet-300 transition-colors"

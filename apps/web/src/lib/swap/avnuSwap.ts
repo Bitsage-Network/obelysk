@@ -32,6 +32,16 @@ const MAX_RETRIES = 2;
 const RETRY_BACKOFF_BASE_MS = 1_000;
 const RETRYABLE_STATUS_CODES = new Set([429, 502, 503, 504]);
 
+/** Build common headers for AVNU API requests (includes API key when available) */
+function getAvnuHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const apiKey = process.env.NEXT_PUBLIC_AVNU_API_KEY;
+  if (apiKey) {
+    headers["x-paymaster-api-key"] = apiKey;
+  }
+  return headers;
+}
+
 /** Maximum u256 on Starknet (2^256 - 1) */
 const MAX_U256 = (1n << 256n) - 1n;
 
@@ -357,7 +367,7 @@ export async function fetchAvnuQuote(params: {
   const response = await fetchWithRetry(
     `${baseUrl}/swap/v2/quotes?${searchParams}`,
     {
-      headers: { "Content-Type": "application/json" },
+      headers: getAvnuHeaders(),
       timeoutMs: QUOTE_TIMEOUT_MS,
       signal,
     },
@@ -404,7 +414,7 @@ export async function buildAvnuSwap(params: {
     `${baseUrl}/swap/v2/build`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAvnuHeaders(),
       body: JSON.stringify({ quoteId, takerAddress, slippage }),
       timeoutMs: BUILD_TIMEOUT_MS,
       signal,

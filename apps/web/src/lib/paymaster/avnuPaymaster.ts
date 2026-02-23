@@ -13,7 +13,7 @@
  * @see https://docs.avnu.fi/paymaster
  */
 
-import type { AccountInterface, Call } from "starknet";
+import { type AccountInterface, type Call, PaymasterRpc } from "starknet";
 
 // ============================================================================
 // TYPES
@@ -91,22 +91,35 @@ export class AVNUPaymasterService {
   private network: "mainnet" | "sepolia";
   private paymasterUrl: string;
   private apiUrl: string;
+  private paymasterRpc: PaymasterRpc;
 
   constructor(network: "mainnet" | "sepolia" = "sepolia") {
     this.network = network;
     this.paymasterUrl = AVNU_PAYMASTER_URLS[network];
     this.apiUrl = AVNU_API_URLS[network];
+
+    // Build PaymasterRpc with API key header for sponsored (gasfree) mode
+    const apiKey = process.env.NEXT_PUBLIC_AVNU_API_KEY;
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers["x-paymaster-api-key"] = apiKey;
+    }
+
+    this.paymasterRpc = new PaymasterRpc({
+      nodeUrl: this.paymasterUrl,
+      headers,
+    });
   }
 
   /**
-   * Execute a gasless transaction using AVNU paymaster
+   * Execute a gasless transaction using AVNU paymaster.
+   * Uses account.executePaymasterTransaction() with PaymasterRpc (API key in headers).
    */
   async executeGasless(options: GaslessExecuteOptions): Promise<GaslessResult> {
-    const { account, calls, paymaster } = options;
+    const { account, calls, paymaster: config } = options;
 
     try {
-      if (!paymaster.active) {
-        // Execute without paymaster (normal transaction)
+      if (!config.active) {
         const result = await account.execute(calls);
         return {
           transactionHash: result.transaction_hash,
@@ -114,26 +127,43 @@ export class AVNUPaymasterService {
         };
       }
 
-      // Build paymaster parameters
-      const paymasterParams = this.buildPaymasterParams(paymaster);
+      const paymasterDetails = this.buildPaymasterDetails(config);
 
-      // Execute with paymaster
-      // Note: PaymasterRpc types may not match starknet.js exactly
-      const result = await account.execute(calls, {
-        // @ts-expect-error - PaymasterRpc types may differ between starknet.js versions
-        paymaster: paymasterParams,
-      });
+      // Try executePaymasterTransaction (available on starknet.js Account)
+      // Wallet adapters from @starknet-react/core may not expose it,
+      // so fall back to execute() with paymaster option
+      const acct = account as AccountInterface & {
+        executePaymasterTransaction?: (
+          calls: Call[],
+          details: typeof paymasterDetails,
+        ) => Promise<{ transaction_hash: string }>;
+      };
+
+      let result: { transaction_hash: string };
+
+      if (typeof acct.executePaymasterTransaction === "function") {
+        // Set paymaster on the account so executePaymasterTransaction can use it
+        (acct as unknown as { paymaster: PaymasterRpc }).paymaster = this.paymasterRpc;
+        result = await acct.executePaymasterTransaction(calls, paymasterDetails);
+      } else {
+        // Fallback: pass paymaster inline (works at runtime even if types lag)
+        result = await account.execute(calls, {
+          // @ts-expect-error - starknet.js v8.9.2 runtime supports this but types may lag
+          paymaster: {
+            provider: this.paymasterRpc,
+            params: { version: "0x1", feeMode: paymasterDetails.feeMode },
+          },
+        });
+      }
 
       return {
         transactionHash: result.transaction_hash,
-        gasSponsored: paymaster.feeMode === "sponsored",
-        gasToken: paymaster.gasToken,
+        gasSponsored: config.feeMode === "sponsored",
+        gasToken: config.gasToken,
       };
     } catch (error) {
-      // Log error for debugging
       console.error("[AVNU Paymaster] Transaction failed:", error);
 
-      // Re-throw with more context
       if (error instanceof Error) {
         throw new Error(`Paymaster execution failed: ${error.message}`);
       }
@@ -150,9 +180,13 @@ export class AVNUPaymasterService {
     dailyLimitRemaining?: number;
   }> {
     try {
+      const apiKey = process.env.NEXT_PUBLIC_AVNU_API_KEY;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["x-paymaster-api-key"] = apiKey;
+
       const response = await fetch(`${this.apiUrl}/paymaster/eligibility`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ address }),
       });
 
@@ -175,9 +209,13 @@ export class AVNUPaymasterService {
     tokenSymbol: string;
   }> {
     try {
+      const apiKey = process.env.NEXT_PUBLIC_AVNU_API_KEY;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (apiKey) headers["x-paymaster-api-key"] = apiKey;
+
       const response = await fetch(`${this.apiUrl}/paymaster/estimate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           calls,
           gas_token: gasToken,
@@ -209,21 +247,12 @@ export class AVNUPaymasterService {
   // PRIVATE METHODS
   // ============================================================================
 
-  private buildPaymasterParams(config: PaymasterConfig) {
-    return {
-      active: true,
-      provider: {
-        nodeUrl: this.paymasterUrl,
-      },
-      params: {
-        feeMode: {
-          mode: config.feeMode,
-          ...(config.feeMode === "default" && config.gasToken
-            ? { gasToken: config.gasToken }
-            : {}),
-        },
-      },
-    };
+  private buildPaymasterDetails(config: PaymasterConfig) {
+    const feeMode = config.feeMode === "default" && config.gasToken
+      ? { mode: "default" as const, gasToken: config.gasToken }
+      : { mode: "sponsored" as const };
+
+    return { feeMode };
   }
 }
 

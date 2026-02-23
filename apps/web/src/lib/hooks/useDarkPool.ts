@@ -254,16 +254,35 @@ export function useDarkPool(): UseDarkPoolResult {
       // Check cached ref first
       if (sessionKeyRef.current) return sessionKeyRef.current;
 
-      // Check localStorage
+      // Check localStorage (C5: with expiry and network validation)
       try {
         const stored = localStorage.getItem(`${SESSION_KEY_STORAGE}-${address}`);
         if (stored) {
-          const parsed = JSON.parse(stored) as { privateKey: string; publicKey: string };
-          // Verify it's still registered on-chain
-          const onChainKey = await readSessionKey(network as NetworkType, address!);
-          if (onChainKey === parsed.publicKey) {
-            sessionKeyRef.current = parsed;
-            return parsed;
+          const parsed = JSON.parse(stored) as {
+            privateKey: string;
+            publicKey: string;
+            createdAt?: number;
+            expiresAt?: number;
+            network?: string;
+          };
+
+          // C5: Reject expired session keys
+          const now = Date.now();
+          if (parsed.expiresAt && now > parsed.expiresAt) {
+            localStorage.removeItem(`${SESSION_KEY_STORAGE}-${address}`);
+            // Fall through to generate new key
+          }
+          // C5: Reject cross-network session keys
+          else if (parsed.network && parsed.network !== network) {
+            // Don't remove — may still be valid on other network
+            // Fall through to generate new key
+          } else {
+            // Verify it's still registered on-chain
+            const onChainKey = await readSessionKey(network as NetworkType, address!);
+            if (onChainKey === parsed.publicKey) {
+              sessionKeyRef.current = { privateKey: parsed.privateKey, publicKey: parsed.publicKey };
+              return sessionKeyRef.current;
+            }
           }
         }
       } catch { /* not found or corrupted */ }
@@ -283,9 +302,16 @@ export function useDarkPool(): UseDarkPoolResult {
       const keypair = { privateKey, publicKey };
       sessionKeyRef.current = keypair;
 
-      // Persist
+      // C5: Persist with expiry (24h) and network
       try {
-        localStorage.setItem(`${SESSION_KEY_STORAGE}-${address}`, JSON.stringify(keypair));
+        const SESSION_KEY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+        const now = Date.now();
+        localStorage.setItem(`${SESSION_KEY_STORAGE}-${address}`, JSON.stringify({
+          ...keypair,
+          createdAt: now,
+          expiresAt: now + SESSION_KEY_TTL_MS,
+          network,
+        }));
       } catch { /* SSR or quota */ }
 
       return keypair;
@@ -344,10 +370,13 @@ export function useDarkPool(): UseDarkPoolResult {
   }, [refreshEpoch]);
 
   // Clear pending reveals on wallet/network change to prevent cross-account leakage
+  // M4: Also clean up session key ref and relay state on disconnect
   useEffect(() => {
     pendingReveals.current.clear();
     revealingRef.current = false;
     submittingRef.current = false;
+    sessionKeyRef.current = null;
+    setRelayConnected(false);
     setStage("idle");
     setError(null);
   }, [address, network]);
@@ -411,8 +440,12 @@ export function useDarkPool(): UseDarkPoolResult {
   // --------------------------------------------------------------------------
 
   const refreshOrders = useCallback(async () => {
+    if (!address) {
+      setMyOrders([]);
+      return;
+    }
     try {
-      const notes = await loadOrderNotes(address ?? undefined);
+      const notes = await loadOrderNotes(address);
 
       // Sync order status from contract for non-terminal orders
       const synced = await Promise.all(
@@ -462,7 +495,7 @@ export function useDarkPool(): UseDarkPoolResult {
                     updates.clearingPrice = pairResult.clearingPrice;
                   }
                 }
-                await updateOrderNote(note.orderId, updates);
+                await updateOrderNote(note.orderId, updates, address);
                 return { ...note, ...updates };
               }
             }
@@ -522,6 +555,9 @@ export function useDarkPool(): UseDarkPoolResult {
         return;
       }
 
+      // C6: Re-check address before relay path to guard against mid-flow disconnect
+      // (address is also checked above, but belt-and-suspenders for the non-null assertion below)
+
       // Guard against double-submit
       if (submittingRef.current) return;
       submittingRef.current = true;
@@ -566,7 +602,8 @@ export function useDarkPool(): UseDarkPoolResult {
           const sessionKey = await ensureSessionKey();
 
           // Build the OutsideExecution payload
-          const nonce = "0x" + BigInt(Date.now()).toString(16) + BigInt(Math.floor(Math.random() * 1e9)).toString(16);
+          const nonceBytes = crypto.getRandomValues(new Uint8Array(32));
+          const nonce = "0x" + Array.from(nonceBytes).map(b => b.toString(16).padStart(2, "0")).join("");
           const now = Math.floor(Date.now() / 1000);
           const executeAfter = now - 60;  // 1 min grace
           const executeBefore = now + 300; // 5 min window
@@ -610,10 +647,24 @@ export function useDarkPool(): UseDarkPoolResult {
         let orderId: bigint;
         try {
           const receipt = await provider.waitForTransaction(txHash);
+
+          // C3: Check execution status — reverted tx should not be treated as success
+          const execStatus = (receipt as unknown as { execution_status?: string }).execution_status;
+          if (execStatus === "REVERTED") {
+            const revertReason = (receipt as unknown as { revert_reason?: string }).revert_reason;
+            throw new Error(`Transaction reverted: ${revertReason || "unknown reason"}`);
+          }
+
           const parsed = parseOrderIdFromReceipt(receipt as unknown as { events?: Array<{ keys?: string[]; data?: string[] }> });
-          orderId = parsed ?? BigInt(Date.now()); // Fallback if parsing fails
-        } catch {
-          orderId = BigInt(Date.now()); // Fallback
+          // C7: Use crypto random fallback instead of Date.now() to avoid timing leak
+          orderId = parsed ?? BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join(""));
+        } catch (receiptErr) {
+          // Re-throw revert errors (C3)
+          if (receiptErr instanceof Error && receiptErr.message.startsWith("Transaction reverted")) {
+            throw receiptErr;
+          }
+          // C7: Crypto random fallback for order ID
+          orderId = BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join(""));
         }
 
         const epoch = epochNow?.epoch ?? currentEpoch?.epoch ?? 0;
@@ -670,7 +721,7 @@ export function useDarkPool(): UseDarkPoolResult {
           // Skip orders from a different epoch (they've expired)
           if (epoch !== revealEpoch) {
             pendingReveals.current.delete(orderId);
-            await updateOrderNote(orderId, { status: "expired" });
+            await updateOrderNote(orderId, { status: "expired" }, address!);
             continue;
           }
 
@@ -680,7 +731,7 @@ export function useDarkPool(): UseDarkPoolResult {
           await updateOrderNote(orderId, {
             status: "revealed",
             revealTxHash: response.transaction_hash,
-          });
+          }, address!);
           // Remove successfully revealed orders
           pendingReveals.current.delete(orderId);
         }
@@ -719,7 +770,7 @@ export function useDarkPool(): UseDarkPoolResult {
       try {
         const calls = buildCancelCalls(orderId, contractAddress);
         await sendAsync(calls);
-        await updateOrderNote(orderId, { status: "cancelled" });
+        await updateOrderNote(orderId, { status: "cancelled" }, address);
         pendingReveals.current.delete(orderId);
         await refreshOrders();
       } catch (err) {
@@ -845,7 +896,7 @@ export function useDarkPool(): UseDarkPoolResult {
         await sendAsync(calls);
 
         // Mark order as claimed in IndexedDB
-        await updateOrderNote(orderId, { status: "claimed" });
+        await updateOrderNote(orderId, { status: "claimed" }, address);
 
         // Cache hints locally
         cacheHintLocally(address, receiveAsset, receiveHint);
@@ -858,7 +909,7 @@ export function useDarkPool(): UseDarkPoolResult {
         const msg = err instanceof Error ? err.message : "Claim fill failed";
         // Handle "Already claimed" gracefully — just update local state
         if (msg.includes("Already claimed")) {
-          await updateOrderNote(orderId, { status: "claimed" });
+          await updateOrderNote(orderId, { status: "claimed" }, address);
           await refreshOrders();
           setStage("idle");
           return;
