@@ -130,7 +130,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-surface-dark">
       {/* Desktop Header */}
-      <header className="border-b border-surface-border/60 sticky top-0 bg-surface-dark/95 backdrop-blur-xl z-50 hidden md:block">
+      <header className="border-b border-surface-border/60 sticky top-0 bg-surface-dark/95 backdrop-blur-xl z-50 hidden lg:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
@@ -143,7 +143,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                   height={36}
                   className="rounded-lg"
                 />
-                <div className="hidden xs:block">
+                <div>
                   <span className="font-semibold text-white text-lg leading-none">Obelysk</span>
                   <span className="text-[11px] text-emerald-400 font-medium uppercase tracking-wider block">Protocol</span>
                 </div>
@@ -193,7 +193,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Right side */}
             <div className="flex items-center gap-3">
               {/* Privacy Mode Badge */}
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <Shield className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="text-xs text-emerald-400 font-medium">Privacy Mode</span>
               </div>
@@ -205,10 +205,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
-      {/* Mobile Header (simplified — logo + wallet only) */}
-      <header className="md:hidden border-b border-surface-border/60 sticky top-0 bg-surface-dark/95 backdrop-blur-xl z-50">
+      {/* Mobile / Tablet Header */}
+      <header className="lg:hidden border-b border-surface-border/60 sticky top-0 bg-surface-dark/95 backdrop-blur-xl z-50">
         <div className="px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2.5">
             <Image
               src="/obelysk-logo.svg"
               alt="Obelysk"
@@ -216,20 +216,29 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               height={32}
               className="rounded-lg"
             />
-            <span className="font-semibold text-white text-base">Obelysk</span>
+            <div>
+              <span className="font-semibold text-white text-base leading-none block">Obelysk</span>
+              <span className="text-[9px] text-emerald-400 font-medium uppercase tracking-wider">Protocol</span>
+            </div>
           </Link>
-          <ConnectWalletButton />
+          <div className="flex items-center gap-2">
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <Shield className="w-3 h-3 text-emerald-400" />
+              <span className="text-[10px] text-emerald-400 font-medium">Privacy</span>
+            </div>
+            <ConnectWalletButton />
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 lg:pb-6">
         {children}
       </main>
 
-      {/* Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-dark/95 backdrop-blur-xl border-t border-surface-border">
-        <div className="flex items-center justify-around px-2 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+      {/* Mobile / Tablet Bottom Nav */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-dark/95 backdrop-blur-xl border-t border-surface-border">
+        <div className="flex items-center justify-around px-1 sm:px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
           {primaryNav.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
 
@@ -238,7 +247,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all min-w-[56px]",
+                  "flex flex-col items-center gap-0.5 px-2 sm:px-4 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-medium transition-all min-w-0",
                   isActive
                     ? "text-white"
                     : "text-gray-500 active:text-gray-300"
@@ -250,7 +259,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 )}>
                   <item.icon className="w-5 h-5" />
                 </div>
-                {item.title}
+                <span className="truncate max-w-[60px]">{item.title}</span>
               </Link>
             );
           })}
@@ -260,7 +269,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => setMoreOpen(!moreOpen)}
               className={cn(
-                "flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl text-[11px] font-medium transition-all min-w-[56px]",
+                "flex flex-col items-center gap-0.5 px-2 sm:px-4 py-1.5 rounded-xl text-[10px] sm:text-[11px] font-medium transition-all min-w-0",
                 isMoreActive || moreOpen
                   ? "text-white"
                   : "text-gray-500 active:text-gray-300"
