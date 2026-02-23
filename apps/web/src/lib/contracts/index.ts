@@ -1,7 +1,7 @@
 // Contract client for BitSage Network
 // Provides hooks and utilities for interacting with deployed contracts
 
-import { useContract, useReadContract, useBalance, useSendTransaction } from "@starknet-react/core";
+import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
 import type { Abi, Call } from "starknet";
 import { CONTRACTS } from "./addresses";
 
@@ -81,10 +81,10 @@ export function useSageAllowance(
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
-// Standard ERC20 ABI for balanceOf (camelCase matches starknet.js v8 resolution)
-const ERC20_BALANCE_ABI = [
+// Standard ERC20 ABI with snake_case balance_of (Starknet Sepolia contracts)
+const ERC20_BALANCE_OF_ABI = [
   {
-    name: "balanceOf",
+    name: "balance_of",
     type: "function",
     inputs: [{ name: "account", type: "core::starknet::contract_address::ContractAddress" }],
     outputs: [{ type: "core::integer::u256" }],
@@ -93,55 +93,62 @@ const ERC20_BALANCE_ABI = [
 ] as Abi;
 
 /**
- * Hook to get ETH balance (native Starknet ETH)
- * Uses starknet-react's useBalance which handles ERC20 ABI internally.
+ * Hook to get ETH balance via useReadContract with balance_of
  */
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.ETH;
-  return useBalance({
-    address: address as `0x${string}`,
-    token: tokenAddress as `0x${string}`,
-    watch: true,
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ERC20_BALANCE_OF_ABI,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress,
+    watch: true,
   });
 }
 
 /**
- * Hook to get STRK balance (Starknet native token)
+ * Hook to get STRK balance via useReadContract with balance_of
  */
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.STRK;
-  return useBalance({
-    address: address as `0x${string}`,
-    token: tokenAddress as `0x${string}`,
-    watch: true,
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ERC20_BALANCE_OF_ABI,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress,
+    watch: true,
   });
 }
 
 /**
- * Hook to get USDC balance (Circle native on Starknet)
+ * Hook to get USDC balance via useReadContract with balance_of
  */
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.USDC;
-  return useBalance({
-    address: address as `0x${string}`,
-    token: tokenAddress as `0x${string}`,
-    watch: true,
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ERC20_BALANCE_OF_ABI,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
 /**
- * Hook to get wBTC balance (Wrapped Bitcoin on Starknet)
+ * Hook to get wBTC balance via useReadContract with balance_of
  */
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.wBTC;
-  return useBalance({
-    address: address as `0x${string}`,
-    token: tokenAddress as `0x${string}`,
-    watch: true,
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ERC20_BALANCE_OF_ABI,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
     enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
@@ -153,11 +160,13 @@ export function useTokenBalance(
   userAddress: string | undefined,
   _network: NetworkType = "sepolia"
 ) {
-  return useBalance({
-    address: userAddress as `0x${string}`,
-    token: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
-    watch: true,
+  return useReadContract({
+    address: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
+    abi: ERC20_BALANCE_OF_ABI,
+    functionName: "balance_of",
+    args: userAddress ? [userAddress] : undefined,
     enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
   });
 }
 
@@ -172,9 +181,7 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
   const usdc = useUsdcBalance(address, network);
   const wbtc = useWbtcBalance(address, network);
 
-  // useBalance returns { data: { value, decimals, symbol, formatted }, ... }
-  // useReadContract (SAGE) returns { data: bigint | {low,high} | ..., ... }
-  // Normalize external tokens: extract .value from useBalance result
+  // All hooks now use useReadContract with balance_of — data is raw u256
   return {
     SAGE: {
       data: sage.data,
@@ -183,25 +190,25 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
       decimals: TOKEN_METADATA.SAGE.decimals,
     },
     ETH: {
-      data: eth.data?.value,
+      data: eth.data,
       isLoading: eth.isLoading,
       error: eth.error,
       decimals: TOKEN_METADATA.ETH.decimals,
     },
     STRK: {
-      data: strk.data?.value,
+      data: strk.data,
       isLoading: strk.isLoading,
       error: strk.error,
       decimals: TOKEN_METADATA.STRK.decimals,
     },
     USDC: {
-      data: usdc.data?.value,
+      data: usdc.data,
       isLoading: usdc.isLoading,
       error: usdc.error,
       decimals: TOKEN_METADATA.USDC.decimals,
     },
     wBTC: {
-      data: wbtc.data?.value,
+      data: wbtc.data,
       isLoading: wbtc.isLoading,
       error: wbtc.error,
       decimals: TOKEN_METADATA.wBTC.decimals,
