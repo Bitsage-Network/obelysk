@@ -1,7 +1,7 @@
 // Contract client for BitSage Network
 // Provides hooks and utilities for interacting with deployed contracts
 
-import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
+import { useContract, useReadContract, useBalance, useSendTransaction } from "@starknet-react/core";
 import type { Abi, Call } from "starknet";
 import { CONTRACTS } from "./addresses";
 
@@ -94,16 +94,15 @@ const ERC20_BALANCE_ABI = [
 
 /**
  * Hook to get ETH balance (native Starknet ETH)
+ * Uses starknet-react's useBalance which handles ERC20 ABI internally.
  */
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.ETH;
-  return useReadContract({
-    address: tokenAddress,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
+  return useBalance({
+    address: address as `0x${string}`,
+    token: tokenAddress as `0x${string}`,
     watch: true,
+    enabled: !!address && !!tokenAddress,
   });
 }
 
@@ -112,13 +111,11 @@ export function useEthBalance(address: string | undefined, network: NetworkType 
  */
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.STRK;
-  return useReadContract({
-    address: tokenAddress,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
+  return useBalance({
+    address: address as `0x${string}`,
+    token: tokenAddress as `0x${string}`,
     watch: true,
+    enabled: !!address && !!tokenAddress,
   });
 }
 
@@ -127,13 +124,11 @@ export function useStrkBalance(address: string | undefined, network: NetworkType
  */
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.USDC;
-  return useReadContract({
-    address: tokenAddress,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+  return useBalance({
+    address: address as `0x${string}`,
+    token: tokenAddress as `0x${string}`,
     watch: true,
+    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
   });
 }
 
@@ -142,13 +137,11 @@ export function useUsdcBalance(address: string | undefined, network: NetworkType
  */
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
   const tokenAddress = EXTERNAL_TOKENS[network]?.wBTC;
-  return useReadContract({
-    address: tokenAddress,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+  return useBalance({
+    address: address as `0x${string}`,
+    token: tokenAddress as `0x${string}`,
     watch: true,
+    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
   });
 }
 
@@ -160,16 +153,11 @@ export function useTokenBalance(
   userAddress: string | undefined,
   _network: NetworkType = "sepolia"
 ) {
-  // Use ETH address as fallback for type safety, but disable query if no valid token
-  const fallbackAddress = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7" as `0x${string}`;
-  const address = (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : fallbackAddress) as `0x${string}`;
-  return useReadContract({
-    address,
-    abi: ERC20_BALANCE_ABI,
-    functionName: "balanceOf",
-    args: userAddress ? [userAddress] : undefined,
-    enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
+  return useBalance({
+    address: userAddress as `0x${string}`,
+    token: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
     watch: true,
+    enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
   });
 }
 
@@ -184,6 +172,9 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
   const usdc = useUsdcBalance(address, network);
   const wbtc = useWbtcBalance(address, network);
 
+  // useBalance returns { data: { value, decimals, symbol, formatted }, ... }
+  // useReadContract (SAGE) returns { data: bigint | {low,high} | ..., ... }
+  // Normalize external tokens: extract .value from useBalance result
   return {
     SAGE: {
       data: sage.data,
@@ -192,25 +183,25 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
       decimals: TOKEN_METADATA.SAGE.decimals,
     },
     ETH: {
-      data: eth.data,
+      data: eth.data?.value,
       isLoading: eth.isLoading,
       error: eth.error,
       decimals: TOKEN_METADATA.ETH.decimals,
     },
     STRK: {
-      data: strk.data,
+      data: strk.data?.value,
       isLoading: strk.isLoading,
       error: strk.error,
       decimals: TOKEN_METADATA.STRK.decimals,
     },
     USDC: {
-      data: usdc.data,
+      data: usdc.data?.value,
       isLoading: usdc.isLoading,
       error: usdc.error,
       decimals: TOKEN_METADATA.USDC.decimals,
     },
     wBTC: {
-      data: wbtc.data,
+      data: wbtc.data?.value,
       isLoading: wbtc.isLoading,
       error: wbtc.error,
       decimals: TOKEN_METADATA.wBTC.decimals,
