@@ -371,8 +371,8 @@ export function useVM31Vault() {
         wBTC: 8, LBTC: 8, tBTC: 18, SolvBTC: 18,
       };
 
-      // All BTC vault assets are live on non-devnet networks
-      const liveAssets = new Set(BTC_VAULT_ASSETS as readonly string[]);
+      // Only wBTC is fully integrated (pool registration + relayer support)
+      const liveAssets = new Set(["wBTC"]);
       const available = liveAssets.has(symbol) && networkKey !== "devnet"
         ? true
         : tokenAddress !== "0x0" && tokenAddress.length > 4;

@@ -549,8 +549,9 @@ export default function BtcVaultPage() {
     const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
     const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
 
-    // All BTC vault assets are live on non-devnet networks
-    const liveAssets = new Set(BTC_VAULT_ASSETS as readonly string[]);
+    // Only wBTC is fully integrated end-to-end (pool registration, relayer, on-chain).
+    // LBTC/tBTC/SolvBTC have real mainnet addresses but lack VM31 pool registration.
+    const liveAssets = new Set(["wBTC"]);
 
     return BTC_VAULT_ASSETS.map((symbol) => {
       const tokenAddr = String(tokens[symbol as keyof typeof tokens] ?? "0x0");
