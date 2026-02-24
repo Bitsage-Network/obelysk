@@ -309,15 +309,18 @@ export async function readEpochFromContract(
     const totalEpochBlocks = 3 * epochDuration;
     const phaseOffset = phaseIndex * epochDuration;
     const blocksInPhase = epochDuration;
-    // How far into current phase we are
-    const blocksSinceEpochStart = currentBlock % totalEpochBlocks;
+    // Account for genesis block offset — contract uses (current_block - genesis_block)
+    // The epoch number from contract already factors this in, so we derive offset from epoch
+    const genesisBlock = epoch > 0 ? currentBlock - (Number(BigInt(epoch.toString())) * totalEpochBlocks + phaseOffset + 1) : 0;
+    const blocksSinceGenesis = currentBlock - genesisBlock;
+    const blocksSinceEpochStart = blocksSinceGenesis % totalEpochBlocks;
     const blocksIntoPhase = blocksSinceEpochStart - phaseOffset;
     const blocksRemaining = Math.max(0, blocksInPhase - Math.max(0, blocksIntoPhase));
 
     return {
       epoch,
       phase,
-      genesisBlock: 0,
+      genesisBlock,
       epochDuration,
       currentBlock,
       blocksInPhase,
