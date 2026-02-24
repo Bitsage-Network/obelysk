@@ -543,11 +543,21 @@ export default function BtcVaultPage() {
   const [showTransferConfirm, setShowTransferConfirm] = useState(false);
 
   // Build asset options
+  // wBTC is live on both sepolia and mainnet — always mark available.
+  // Other BTC variants are marked available only when they have a deployed token address.
   const assetOptions: BtcAssetOption[] = useMemo(() => {
-    const tokens = EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS];
+    const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
+    const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
+
+    // Assets known to be live on all non-devnet networks
+    const liveAssets = new Set(["wBTC"]);
+
     return BTC_VAULT_ASSETS.map((symbol) => {
-      const tokenAddr = tokens?.[symbol as keyof typeof tokens] || "0x0";
-      const available = tokenAddr !== "0x0" && BigInt(tokenAddr as string) !== 0n;
+      const tokenAddr = String(tokens[symbol as keyof typeof tokens] ?? "0x0");
+      // Live assets are always available; others require a deployed address
+      const available = liveAssets.has(symbol) && networkKey !== "devnet"
+        ? true
+        : tokenAddr !== "0x0" && tokenAddr.length > 4;
       if (symbol === "wBTC") {
         return { symbol, name: "Wrapped Bitcoin", decimals: 8, color: "#F7931A", available };
       }

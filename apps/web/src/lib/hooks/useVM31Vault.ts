@@ -362,19 +362,26 @@ export function useVM31Vault() {
 
   const getAssetInfo = useCallback(
     (symbol: string): VaultAssetInfo => {
-      const tokens = EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS];
-      const tokenAddress = tokens?.[symbol as keyof typeof tokens] || "0x0";
+      const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
+      const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
+      const tokenAddress = String(tokens?.[symbol as keyof typeof tokens] ?? "0x0");
       const vm31AssetId = VM31_ASSET_ID_FOR_TOKEN[symbol] ?? 0;
       const decimalsMap: Record<string, number> = {
         wBTC: 8, LBTC: 8, tBTC: 8, SolvBTC: 8,
       };
 
+      // wBTC is live on sepolia + mainnet — always available on non-devnet
+      const liveAssets = new Set(["wBTC"]);
+      const available = liveAssets.has(symbol) && networkKey !== "devnet"
+        ? true
+        : tokenAddress !== "0x0" && tokenAddress.length > 4;
+
       return {
         symbol,
-        tokenAddress: tokenAddress as string,
+        tokenAddress,
         vm31AssetId,
         decimals: decimalsMap[symbol] ?? 8,
-        available: tokenAddress !== "0x0" && BigInt(tokenAddress as string) !== 0n,
+        available,
       };
     },
     [network],
