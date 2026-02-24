@@ -268,7 +268,7 @@ export interface ClaimParams {
   spendingKey: bigint;
   /** Stealth viewing key (viewing_key) — kept in-memory only */
   viewingKey: bigint;
-  /** Recipient address to receive the claimed SAGE tokens */
+  /** Recipient address to receive the claimed STRK tokens */
   recipient?: string;
 }
 

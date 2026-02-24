@@ -291,7 +291,7 @@ export async function scanStealthPayments(options: {
         job_id: event.data.job_id_low || "0",
         timestamp,
         amount_formatted: "encrypted", // Amount is encrypted on-chain
-        token_symbol: "SAGE",
+        token_symbol: "STRK",
         claimed: isClaimed,
         transactionHash: event.transactionHash,
       };
