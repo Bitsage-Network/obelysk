@@ -232,21 +232,10 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
           // Add 50% buffer for slippage and gas
           const priceWithBuffer = (estimatedPricePerSage * 3n) / 2n;
           totalCost = (priceWithBuffer * amountWei) / BigInt(10 ** baseAsset.decimals);
-          console.log('[PlaceOrder] Market buy approval calculation:', {
-            estimatedPrice: Number(estimatedPricePerSage) / 1e18,
-            priceWithBuffer: Number(priceWithBuffer) / 1e18,
-            amount: Number(amountWei) / 1e18,
-            totalCost: Number(totalCost) / 1e18,
-          });
         } else if (orderType === "market") {
           // Fallback for market orders without config - use higher estimate
           const estimatedPricePerSage = parseAssetAmount("0.25", quoteAsset);
           totalCost = (estimatedPricePerSage * amountWei) / BigInt(10 ** baseAsset.decimals);
-          console.log('[PlaceOrder] Market buy fallback approval:', {
-            estimatedPrice: Number(estimatedPricePerSage) / 1e18,
-            amount: Number(amountWei) / 1e18,
-            totalCost: Number(totalCost) / 1e18,
-          });
         } else {
           // For limit orders, calculate exact cost: price * amount
           totalCost = (priceWei * amountWei) / BigInt(10 ** baseAsset.decimals);
@@ -261,11 +250,6 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
             calldata: [addresses.OTC_ORDERBOOK, totalCost.toString(), "0"],
           };
           calls.push(approveQuoteCall);
-          console.log('[PlaceOrder] Approve call:', {
-            token: quoteTokenAddress.slice(0, 10) + '...',
-            amount: totalCost.toString(),
-            amountFormatted: Number(totalCost) / 1e18,
-          });
         }
       }
 
@@ -302,7 +286,7 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
       setAmount("");
       setSliderValue(0);
     } catch (error: unknown) {
-      console.error("Failed to place order:", error);
+      console.error("Failed to place order:", error instanceof Error ? error.message : "unknown error");
 
       // Extract error message for user-friendly display
       let errorMessage = "Transaction failed. Please try again.";

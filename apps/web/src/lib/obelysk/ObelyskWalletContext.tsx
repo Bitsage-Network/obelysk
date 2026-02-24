@@ -22,7 +22,7 @@ import { useSendTransaction, useContract } from "@starknet-react/core";
 import { RpcProvider, CallData } from "starknet";
 import { getContractAddresses, useSageBalance, buildCompleteRagequitCall, type PPRagequitProof } from "@/lib/contracts";
 import { generateMerkleProofOnChain } from "@/lib/crypto/onChainMerkleProof";
-import { PRIVACY_POOL_FOR_TOKEN } from "@/lib/contracts/addresses";
+import { PRIVACY_POOL_FOR_TOKEN, getRpcUrl, getStarknetChainId, type NetworkType } from "@/lib/contracts/addresses";
 import { useOnChainSagePrice } from "@/lib/hooks/useOnChainData";
 import { useSession, useSessionStatus, Session, SessionConfig, SessionKeyPair, SESSION_PRESETS } from "@/lib/sessions";
 import { getUnspentBalance, getUnspentNotes, getNotes, deleteNote } from "@/lib/crypto/keyStore";
@@ -242,20 +242,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         // Get unspent notes from IndexedDB
         const notes = await getUnspentNotes(address);
 
-        console.log("[ObelyskWallet] Found", notes.length, "notes in IndexedDB for address:", address?.slice(0, 10) + "...");
-        if (notes.length > 0) {
-          notes.forEach((n, i) => {
-            console.log(`[ObelyskWallet] Note ${i + 1}:`, {
-              denomination: n.denomination,
-              commitment: n.commitment?.slice(0, 16) + "...",
-              spent: n.spent,
-              depositTxHash: n.depositTxHash?.slice(0, 16) + "...",
-            });
-          });
-        }
-
         if (notes.length === 0) {
-          console.log("[ObelyskWallet] No notes found in IndexedDB - either never deposited or data was cleared");
           setPrivacyPoolBalance(0);
           setStaleNotesCount(0);
           setLocalNotesBalance(0);
@@ -276,7 +263,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
             if (proof !== null) {
               return { verified: true, amount: note.denomination };
             }
-            console.warn("[ObelyskWallet] Note not found on-chain:", note.commitment.slice(0, 16) + "...");
             return { verified: false, amount: note.denomination };
           } catch (err) {
             // If RPC fails, trust local note (graceful degradation)
@@ -289,11 +275,10 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         const verifiedBalance = results.filter(r => r.verified).reduce((sum, r) => sum + r.amount, 0);
         const staleCount = results.filter(r => !r.verified).length;
 
-        console.log("[ObelyskWallet] Privacy Pool balance (verified):", verifiedBalance, "from", notes.length, "notes,", staleCount, "stale");
         setPrivacyPoolBalance(verifiedBalance);
         setStaleNotesCount(staleCount);
       } catch (error) {
-        console.error("[ObelyskWallet] Failed to load privacy pool balance:", error);
+        console.error("[ObelyskWallet] Failed to load privacy pool balance:", error instanceof Error ? error.message : "Unknown error");
         setPrivacyPoolBalance(0);
       }
     };
@@ -319,14 +304,12 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         if (proof === null) {
           await deleteNote(note.commitment);
           cleared++;
-          console.log("[ObelyskWallet] Cleared stale note:", note.commitment.slice(0, 16) + "...");
         }
       } catch {
         // Keep note if RPC unavailable
       }
     }
 
-    console.log("[ObelyskWallet] Cleared", cleared, "stale notes");
     setStaleNotesCount(0);
     // Trigger balance refresh
     setPrivacyPoolBalance(0);
@@ -402,25 +385,15 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
     decryptedNotes: DecryptedNote[];
     publicKey: ECPoint;
   }> => {
-    console.log("[ObelyskWallet] Starting ElGamal reveal process...");
-
     try {
       // Initialize keys if they don't exist
       if (!hasLocalKeys) {
-        console.log("[ObelyskWallet] No keys found, initializing...");
         await initLocalKeys();
       }
 
       // Perform full ElGamal decryption - this triggers wallet signature popup
       // and returns cryptographic proof of decryption
-      console.log("[ObelyskWallet] Requesting wallet signature for ElGamal decryption...");
       const result = await revealWithDecryption();
-
-      console.log("[ObelyskWallet] ElGamal decryption complete:", {
-        totalBalance: result.totalBalance.toString(),
-        noteCount: result.decryptedNotes.length,
-        publicKey: `0x${result.publicKey.x.toString(16).slice(0, 16)}...`,
-      });
 
       // Store the decryption result for UI display
       setDecryptionResult({
@@ -438,7 +411,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       // Return result for the modal to use
       return result;
     } catch (error) {
-      console.error("[ObelyskWallet] ElGamal reveal failed - user may have rejected signature:", error);
+      console.error("[ObelyskWallet] ElGamal reveal failed:", error instanceof Error ? error.message : "Unknown error");
       throw error;
     }
   }, [hasLocalKeys, initLocalKeys, revealWithDecryption]);
@@ -487,8 +460,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
 
     setProvingState("proving");
     const startTime = Date.now();
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-    const provider = new RpcProvider({ nodeUrl: rpcUrl });
+    const walletNetwork: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+    const provider = new RpcProvider({ nodeUrl: getRpcUrl(walletNetwork) });
 
     try {
       // Use SDK to claim rewards (which handles the rollover to private)
@@ -505,7 +478,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         let finalStatus = "confirmed";
 
         if (txHash) {
-          console.log("[Rollover] Waiting for confirmation:", txHash);
           const receipt = await provider.waitForTransaction(txHash, {
             retryInterval: 2000,
           });
@@ -515,7 +487,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
             throw new Error("Rollover transaction reverted");
           }
 
-          console.log("[Rollover] Confirmed:", receiptAny.finality_status);
         }
 
         // Add transaction
@@ -555,7 +526,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         setProvingTime(proofTimeMs);
 
         setProvingState("confirming");
-        console.log("[Rollover] Waiting for confirmation:", txHash);
 
         // Wait for actual transaction confirmation
         const receipt = await provider.waitForTransaction(txHash, {
@@ -566,8 +536,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         if (receiptAny.execution_status === "REVERTED") {
           throw new Error("Rollover transaction reverted");
         }
-
-        console.log("[Rollover] Confirmed:", receiptAny.finality_status);
 
         // Add transaction
         const newTx: ObelyskTransaction = {
@@ -590,7 +558,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         throw new Error("No claim method available - wallet not connected or SDK not ready");
       }
     } catch (error) {
-      console.error("[Rollover] Failed:", error);
+      console.error("[Rollover] Failed:", error instanceof Error ? error.message : "Unknown error");
       setProvingState("error");
       throw error;
     }
@@ -613,8 +581,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
 
     setProvingState("proving");
     const startTime = Date.now();
-    const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-    const provider = new RpcProvider({ nodeUrl: rpcUrl });
+    const ragequitNetwork: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+    const provider = new RpcProvider({ nodeUrl: getRpcUrl(ragequitNetwork) });
 
     try {
       // Get user's unspent notes from IndexedDB
@@ -623,8 +591,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       if (notes.length === 0) {
         throw new Error("No notes found to ragequit. Balance may already be withdrawn.");
       }
-
-      console.log(`[Ragequit] Processing ${notes.length} notes for emergency withdrawal`);
 
       const proofTimeMs = Date.now() - startTime;
       setProvingTime(proofTimeMs);
@@ -638,7 +604,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
 
       // Process the first note for ragequit (process one at a time for safety)
       const note = notes[0];
-      console.log("[Ragequit] Processing note:", note.commitment);
 
       // Generate Merkle proof on-chain (no backend needed)
       const tokenSymbol = note.tokenSymbol || "SAGE";
@@ -664,7 +629,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       // Sign the ragequit request with the depositor's wallet
       // This proves ownership of the deposit
       const messageToSign = {
-        domain: { name: "Obelysk Ragequit", version: "1", chainId: "SN_SEPOLIA" },
+        domain: { name: "Obelysk Ragequit", version: "1", chainId: getStarknetChainId() },
         types: {
           StarkNetDomain: [{ name: "name", type: "felt" }, { name: "version", type: "felt" }, { name: "chainId", type: "felt" }],
           Ragequit: [{ name: "commitment", type: "felt" }, { name: "recipient", type: "felt" }],
@@ -680,9 +645,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         if (sigArray.length >= 2) {
           signature = [sigArray[0], sigArray[1]];
         }
-        console.log("[Ragequit] Depositor signature obtained");
       } catch (sigError) {
-        console.warn("[Ragequit] Could not sign ragequit message:", sigError);
+        console.warn("[Ragequit] Could not sign ragequit message:", sigError instanceof Error ? sigError.message : "Unknown error");
       }
 
       // Build the PPRagequitProof struct
@@ -707,11 +671,9 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       };
 
       // Execute the transaction
-      console.log("[Ragequit] Submitting emergency withdrawal...");
       const result = await account.execute([withdrawCall]);
       const txHash = result.transaction_hash;
 
-      console.log("[Ragequit] Transaction submitted:", txHash);
       setProvingState("confirming");
 
       // Wait for actual transaction confirmation
@@ -724,8 +686,6 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       if (receiptAny.execution_status === "REVERTED") {
         throw new Error("Ragequit transaction reverted. You may need to wait for the timelock period.");
       }
-
-      console.log("[Ragequit] Transaction confirmed:", receiptAny.finality_status);
 
       // Mark notes as spent
       for (const note of notes) {
@@ -753,7 +713,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       refetchSageBalance();
 
     } catch (error) {
-      console.error("[Ragequit] Failed:", error);
+      console.error("[Ragequit] Failed:", error instanceof Error ? error.message : "Unknown error");
       setProvingState("error");
       throw error;
     }

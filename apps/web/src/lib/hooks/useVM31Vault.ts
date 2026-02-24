@@ -585,7 +585,7 @@ export function useVM31Vault() {
                   );
                 }
               } catch (err) {
-                console.warn("[VM31] Merkle path fetch failed for", note.commitment, ":", err instanceof Error ? err.message : err);
+                console.warn("[VM31] Merkle path fetch failed:", err instanceof Error ? err.message : "unknown error");
               }
             }
           } else if (status.status === "proving") {
@@ -606,7 +606,7 @@ export function useVM31Vault() {
             if (batchPollRef.current) clearInterval(batchPollRef.current);
           }
         } catch (err) {
-          console.warn("[VM31] Batch poll error:", err instanceof Error ? err.message : err);
+          console.warn("[VM31] Batch poll error:", err instanceof Error ? err.message : "unknown error");
         }
       }, 5_000);
     },

@@ -378,11 +378,8 @@ function SendPageInner() {
         // ============================================
         // PRIVATE SEND - Uses real ZK proofs on-chain
         // ============================================
-        console.log("🔐 [Private Send] Starting with amount:", amount);
-
         // 1. Ensure privacy keys are derived
         if (!isKeysDerived) {
-          console.log("Deriving privacy keys for private send...");
           await derivePrivacyKeys();
         }
 
@@ -400,20 +397,12 @@ function SendPageInner() {
         // Use the smallest note that covers the amount
         const note = notes.sort((a, b) => a.denomination - b.denomination)[0];
 
-        console.log("📝 [Private Send] Using note:", {
-          commitment: note.commitment.slice(0, 10) + "...",
-          denomination: note.denomination,
-          leafIndex: note.leafIndex,
-        });
-
         // 3. Execute withdrawal with recipient address
         // This generates real ZK proofs:
         // - Derives nullifier = H(nullifier_secret, leaf_index)
         // - Fetches Merkle proof from backend
         // - Submits on-chain withdrawal to PrivacyPools contract
         const txHash = await withdraw(note, recipient);
-
-        console.log("✅ [Private Send] Complete! TxHash:", txHash);
 
         // Store proof data for display
         setPrivateSendTxHash(txHash);
@@ -494,7 +483,7 @@ function SendPageInner() {
         }, 2000);
       }
     } catch (error) {
-      console.error("Send failed:", error);
+      console.error("Send failed:", error instanceof Error ? error.message : "unknown error");
       toast.error(error instanceof Error ? error.message : "Send failed");
     } finally {
       setIsSending(false);

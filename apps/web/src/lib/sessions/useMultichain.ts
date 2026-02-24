@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAccount } from '@starknet-react/core';
+import { getStarknetChainId } from '@/lib/contracts/addresses';
 import {
   ChainType,
   CrossChainSessionMessage,
@@ -318,7 +319,7 @@ export function useCrossChainSession() {
   ): Promise<boolean> => {
     return verifyMultichainSignature(message, signature, expectedAddress, {
       ethereumChainId: ethWallet.chainId || 1,
-      starknetChainId: 'SN_SEPOLIA',
+      starknetChainId: getStarknetChainId(),
     });
   }, [ethWallet.chainId]);
 
@@ -452,7 +453,7 @@ export function useBridgeAuthorization() {
         domain: {
           name: 'BitSage Bridge',
           version: '1',
-          chainId: 'SN_SEPOLIA',
+          chainId: getStarknetChainId(),
         },
         types: {
           StarkNetDomain: [
