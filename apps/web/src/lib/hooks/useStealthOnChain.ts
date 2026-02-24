@@ -188,27 +188,26 @@ async function fetchMetaAddress(
   const provider = new RpcProvider({ nodeUrl: rpcUrl });
 
   try {
-    const hasResult = await provider.callContract({
-      contractAddress: registryAddress,
-      entrypoint: "has_meta_address",
-      calldata: [userAddress],
-    });
+    const hasResult = await provider.callContract(
+      { contractAddress: registryAddress, entrypoint: "has_meta_address", calldata: [userAddress] },
+      "latest",
+    );
 
     const hasMetaAddress = hasResult[0] !== "0x0";
     if (!hasMetaAddress) return null;
 
-    const result = await provider.callContract({
-      contractAddress: registryAddress,
-      entrypoint: "get_meta_address",
-      calldata: [userAddress],
-    });
+    const result = await provider.callContract(
+      { contractAddress: registryAddress, entrypoint: "get_meta_address", calldata: [userAddress] },
+      "latest",
+    );
 
     // StealthMetaAddress struct: spending_pubkey(x,y), viewing_pubkey(x,y), scheme_id
     return {
       spending_pub_key: result[0] || "0x0",
       viewing_pub_key: result[2] || "0x0",
     };
-  } catch {
+  } catch (err) {
+    console.error("[Stealth] fetchMetaAddress error:", err);
     return null;
   }
 }
@@ -227,14 +226,17 @@ async function fetchAnnouncement(
   try {
     // announcement_index is u256, serialize as (low, high)
     const idxBig = BigInt(announcementIndex);
-    const result = await provider.callContract({
-      contractAddress: registryAddress,
-      entrypoint: "get_announcement",
-      calldata: [
-        "0x" + (idxBig & BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).toString(16),
-        "0x" + (idxBig >> 128n).toString(16),
-      ],
-    });
+    const result = await provider.callContract(
+      {
+        contractAddress: registryAddress,
+        entrypoint: "get_announcement",
+        calldata: [
+          "0x" + (idxBig & BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).toString(16),
+          "0x" + (idxBig >> 128n).toString(16),
+        ],
+      },
+      "latest",
+    );
 
     // StealthPaymentAnnouncement struct layout:
     // ephemeral_pubkey(x,y), stealth_address, encrypted_amount(c1_x, c1_y, c2_x, c2_y),
@@ -320,6 +322,36 @@ export function useStealthOnChain(address: string | undefined) {
   });
 
   // ========================================================================
+  // Register meta-address mutation
+  // ========================================================================
+  const registerMutation = useMutation({
+    mutationFn: async (params: { spendingPubKey: ECPoint; viewingPubKey: ECPoint }) => {
+      if (!account) throw new Error("Wallet not connected");
+      if (!registryDeployed) throw new Error("Stealth Registry not deployed on this network");
+
+      const tx = await sendAsync([
+        {
+          contractAddress: registryAddress,
+          entrypoint: "register_meta_address",
+          calldata: [
+            // spending_pubkey: ECPoint (x, y)
+            "0x" + params.spendingPubKey.x.toString(16),
+            "0x" + params.spendingPubKey.y.toString(16),
+            // viewing_pubkey: ECPoint (x, y)
+            "0x" + params.viewingPubKey.x.toString(16),
+            "0x" + params.viewingPubKey.y.toString(16),
+          ],
+        },
+      ]);
+      console.log("[Stealth] Register meta-address TX:", tx.transaction_hash);
+      return tx.transaction_hash;
+    },
+    onSuccess: () => {
+      metaAddressQuery.refetch();
+    },
+  });
+
+  // ========================================================================
   // Claim mutation — builds Schnorr spending proofs and submits tx
   // ========================================================================
   const claimMutation = useMutation({
@@ -329,6 +361,10 @@ export function useStealthOnChain(address: string | undefined) {
       if (params.paymentIds.length === 0) throw new Error("No payments to claim");
 
       const recipient = params.recipient || params.address;
+      // Validate recipient address format
+      if (!/^0x[a-fA-F0-9]{1,64}$/.test(recipient) || /^0x0+$/.test(recipient)) {
+        throw new Error("Invalid recipient address format");
+      }
 
       // For each payment, fetch announcement and build spending proof
       const proofs: StealthSpendingProof[] = [];
@@ -447,6 +483,8 @@ export function useStealthOnChain(address: string | undefined) {
     claim: claimMutation.mutate,
     isClaiming: claimMutation.isPending,
     claimResult: claimMutation.data,
+    register: registerMutation.mutateAsync,
+    isRegistering: registerMutation.isPending,
     registryDeployed,
     refetch: () => {
       metaAddressQuery.refetch();

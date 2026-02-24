@@ -203,10 +203,10 @@ export default function HomePage() {
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider mb-3">Privacy Features</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Privacy Pools", href: "/wallet/privacy-pool", icon: Layers, color: "text-teal-400", bg: "bg-teal-500/10 border-teal-500/20" },
-            { label: "Stealth Payments", href: "/wallet/stealth", icon: EyeOff, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
-            { label: "BTC Vault", href: "/wallet/btc-vault", icon: Bitcoin, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
-            { label: "Dark Pool", href: "/darkpool", icon: Shield, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
+            { label: "Privacy Pools", href: "/vault/privacy-pool", icon: Layers, color: "text-teal-400", bg: "bg-teal-500/10 border-teal-500/20" },
+            { label: "Stealth Payments", href: "/vault/stealth", icon: EyeOff, color: "text-indigo-400", bg: "bg-indigo-500/10 border-indigo-500/20" },
+            { label: "BTC Vault", href: "/vault/btc-vault", icon: Bitcoin, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
+            { label: "Dark Pool", href: "/trade/darkpool", icon: Shield, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20" },
           ].map((item) => (
             <Link
               key={item.label}

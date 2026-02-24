@@ -168,7 +168,7 @@ app.post("/v1/audit/upload", checkAuth, rateLimit, async (req, res) => {
 
     if (!irysRes.ok) {
       console.error(`[AuditRelay] Irys upload failed (${irysRes.status}): ${irysText.slice(0, 200)}`);
-      return res.status(502).json({ error: "Irys upload failed", detail: irysText.slice(0, 200) });
+      return res.status(502).json({ error: "Audit data upload failed" });
     }
 
     // Parse tx_id from response

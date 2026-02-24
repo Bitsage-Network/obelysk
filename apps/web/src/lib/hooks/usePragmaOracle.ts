@@ -108,6 +108,7 @@ export function usePragmaPrice(
     const numSources = Number(numSourcesRaw);
 
     if (!Number.isFinite(price) || !Number.isFinite(decimals)) return null;
+    if (decimals < 0 || decimals > 30) return null; // Guard against absurd decimals causing Infinity
     if (!Number.isFinite(lastUpdatedTimestamp) || !Number.isFinite(numSources)) return null;
 
     // Convert price to human-readable (typically 8 decimals from Pragma)

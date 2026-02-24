@@ -256,7 +256,7 @@ export function CopyableHash({
 
   const getExplorerUrl = () => {
     if (explorerUrl) return explorerUrl;
-    const base = "https://sepolia.starkscan.co";
+    const base = "https://sepolia.voyager.online";
     switch (type) {
       case "tx":
         return `${base}/tx/${hash}`;

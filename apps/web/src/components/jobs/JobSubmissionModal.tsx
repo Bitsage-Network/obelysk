@@ -708,7 +708,7 @@ export function JobSubmissionModal({ isOpen, onClose, onSuccess }: JobSubmission
                 </p>
                 {txHash && (
                   <a
-                    href={`https://sepolia.starkscan.co/tx/${txHash}`}
+                    href={`https://sepolia.voyager.online/tx/${txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-brand-400 hover:text-brand-300 text-sm underline"
