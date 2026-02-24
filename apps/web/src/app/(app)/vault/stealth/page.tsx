@@ -252,23 +252,21 @@ export default function StealthAddressesPage() {
         </Link>
       </motion.div>
 
-      {/* ── Registry Not Deployed Banner ── */}
-      {!registryDeployed && (
+      {/* ── Registry Status ── */}
+      {registryDeployed && (
         <motion.div
           variants={stagger.item}
-          className="relative overflow-hidden rounded-2xl border border-amber-500/15 bg-gradient-to-r from-amber-950/20 to-surface-card/90 p-4"
+          className="relative overflow-hidden rounded-xl border border-white/[0.04] bg-black/20 px-4 py-3 flex items-center justify-between text-xs"
         >
-          <div className="absolute -top-12 -left-12 w-24 h-24 bg-amber-500/8 rounded-full blur-2xl pointer-events-none" />
-          <div className="relative flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-amber-300 tracking-tight">Stealth Registry Pending Deployment</p>
-              <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-                The StealthRegistry contract is awaiting compilation and deployment to Sepolia.
-                Once live, you can register your meta-address, receive stealth payments, and scan for incoming transfers.
-              </p>
-            </div>
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-50" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
+            </span>
+            <span className="text-gray-500 font-medium">Stealth Registry</span>
+            <span className="text-emerald-400/70 font-mono">Live on Sepolia</span>
           </div>
+          <span className="text-[10px] text-gray-600 font-mono">STRK</span>
         </motion.div>
       )}
 
@@ -359,7 +357,7 @@ export default function StealthAddressesPage() {
             </p>
 
             {/* Registration prompt when connected but not registered */}
-            {address && !isRegistered && !isLoading && registryDeployed && (
+            {address && !isRegistered && !isLoading && (
               <div className="rounded-xl border border-indigo-500/15 bg-indigo-500/[0.04] p-4 space-y-3">
                 <div className="flex items-start gap-3">
                   <Key className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
