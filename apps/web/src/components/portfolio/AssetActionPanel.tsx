@@ -28,11 +28,11 @@ interface AssetActionPanelProps {
 }
 
 const actions = [
-  { label: "Swap", icon: ArrowLeftRight, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", route: (s: string) => `/swap?token=${s}` },
-  { label: "Shield", icon: Shield, color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20", route: (s: string) => s === "wBTC" ? "/wallet/btc-vault" : `/wallet/privacy-pool?asset=${s}` },
+  { label: "Swap", icon: ArrowLeftRight, color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", route: (s: string) => `/trade/swap?token=${s}` },
+  { label: "Shield", icon: Shield, color: "text-violet-400", bg: "bg-violet-500/10 border-violet-500/20", route: (s: string) => s === "wBTC" ? "/vault/btc-vault" : `/vault/privacy-pool?asset=${s}` },
   { label: "Send", icon: Send, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", route: (s: string) => `/send?asset=${s}` },
   { label: "Bridge", icon: ArrowUpDown, color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20", route: (s: string) => `/bridge?token=${s}` },
-  { label: "Dark Pool", icon: Shield, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20", route: (s: string) => `/darkpool?pair=${s}_USDC` },
+  { label: "Dark Pool", icon: Shield, color: "text-cyan-400", bg: "bg-cyan-500/10 border-cyan-500/20", route: (s: string) => `/trade/darkpool?pair=${s}_USDC` },
 ];
 
 export function AssetActionPanel({

@@ -7,9 +7,12 @@
  * operations with a clear breakdown of what's on-chain vs. hidden.
  *
  * Phases: review -> signing -> executing -> confirmed | error
+ *
+ * Supports minimizing to a floating pill during signing/executing so
+ * the user can continue using the app while the transaction processes.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Shield,
@@ -27,6 +30,8 @@ import {
   Gavel,
   Send,
   Fingerprint,
+  Minimize2,
+  Maximize2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
@@ -96,6 +101,95 @@ const OPERATION_COLORS: Record<string, { text: string; bg: string; border: strin
   transfer: { text: "text-fuchsia-400", bg: "bg-fuchsia-500/10", border: "border-fuchsia-500/20" },
 };
 
+const OPERATION_LABELS: Record<string, string> = {
+  deposit: "Depositing",
+  withdraw: "Withdrawing",
+  swap: "Swapping",
+  commit: "Committing",
+  reveal: "Revealing",
+  settle: "Settling",
+  claim: "Claiming",
+  transfer: "Transferring",
+};
+
+// ============================================================================
+// FLOATING PILL (minimized state)
+// ============================================================================
+
+function FloatingPill({
+  operationType,
+  phase,
+  elapsedSeconds,
+  onExpand,
+}: {
+  operationType: string;
+  phase: ReviewPhase;
+  elapsedSeconds: number;
+  onExpand: () => void;
+}) {
+  const OpIcon = OPERATION_ICONS[operationType] || Shield;
+  const colors = OPERATION_COLORS[operationType] || OPERATION_COLORS.deposit;
+  const label = OPERATION_LABELS[operationType] || "Processing";
+
+  const statusText = phase === "signing"
+    ? "Signing..."
+    : elapsedSeconds < 5
+      ? "Proving..."
+      : elapsedSeconds < 15
+        ? "Submitting..."
+        : "Confirming...";
+
+  const elapsed = `${Math.floor(elapsedSeconds / 60)}:${(elapsedSeconds % 60).toString().padStart(2, "0")}`;
+
+  return (
+    <motion.button
+      initial={{ opacity: 0, y: 20, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: 20, scale: 0.9 }}
+      transition={{ type: "spring", duration: 0.4 }}
+      onClick={onExpand}
+      className={cn(
+        "fixed bottom-6 right-6 z-50",
+        "flex items-center gap-3 px-4 py-3 rounded-2xl",
+        "bg-gray-900/95 backdrop-blur-xl border border-white/10",
+        "shadow-2xl shadow-black/40",
+        "hover:border-white/20 hover:shadow-black/50",
+        "transition-all cursor-pointer group",
+      )}
+    >
+      {/* Pulsing indicator */}
+      <div className="relative">
+        <div className={cn("w-9 h-9 rounded-xl flex items-center justify-center border", colors.bg, colors.border)}>
+          <OpIcon className={cn("w-4 h-4", colors.text)} />
+        </div>
+        <motion.div
+          className={cn("absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full", phase === "signing" ? "bg-violet-400" : "bg-cyan-400")}
+          animate={{ scale: [1, 1.3, 1], opacity: [1, 0.6, 1] }}
+          transition={{ duration: 1.5, repeat: Infinity }}
+        />
+      </div>
+
+      {/* Status text */}
+      <div className="flex flex-col items-start">
+        <span className="text-xs font-medium text-white leading-tight">
+          {label}
+        </span>
+        <span className="text-[10px] text-gray-400 leading-tight">
+          {statusText}
+        </span>
+      </div>
+
+      {/* Elapsed time */}
+      <span className="text-xs text-gray-500 font-mono tabular-nums ml-1">
+        {elapsed}
+      </span>
+
+      {/* Expand icon */}
+      <Maximize2 className="w-3.5 h-3.5 text-gray-500 group-hover:text-white transition-colors ml-1" />
+    </motion.button>
+  );
+}
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -116,9 +210,36 @@ export function PrivacyTransactionReviewModal({
   const [phase, setPhase] = useState<ReviewPhase>("review");
   const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [minimized, setMinimized] = useState(false);
 
   const OpIcon = OPERATION_ICONS[operationType] || Shield;
   const colors = OPERATION_COLORS[operationType] || OPERATION_COLORS.deposit;
+
+  // Track elapsed time during signing + execution
+  const executingStartRef = useRef<number>(0);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (phase === "signing" || phase === "executing") {
+      if (executingStartRef.current === 0) {
+        executingStartRef.current = Date.now();
+      }
+      const interval = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - executingStartRef.current) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setElapsedSeconds(0);
+      executingStartRef.current = 0;
+    }
+  }, [phase]);
+
+  // Auto-expand when phase changes to confirmed or error
+  useEffect(() => {
+    if (phase === "confirmed" || phase === "error") {
+      setMinimized(false);
+    }
+  }, [phase]);
 
   const handleSign = async () => {
     setPhase("signing");
@@ -129,7 +250,11 @@ export function PrivacyTransactionReviewModal({
       setTxHash(hash);
       setPhase("confirmed");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Transaction failed");
+      const msg = err instanceof Error ? err.message : String(err);
+      // Extract meaningful error from nested Starknet RPC errors
+      const treeProofMatch = msg.match(/"Invalid[^"]*"/);
+      const executionMatch = msg.match(/"error":"([^"]+)"/);
+      setError(treeProofMatch?.[0]?.replace(/"/g, '') || executionMatch?.[1] || msg);
       setPhase("error");
     }
   };
@@ -138,7 +263,16 @@ export function PrivacyTransactionReviewModal({
     setPhase("review");
     setTxHash(null);
     setError(null);
+    setMinimized(false);
     onClose();
+  };
+
+  const handleMinimize = () => {
+    setMinimized(true);
+  };
+
+  const handleExpand = () => {
+    setMinimized(false);
   };
 
   const handleRetry = () => {
@@ -147,6 +281,20 @@ export function PrivacyTransactionReviewModal({
   };
 
   if (!isOpen) return null;
+
+  // Render floating pill when minimized during active phases
+  if (minimized && (phase === "signing" || phase === "executing")) {
+    return (
+      <AnimatePresence>
+        <FloatingPill
+          operationType={operationType}
+          phase={phase}
+          elapsedSeconds={elapsedSeconds}
+          onExpand={handleExpand}
+        />
+      </AnimatePresence>
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -163,7 +311,7 @@ export function PrivacyTransactionReviewModal({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-            onClick={phase === "review" || phase === "confirmed" || phase === "error" ? handleClose : undefined}
+            onClick={(phase === "signing" || phase === "executing") ? handleMinimize : handleClose}
           />
 
           {/* Modal */}
@@ -345,6 +493,18 @@ export function PrivacyTransactionReviewModal({
                   <p className="text-sm text-gray-500 mt-2">
                     Please confirm the transaction in your wallet...
                   </p>
+                  <div className="mt-6 flex items-center justify-center gap-3">
+                    <button
+                      onClick={handleMinimize}
+                      className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                      Minimize
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-2">
+                    Continue browsing while you sign
+                  </p>
                 </motion.div>
               )}
 
@@ -357,7 +517,7 @@ export function PrivacyTransactionReviewModal({
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="px-6 py-12 text-center"
+                  className="px-6 py-10 text-center"
                 >
                   <motion.div
                     animate={{ scale: [1, 1.1, 1] }}
@@ -367,21 +527,42 @@ export function PrivacyTransactionReviewModal({
                     <Shield className="w-12 h-12 text-cyan-400" />
                   </motion.div>
                   <h3 className="text-lg font-semibold text-white mt-4">
-                    Transaction Submitted
+                    Processing Transaction
                   </h3>
                   <p className="text-sm text-gray-500 mt-2">
-                    Waiting for on-chain confirmation...
+                    {elapsedSeconds < 5
+                      ? "Generating proof & estimating fees..."
+                      : elapsedSeconds < 15
+                      ? "Submitting to network..."
+                      : "Waiting for on-chain confirmation..."}
                   </p>
-                  <div className="mt-4 flex justify-center">
-                    <div className="h-1 w-32 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="mt-3 flex justify-center">
+                    <span className="text-xs text-gray-600 font-mono tabular-nums">
+                      {Math.floor(elapsedSeconds / 60)}:{(elapsedSeconds % 60).toString().padStart(2, "0")} elapsed
+                    </span>
+                  </div>
+                  <div className="mt-3 flex justify-center">
+                    <div className="h-1 w-40 bg-gray-800 rounded-full overflow-hidden">
                       <motion.div
                         className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full"
                         initial={{ width: "5%" }}
                         animate={{ width: "90%" }}
-                        transition={{ duration: 8, ease: "easeOut" }}
+                        transition={{ duration: 20, ease: "easeOut" }}
                       />
                     </div>
                   </div>
+                  <div className="mt-6 flex items-center justify-center gap-3">
+                    <button
+                      onClick={handleMinimize}
+                      className="px-5 py-2.5 rounded-xl text-sm font-medium text-gray-300 bg-white/5 hover:bg-white/10 border border-white/10 transition-colors flex items-center gap-2"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                      Minimize
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-2">
+                    Transaction continues in the background
+                  </p>
                 </motion.div>
               )}
 

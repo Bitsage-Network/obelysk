@@ -502,11 +502,11 @@ function StakePageInner({
           </p>
         </div>
         <Link
-          href="/wallet"
+          href="/vault"
           className="flex items-center gap-2 px-4 py-2 text-sm text-brand-400 hover:text-brand-300 border border-brand-500/30 rounded-xl hover:bg-brand-500/10 transition-colors"
         >
           <Wallet className="w-4 h-4" />
-          Obelysk Wallet
+          Privacy Vault
         </Link>
       </div>
 
@@ -544,7 +544,7 @@ function StakePageInner({
               </div>
             </div>
             <Link
-              href="/wallet"
+              href="/vault/privacy-pool"
               className="text-sm text-brand-400 hover:underline"
             >
               Rollover to Private →

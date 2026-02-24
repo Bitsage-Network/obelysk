@@ -5,24 +5,23 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  Home,
+  LayoutDashboard,
   Shield,
-  ArrowLeftRight,
+  TrendingUp,
   Send,
   MoreHorizontal,
   Landmark,
   ArrowUpDown,
-  BookOpen,
   ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
 
-// Primary nav items (shown in both desktop header and mobile bottom bar)
+// Primary nav: Portfolio, Vault, Trade, Send, More
 const primaryNav = [
-  { title: "Home", href: "/home", icon: Home },
-  { title: "Dark Pool", href: "/darkpool", icon: Shield },
-  { title: "Swap", href: "/swap", icon: ArrowLeftRight },
+  { title: "Portfolio", href: "/home", icon: LayoutDashboard },
+  { title: "Vault", href: "/vault", icon: Shield },
+  { title: "Trade", href: "/trade", icon: TrendingUp },
   { title: "Send", href: "/send", icon: Send },
 ] as const;
 
@@ -30,7 +29,6 @@ const primaryNav = [
 const moreItems = [
   { title: "Stake", href: "/stake", icon: Landmark },
   { title: "Bridge", href: "/bridge", icon: ArrowUpDown },
-  { title: "Orderbook", href: "/trade", icon: BookOpen },
   {
     title: "Validator",
     href: "https://validator.bitsage.network",
@@ -53,7 +51,6 @@ function MoreMenu({
   useEffect(() => {
     if (!isOpen) return;
     const handleClick = (e: MouseEvent) => {
-      // Skip if this menu instance is inside a hidden parent (display:none)
       if (!ref.current || ref.current.offsetParent === null) return;
       if (!ref.current.contains(e.target as Node)) {
         onClose();
@@ -122,10 +119,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
 
-  // Check if any "More" item is active (to highlight the More button)
   const isMoreActive = moreItems.some(
     (item) => !("external" in item && item.external) && pathname.startsWith(item.href)
   );
+
+  // Check active state for nav items — match on prefix for sections with sub-routes
+  const isNavActive = (href: string) => {
+    if (href === "/home") return pathname === "/home";
+    return pathname.startsWith(href);
+  };
 
   return (
     <div className="min-h-screen bg-surface-dark">
@@ -152,7 +154,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               {/* Desktop Navigation */}
               <nav className="flex items-center gap-1">
                 {primaryNav.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                  const isActive = isNavActive(item.href);
 
                   return (
                     <Link
@@ -192,13 +194,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
             {/* Right side */}
             <div className="flex items-center gap-3">
-              {/* Privacy Mode Badge */}
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
                 <Shield className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="text-xs text-emerald-400 font-medium">Privacy Mode</span>
               </div>
-
-              {/* Wallet Connect Button */}
               <ConnectWalletButton />
             </div>
           </div>
@@ -240,7 +239,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-dark/95 backdrop-blur-xl border-t border-surface-border">
         <div className="flex items-center justify-around px-1 sm:px-4 py-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
           {primaryNav.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+            const isActive = isNavActive(item.href);
 
             return (
               <Link

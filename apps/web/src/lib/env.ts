@@ -196,7 +196,7 @@ export function getEnvConfig(): EnvConfig {
 
   // For mainnet, prefer NEXT_PUBLIC_MAINNET_RPC_URL, fall back to NEXT_PUBLIC_RPC_URL
   const rpcUrl = isMainnet
-    ? (getEnv('NEXT_PUBLIC_MAINNET_RPC_URL') || getEnv('NEXT_PUBLIC_RPC_URL') || 'https://starknet-mainnet.public.blastapi.io')
+    ? (getEnv('NEXT_PUBLIC_MAINNET_RPC_URL') || getEnv('NEXT_PUBLIC_RPC_URL') || (() => { throw new Error('NEXT_PUBLIC_MAINNET_RPC_URL is required for mainnet — do not use public endpoints in production'); })())
     : (getEnv('NEXT_PUBLIC_RPC_URL') || 'https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo');
 
   return {

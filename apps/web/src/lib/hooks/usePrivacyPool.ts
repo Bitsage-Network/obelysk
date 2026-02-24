@@ -693,6 +693,26 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         console.log("✅ [Sending] Transaction submitted:", txHash);
 
         // ==============================
+        // SAVE NOTE IMMEDIATELY (before waiting for confirmation)
+        // This prevents note loss if the page is closed/refreshed during confirmation.
+        // If the tx later reverts, the note will be cleaned up.
+        // ==============================
+        const privacyNote: PrivacyNote = {
+          denomination,
+          commitment: commitmentFelt,
+          nullifierSecret: nullifierSecret.toString(),
+          blinding: noteData.blinding.toString(),
+          leafIndex: 0,
+          depositTxHash: txHash,
+          createdAt: Date.now(),
+          spent: false,
+          tokenSymbol,
+        };
+
+        await saveNote(address, privacyNote);
+        console.log("💾 [Saved] Note persisted to IndexedDB (pre-confirmation)");
+
+        // ==============================
         // PHASE 3: CONFIRMING (wait for L2 confirmation)
         // ==============================
         setDepositState((prev) => ({
@@ -714,25 +734,12 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         const executionStatus = receiptAny.execution_status;
 
         if (executionStatus === "REVERTED" || executionStatus === "REJECTED") {
+          // Transaction failed on-chain — mark the optimistic note as spent so it's not shown
+          await markNoteSpent(commitmentFelt, `reverted:${txHash}`);
           throw new Error(`Transaction failed: ${executionStatus}`);
         }
 
         console.log("✅ [Confirming] Transaction confirmed:", finalityStatus);
-
-        // Store note locally
-        const privacyNote: PrivacyNote = {
-          denomination,
-          commitment: commitmentFelt,
-          nullifierSecret: nullifierSecret.toString(),
-          blinding: noteData.blinding.toString(),
-          leafIndex: 0,
-          depositTxHash: txHash,
-          createdAt: Date.now(),
-          spent: false,
-          tokenSymbol,
-        };
-
-        await saveNote(address, privacyNote);
 
         // Store proof data for display (leafIndex will be updated async)
         const initialProofData: ProofData = {
@@ -755,21 +762,20 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           isGeneratingProof: false,
         }));
 
-        // Fetch leafIndex in background and update proofData
-        fetchLeafIndexFromReceipt(txHash, commitmentFelt, poolAddress).then(async (leafIndex) => {
+        // Fetch leafIndex in background and update proofData (guarded against unmount)
+        try {
+          const leafIndex = await fetchLeafIndexFromReceipt(txHash, commitmentFelt, poolAddress);
           if (leafIndex !== null) {
             await updateNoteLeafIndex(commitmentFelt, leafIndex);
-            console.log("Note leafIndex updated:", leafIndex);
-            // Update proofData with actual leafIndex
             setDepositState((prev) => ({
               ...prev,
               proofData: prev.proofData ? { ...prev.proofData, leafIndex } : null,
             }));
             await refreshStats();
           }
-        }).catch((err) => {
-          console.error("Error fetching leafIndex:", err);
-        });
+        } catch (err) {
+          console.warn("[PrivacyPool] Error fetching leafIndex:", err instanceof Error ? err.message : err);
+        }
 
         console.log("🎉 [Confirmed] Deposit complete!");
 
@@ -867,8 +873,8 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         // ==============================
         setWithdrawState((prev) => ({ ...prev, proofProgress: 40 }));
 
-        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
-        const merkleProof = await fetchMerkleProofWithFallback(noteCommitment, network as any);
+        // Fetch Merkle proof — tries coordinator API first, falls back to on-chain LeanIMT
+        const merkleProof = await fetchMerkleProofWithFallback(noteCommitment, network as any, poolAddress);
 
         if (!merkleProof) {
           throw new Error(

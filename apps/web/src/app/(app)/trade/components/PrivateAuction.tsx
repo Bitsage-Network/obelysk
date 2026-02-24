@@ -491,6 +491,7 @@ function OrdersTable({
   orders,
   onCancel,
   onClaimFill,
+  onRefresh,
   explorerUrl,
   onReview,
 }: {
@@ -509,6 +510,7 @@ function OrdersTable({
   }>;
   onCancel: (orderId: bigint) => Promise<void>;
   onClaimFill: (orderId: bigint) => Promise<void>;
+  onRefresh: () => Promise<void>;
   explorerUrl: string;
   onReview: ReturnType<typeof usePrivacyTransactionReview>["review"];
 }) {
@@ -554,6 +556,13 @@ function OrdersTable({
             {orders.length} total
           </span>
         </h3>
+        <button
+          onClick={onRefresh}
+          className="p-2 rounded-lg hover:bg-white/5 text-gray-500 hover:text-white transition-colors"
+          title="Refresh order status from chain"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -849,6 +858,7 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
     relayMode,
     setRelayMode,
     relayConnected,
+    refreshOrders,
     resetError,
   } = useDarkPool();
 
@@ -921,6 +931,11 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
 
   const canCommit = phase === "commit" && !isSubmitting && !!address && !isWrongNetwork;
 
+  // Queued order: auto-submit when commit phase starts
+  const [queuedOrder, setQueuedOrder] = useState<{ price: number; amount: number; side: "buy" | "sell"; pair: TradingPairInfo } | null>(null);
+  const queuedOrderRef = useRef(queuedOrder);
+  queuedOrderRef.current = queuedOrder;
+
   // Auto-settle: when settle phase begins and user has revealed orders, trigger once per epoch.
   // Use a ref to survive remounts and track which epoch was already auto-settled.
   const autoSettledEpochRef = useRef<number>(-1);
@@ -956,6 +971,38 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
     const amount = parseFloat(amountInput);
     // C2: Explicit isFinite guard — parseFloat("abc") and parseFloat("") both return NaN
     if (!Number.isFinite(price) || !Number.isFinite(amount) || price <= 0 || amount <= 0) return;
+
+    // If not in commit phase, queue the order for auto-submit.
+    // Show a review modal so the user confirms before queueing — the auto-submit
+    // will then bypass the modal (commit windows are too short for a second review).
+    if (phase !== "commit") {
+      txReview.review({
+        operationType: "commit",
+        title: "Queue Sealed Order",
+        description: `${side.toUpperCase()} ${amount} ${selectedPair.giveSymbol} @ ${price} ${selectedPair.wantSymbol} — will auto-submit when Commit phase opens`,
+        details: [
+          { label: "Side", value: side.toUpperCase() },
+          { label: "Pair", value: selectedPair.label },
+          { label: "Price", value: `${price} ${selectedPair.wantSymbol}` },
+          { label: "Amount", value: `${amount} ${side === "sell" ? selectedPair.giveSymbol : selectedPair.wantSymbol}` },
+          { label: "Relay Mode", value: relayMode ? "Enabled (Identity Hidden)" : "Disabled" },
+          { label: "Submit", value: "Auto (next Commit phase)" },
+        ],
+        privacyInfo: {
+          identityHidden: relayMode,
+          amountHidden: true,
+          recipientHidden: true,
+          proofType: "Poseidon Commitment Hash",
+          whatIsOnChain: ["Order hash (Poseidon)"],
+          whatIsHidden: ["Price", "Amount", "Side (buy/sell)"],
+        },
+        onConfirm: async () => {
+          setQueuedOrder({ price, amount, side, pair: selectedPair });
+          return "";
+        },
+      });
+      return;
+    }
 
     // C4: Warn if oracle data is stale or circuit breaker tripped
     if (oracleRate?.isStale || oracleRate?.isCircuitBreakerTripped) {
@@ -996,6 +1043,29 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
       },
     });
   };
+
+  // Auto-submit queued order when commit phase starts.
+  // Bypasses the review modal — the user already confirmed when they queued.
+  // Calls submitOrder() directly to minimise delay (commit windows are short).
+  // Requires at least 5 blocks (~20s) remaining so the tx doesn't expire mid-flight.
+  const MIN_BLOCKS_FOR_AUTO_SUBMIT = 5;
+  useEffect(() => {
+    const blocksLeft = currentEpoch?.blocksRemaining ?? 0;
+    if (
+      phase === "commit" &&
+      queuedOrderRef.current &&
+      !isSubmitting &&
+      address &&
+      blocksLeft >= MIN_BLOCKS_FOR_AUTO_SUBMIT
+    ) {
+      const queued = queuedOrderRef.current;
+      setQueuedOrder(null);
+      // Submit immediately — no extra delay, commit windows are short
+      submitOrder(queued.price, queued.amount, queued.side, queued.pair)
+        .then(() => { setPriceInput(""); setAmountInput(""); })
+        .catch(() => {});
+    }
+  }, [phase, queuedOrder, isSubmitting, address, submitOrder, currentEpoch?.blocksRemaining]);
 
   // --------------------------------------------------------------------------
   // Render
@@ -1115,26 +1185,41 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
           >
             <div className="flex items-center gap-3">
               <motion.div
-                className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center"
-                animate={{ scale: [1, 1.08, 1] }}
+                className={cn(
+                  "w-10 h-10 rounded-xl border flex items-center justify-center",
+                  stage === "settled"
+                    ? "bg-emerald-500/10 border-emerald-500/20"
+                    : (stage === "waiting-reveal" || stage === "waiting-settle")
+                      ? "bg-emerald-500/10 border-emerald-500/20"
+                      : "bg-cyan-500/10 border-cyan-500/20"
+                )}
+                animate={(stage === "waiting-reveal" || stage === "waiting-settle" || stage === "settled") ? {} : { scale: [1, 1.08, 1] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
               >
-                {stage === "settled" ? (
+                {stage === "settled" || stage === "waiting-reveal" || stage === "waiting-settle" ? (
                   <CheckCircle2 className="w-5 h-5 text-emerald-400" />
                 ) : (
                   <Loader2 className="w-5 h-5 text-cyan-400 animate-spin" />
                 )}
               </motion.div>
               <div className="flex-1">
-                <div className="text-sm font-semibold text-white capitalize">
-                  {stage.replace("-", " ").replace("waiting ", "Waiting for ")}
+                <div className="text-sm font-semibold text-white">
+                  {stage === "building" && "Building Order"}
+                  {stage === "committing" && "Committing"}
+                  {stage === "waiting-reveal" && "Order Committed"}
+                  {stage === "revealing" && "Revealing"}
+                  {stage === "waiting-settle" && "Order Revealed"}
+                  {stage === "settling" && "Settling"}
+                  {stage === "settled" && "Settled"}
+                  {stage === "depositing" && "Depositing"}
+                  {stage === "withdrawing" && "Withdrawing"}
                 </div>
                 <div className="text-xs text-gray-500">
                   {stage === "building" && "Generating cryptographic proofs..."}
                   {stage === "committing" && "Submitting sealed order to network..."}
-                  {stage === "waiting-reveal" && "Your order is committed. Auto-reveal will trigger on phase change."}
+                  {stage === "waiting-reveal" && "Auto-reveal and settlement happen automatically. You can leave this page."}
                   {stage === "revealing" && "Opening your commitment on-chain..."}
-                  {stage === "waiting-settle" && "Order revealed. Waiting for batch settlement..."}
+                  {stage === "waiting-settle" && "Auto-settlement triggers next phase. You can leave this page."}
                   {stage === "settling" && "Triggering on-chain settlement..."}
                   {stage === "settled" && "Orders matched at uniform clearing price!"}
                   {stage === "depositing" && "Encrypting & depositing to vault..."}
@@ -1429,35 +1514,53 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
                 <Wallet className="w-4 h-4" />
                 Connect Wallet
               </button>
-            ) : (
-              <button
-                onClick={handleSubmitOrder}
-                disabled={!canCommit || !priceInput || !amountInput}
-                className={cn(
-                  "w-full py-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2.5 tracking-wide",
-                  side === "buy"
-                    ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-500/20 disabled:from-emerald-500/15 disabled:to-emerald-500/10 disabled:text-emerald-500/40 disabled:shadow-none"
-                    : "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg shadow-red-500/20 disabled:from-red-500/15 disabled:to-red-500/10 disabled:text-red-500/40 disabled:shadow-none",
-                )}
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    {stage === "building" ? "Generating proof..." : stage === "committing" ? "Committing..." : "Revealing..."}
-                  </>
-                ) : phase !== "commit" ? (
-                  <>
-                    <Timer className="w-4 h-4" />
-                    Wait for Commit Phase
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-4 h-4" />
-                    {side === "buy" ? "Buy" : "Sell"} — Commit Sealed Order
-                  </>
-                )}
-              </button>
-            )}
+            ) : queuedOrder ? (
+                <div className="space-y-2">
+                  <div className="w-full py-4 px-5 rounded-xl text-sm font-bold flex flex-col items-center gap-2 tracking-wide bg-gradient-to-r from-amber-600/20 to-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <div className="flex items-center gap-2.5">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Queued — auto-submitting when Commit phase opens
+                    </div>
+                    <span className="text-[10px] text-amber-400/60 font-mono font-normal">
+                      {queuedOrder.side.toUpperCase()} {queuedOrder.amount} {queuedOrder.pair.giveSymbol} @ {queuedOrder.price} {queuedOrder.pair.wantSymbol}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setQueuedOrder(null)}
+                    className="w-full py-2 rounded-lg text-xs font-medium text-gray-500 hover:text-gray-300 bg-white/[0.03] hover:bg-white/[0.06] transition-all"
+                  >
+                    Cancel queued order
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleSubmitOrder}
+                  disabled={isSubmitting || !priceInput || !amountInput || !address || isWrongNetwork}
+                  className={cn(
+                    "w-full py-4 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2.5 tracking-wide",
+                    side === "buy"
+                      ? "bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white shadow-lg shadow-emerald-500/20 disabled:from-emerald-500/15 disabled:to-emerald-500/10 disabled:text-emerald-500/40 disabled:shadow-none"
+                      : "bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white shadow-lg shadow-red-500/20 disabled:from-red-500/15 disabled:to-red-500/10 disabled:text-red-500/40 disabled:shadow-none",
+                  )}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      {stage === "building" ? "Generating proof..." : stage === "committing" ? "Committing..." : "Revealing..."}
+                    </>
+                  ) : phase === "commit" ? (
+                    <>
+                      <Lock className="w-4 h-4" />
+                      {side === "buy" ? "Buy" : "Sell"} — Commit Sealed Order
+                    </>
+                  ) : (
+                    <>
+                      <Timer className="w-4 h-4" />
+                      {side === "buy" ? "Buy" : "Sell"} — Queue for Next Commit
+                    </>
+                  )}
+                </button>
+              )}
           </div>
 
           {/* Settle Button (permissionless — shown when user has orders) */}
@@ -1673,6 +1776,7 @@ export function PrivateAuction({ initialPair }: { initialPair?: string } = {}) {
         orders={myOrders}
         onCancel={cancelOrder}
         onClaimFill={claimFill}
+        onRefresh={refreshOrders}
         explorerUrl={explorerUrl}
         onReview={txReview.review}
       />

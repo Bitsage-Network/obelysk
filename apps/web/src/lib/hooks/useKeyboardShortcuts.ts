@@ -24,7 +24,7 @@ const GLOBAL_SHORTCUTS: Omit<ShortcutConfig, "callback">[] = [
   { key: "s", ctrl: true, shift: true, description: "Go to Stake", when: "noInput" },
   { key: "g", ctrl: true, description: "Go to Governance", when: "noInput" },
   { key: "t", ctrl: true, description: "Go to Trade", when: "noInput" },
-  { key: "w", ctrl: true, description: "Go to Wallet", when: "noInput" },
+  { key: "w", ctrl: true, description: "Go to Vault", when: "noInput" },
   { key: "?", shift: true, description: "Show keyboard shortcuts", when: "noInput" },
   { key: "Escape", description: "Close modals/dialogs", when: "always" },
   { key: "/", description: "Focus search", when: "noInput" },
@@ -82,8 +82,8 @@ export function useGlobalShortcuts(onShowHelp?: () => void) {
     { key: "e", ctrl: true, description: "Earnings", when: "noInput", callback: () => router.push("/earnings") },
     { key: "s", ctrl: true, shift: true, description: "Stake", when: "noInput", callback: () => router.push("/stake") },
     { key: "g", ctrl: true, description: "Governance", when: "noInput", callback: () => router.push("/governance") },
-    { key: "t", ctrl: true, description: "Trade", when: "noInput", callback: () => router.push("/trade") },
-    { key: "w", ctrl: true, description: "Wallet", when: "noInput", callback: () => router.push("/wallet") },
+    { key: "t", ctrl: true, description: "Trade", when: "noInput", callback: () => router.push("/trade/swap") },
+    { key: "w", ctrl: true, description: "Vault", when: "noInput", callback: () => router.push("/vault") },
   ];
 
   if (onShowHelp) {
@@ -176,7 +176,7 @@ export function getShortcutsList(): { category: string; shortcuts: { keys: strin
         { keys: `${ctrl}${isMac ? "⇧" : "Shift+"}S`, description: "Go to Stake" },
         { keys: `${ctrl}G`, description: "Go to Governance" },
         { keys: `${ctrl}T`, description: "Go to Trade" },
-        { keys: `${ctrl}W`, description: "Go to Wallet" },
+        { keys: `${ctrl}W`, description: "Go to Vault" },
       ],
     },
     {
