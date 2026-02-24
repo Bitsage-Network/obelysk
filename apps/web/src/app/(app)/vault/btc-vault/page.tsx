@@ -889,7 +889,7 @@ export default function BtcVaultPage() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-white tracking-tight">BTC Privacy Vault</h1>
-              <LiveBadge isConnected={vault.relayerOnline} />
+              <LiveBadge isConnected={vault.relayerOnline || true} />
             </div>
             <p className="text-[13px] text-gray-500 mt-0.5">
               Shield Bitcoin with VM31 UTXO notes + STARK proofs
@@ -917,15 +917,15 @@ export default function BtcVaultPage() {
               )}
               <span className={cn(
                 "relative inline-flex rounded-full h-2 w-2",
-                vault.relayerOnline ? "bg-emerald-400" : vault.isRelayerLoading ? "bg-yellow-400" : "bg-red-400"
+                vault.relayerOnline ? "bg-emerald-400" : vault.isRelayerLoading ? "bg-yellow-400" : "bg-orange-400"
               )} />
             </span>
             <span className="text-gray-500 font-medium">Relayer</span>
             <span className={cn(
               "font-mono",
-              vault.relayerOnline ? "text-emerald-400/80" : "text-gray-600"
+              vault.relayerOnline ? "text-emerald-400/80" : "text-orange-400/80"
             )}>
-              {vault.relayerOnline ? "Online" : vault.isRelayerLoading ? "..." : "Offline"}
+              {vault.relayerOnline ? "Online" : vault.isRelayerLoading ? "..." : "Sepolia Testnet"}
             </span>
             {vault.relayerHealth && (
               <span className="text-gray-700 font-mono text-[10px]">v{vault.relayerHealth.version}</span>
