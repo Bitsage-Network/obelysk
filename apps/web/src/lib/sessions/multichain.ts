@@ -12,6 +12,7 @@
 
 import { ec, hash, encode, TypedData, typedData } from 'starknet';
 import { SessionConfig, AllowedCall, SESSION_CONSTANTS } from './types';
+import { getStarknetChainId } from '../contracts/addresses';
 
 // Chain identifiers
 export type ChainType = 'starknet' | 'ethereum' | 'solana' | 'bitcoin' | 'cosmos';
@@ -188,7 +189,7 @@ export function buildEIP712TypedData(
  */
 export function buildStarknetTypedData(
   message: CrossChainSessionMessage,
-  chainId: string = 'SN_SEPOLIA'
+  chainId: string = getStarknetChainId()
 ): TypedData {
   const allowedCallsHash = hashAllowedCalls(message.allowedCalls);
 
@@ -304,7 +305,7 @@ export async function verifyStarknetSignature(
   message: CrossChainSessionMessage,
   signature: MultichainSignature,
   expectedAddress: string,
-  chainId: string = 'SN_SEPOLIA'
+  chainId: string = getStarknetChainId()
 ): Promise<boolean> {
   try {
     // Build typed data for verification context
@@ -377,7 +378,7 @@ export async function verifyMultichainSignature(
         message,
         signature,
         expectedAddress,
-        options?.starknetChainId || 'SN_SEPOLIA'
+        options?.starknetChainId || getStarknetChainId()
       );
 
     case 'solana':

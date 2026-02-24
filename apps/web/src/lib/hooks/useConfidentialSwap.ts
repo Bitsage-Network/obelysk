@@ -31,7 +31,7 @@ import {
   hybridDecrypt,
   type AEHint,
 } from "../crypto/aeHints";
-import { getContractAddress, type NetworkType } from "../contracts/addresses";
+import { getContractAddress, type NetworkType, getRpcUrl } from "../contracts/addresses";
 import { poseidonHash } from "../crypto/nullifier";
 import { useNetwork } from "../contexts/NetworkContext";
 
@@ -422,9 +422,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
   const provider = useMemo(
     () =>
       new RpcProvider({
-        nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://api.cartridge.gg/x/starknet/sepolia",
+        nodeUrl: getRpcUrl(network as NetworkType),
       }),
-    []
+    [network]
   );
 
   // Contract instance
@@ -443,14 +443,10 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
       balance,
       randomness,
     }: ProofBundleParams): Promise<SwapProofBundle> => {
-      console.log("[ConfidentialSwap] Generating proof bundle...");
-
       const giveRangeProof = generateRangeProof(giveAmount, randomness);
       const wantRangeProof = generateRangeProof(wantAmount, randomness);
       const rateProof = generateRateProof(giveAmount, wantAmount, randomness);
       const balanceProof = generateBalanceProof(balance, giveAmount, randomness);
-
-      console.log("[ConfidentialSwap] Proof bundle generated");
 
       return {
         giveRangeProof,
@@ -481,13 +477,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
       setState((s) => ({ ...s, isLoading: true, error: null }));
 
       try {
-        console.log("[ConfidentialSwap] Creating order:", {
-          giveAsset,
-          wantAsset,
-          giveAmount: giveAmount.toString(),
-          wantAmount: wantAmount.toString(),
-        });
-
         // Load user's privacy keypair
         const keyPair = await unlockKeys();
         if (!keyPair) {
@@ -567,16 +556,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
         const response = await sendAsync([call]);
         const txHash = response.transaction_hash;
-        console.log("[ConfidentialSwap] Order created, tx:", txHash);
-
-        // Store AE hints locally for later decryption
-        // In production, store in IndexedDB
-        console.log("[ConfidentialSwap] AE hints stored for O(1) decryption");
-
         // Wait for transaction and extract order ID from receipt
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-        const provider = new RpcProvider({ nodeUrl: rpcUrl });
-        const receipt = await provider.waitForTransaction(txHash, { retryInterval: 2000 });
+        const createOrderProvider = new RpcProvider({ nodeUrl: getRpcUrl(network as NetworkType) });
+        const receipt = await createOrderProvider.waitForTransaction(txHash, { retryInterval: 2000 });
 
         // Parse order ID from transaction events
         // The create_order function emits OrderCreated with order_id as u256
@@ -590,7 +572,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             const low = BigInt(orderEvent.data[0] || "0");
             const high = BigInt(orderEvent.data[1] || "0");
             orderId = low + (high << 128n);
-            console.log("[ConfidentialSwap] Parsed order ID:", orderId.toString());
           }
         }
         if (orderId === null) {
@@ -628,8 +609,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         };
 
         await sendAsync([call]);
-        console.log("[ConfidentialSwap] Order cancelled:", orderId);
-
         setState((s) => ({ ...s, isLoading: false }));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to cancel order";
@@ -748,12 +727,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
         const response = await sendAsync([call]);
         const txHash = response.transaction_hash;
-        console.log("[ConfidentialSwap] Direct swap executed, tx:", txHash);
-
         // Wait for transaction and extract match ID from receipt
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-        const provider = new RpcProvider({ nodeUrl: rpcUrl });
-        const receipt = await provider.waitForTransaction(txHash, { retryInterval: 2000 });
+        const directSwapProvider = new RpcProvider({ nodeUrl: getRpcUrl(network as NetworkType) });
+        const receipt = await directSwapProvider.waitForTransaction(txHash, { retryInterval: 2000 });
 
         // Parse match ID from transaction events
         let matchId = 1n; // Fallback
@@ -764,7 +740,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             const low = BigInt(swapEvent.data[0] || "0");
             const high = BigInt(swapEvent.data[1] || "0");
             matchId = low + (high << 128n);
-            console.log("[ConfidentialSwap] Parsed match ID:", matchId.toString());
           }
         }
 
@@ -858,12 +833,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
         const response = await sendAsync([call]);
         const txHash = response.transaction_hash;
-        console.log("[ConfidentialSwap] Match executed, tx:", txHash);
-
         // Wait for transaction and extract match ID from receipt
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-        const provider = new RpcProvider({ nodeUrl: rpcUrl });
-        const receipt = await provider.waitForTransaction(txHash, { retryInterval: 2000 });
+        const matchProvider = new RpcProvider({ nodeUrl: getRpcUrl(network as NetworkType) });
+        const receipt = await matchProvider.waitForTransaction(txHash, { retryInterval: 2000 });
 
         // Parse match ID from transaction events
         let matchId = 1n; // Fallback
@@ -874,7 +846,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             const low = BigInt(matchEvent.data[0] || "0");
             const high = BigInt(matchEvent.data[1] || "0");
             matchId = low + (high << 128n);
-            console.log("[ConfidentialSwap] Parsed match ID:", matchId.toString());
           }
         }
 
@@ -944,8 +915,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         };
 
         await sendAsync([call]);
-        console.log("[ConfidentialSwap] Deposit successful:", amount.toString(), asset);
-
         setState((s) => ({ ...s, isLoading: false }));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to deposit";
@@ -1002,8 +971,6 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         };
 
         await sendAsync([call]);
-        console.log("[ConfidentialSwap] Withdrawal successful:", amount.toString(), asset);
-
         setState((s) => ({ ...s, isLoading: false }));
       } catch (error) {
         const message = error instanceof Error ? error.message : "Failed to withdraw";
@@ -1049,7 +1016,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
         return decrypted;
       } catch (error) {
-        console.error("[ConfidentialSwap] Failed to get balance:", error);
+        console.error("[ConfidentialSwap] Failed to get balance:", error instanceof Error ? error.message : "unknown error");
         return 0n;
       }
     },
@@ -1084,7 +1051,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         isLoading: false,
       }));
     } catch (error) {
-      console.error("[ConfidentialSwap] Failed to refresh:", error);
+      console.error("[ConfidentialSwap] Failed to refresh:", error instanceof Error ? error.message : "unknown error");
       setState((s) => ({ ...s, isLoading: false }));
     }
   }, [address, contract, getUserOrders]);
@@ -1121,7 +1088,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
           decryptedWantAmount: decryptedWant,
         };
       } catch (error) {
-        console.error("[ConfidentialSwap] Failed to decrypt order:", error);
+        console.error("[ConfidentialSwap] Failed to decrypt order:", error instanceof Error ? error.message : "unknown error");
         return order;
       }
     },

@@ -20,7 +20,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useAccount, useSendTransaction, useProvider } from "@starknet-react/core";
 import type { Call, AccountInterface } from "starknet";
 import { ec, hash, RpcProvider, type TypedData } from "starknet";
-import { CONTRACTS } from "@/lib/contracts/addresses";
+import { CONTRACTS, getRpcUrl, getStarknetChainId, type NetworkType } from "@/lib/contracts/addresses";
 
 // ============================================================================
 // TYPES
@@ -247,7 +247,7 @@ export class PrivacySessionManager {
       domain: {
         name: "Obelysk Privacy Session",
         version: "1",
-        chainId: "SN_SEPOLIA",
+        chainId: getStarknetChainId(),
       },
       types: {
         StarkNetDomain: [
@@ -296,13 +296,13 @@ export class PrivacySessionManager {
     let onChainTxHash: string | undefined;
 
     // Optionally register on-chain if SESSION_MANAGER is available
-    if (options?.registerOnChain && walletSignature && (CONTRACTS.sepolia.SESSION_MANAGER as string) !== "0x0") {
+    const sessionNetwork: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+    if (options?.registerOnChain && walletSignature && (CONTRACTS[sessionNetwork].SESSION_MANAGER as string) !== "0x0") {
       try {
-        const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
-        const provider = new RpcProvider({ nodeUrl: rpcUrl });
+        const provider = new RpcProvider({ nodeUrl: getRpcUrl(sessionNetwork) });
 
         const createSessionCall: Call = {
-          contractAddress: CONTRACTS.sepolia.SESSION_MANAGER,
+          contractAddress: CONTRACTS[sessionNetwork].SESSION_MANAGER,
           entrypoint: "create_privacy_session",
           calldata: [
             sessionKey,

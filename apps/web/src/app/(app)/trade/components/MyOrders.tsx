@@ -119,14 +119,12 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
 
   // Fetch order details when order IDs change
   useEffect(() => {
-    console.log('[MyOrders] useEffect triggered:', { hasProvider: !!provider, orderIds, address });
     if (!provider || !orderIds) return;
 
     const fetchOrderDetails = async () => {
       // Parse order IDs from contract response
       // get_user_orders returns Array<u256> as order IDs
       let ids: bigint[] = [];
-      console.log('[MyOrders] Raw orderIds:', orderIds);
 
       if (Array.isArray(orderIds)) {
         ids = orderIds.map((id) => {
@@ -139,10 +137,7 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
         }).filter(id => id > 0n);
       }
 
-      console.log('[MyOrders] Parsed order IDs:', ids.map(id => id.toString()));
-
       if (ids.length === 0) {
-        console.log('[MyOrders] No valid order IDs found');
         setOrderDetails([]);
         return;
       }
@@ -168,8 +163,6 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
               const parseU256 = (low: string, high: string) =>
                 BigInt(low) + (BigInt(high) << 128n);
 
-              console.log('[MyOrders] Parsing order:', { raw: result.slice(0, 6) });
-
               details.push({
                 order_id: parseU256(result[0], result[1]),
                 pair_id: Number(result[3]),
@@ -185,13 +178,13 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
             } else {
               console.warn('[MyOrders] Unexpected result length:', result?.length);
             }
-          } catch (err) {
-            console.warn(`[MyOrders] Failed to fetch order ${orderId}:`, err);
+          } catch {
+            // Skip orders that fail to fetch
           }
         }
         setOrderDetails(details);
       } catch (err) {
-        console.error('[MyOrders] Error fetching order details:', err);
+        console.error('[MyOrders] Error fetching order details:', err instanceof Error ? err.message : "unknown error");
       } finally {
         setDetailsLoading(false);
       }
@@ -302,17 +295,15 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
 
   const handleCancelOrder = async (orderId: string, orderBigId: bigint) => {
     setCancellingId(orderId);
-    console.log('[MyOrders] Cancelling order:', { orderId, orderBigId: orderBigId?.toString(), type: typeof orderBigId });
     try {
       // Build and send the cancel order transaction
       const call = buildCancelOrderCall(orderBigId);
-      console.log('[MyOrders] Cancel call:', call);
       await sendTransactionAsync([call]);
       toastSuccess("Order Cancelled", "Your order has been cancelled successfully");
       // Refetch orders after cancellation
       await refetch();
     } catch (error: unknown) {
-      console.error("[MyOrders] Failed to cancel order:", error);
+      console.error("[MyOrders] Failed to cancel order:", error instanceof Error ? error.message : "unknown error");
       let errorMessage = "Failed to cancel order";
       if (error instanceof Error) {
         const msg = error.message.toLowerCase();

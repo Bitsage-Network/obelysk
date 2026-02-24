@@ -26,6 +26,7 @@ import {
   type NetworkType,
   type TokenSymbol,
   getTokenAddressForSymbol,
+  getRpcUrl,
 } from "../contracts/addresses";
 
 // ============================================================================
@@ -154,9 +155,7 @@ export const DARK_POOL_PAIRS: TradingPairInfo[] = [
 const _providers: Map<string, RpcProvider> = new Map();
 
 function getProvider(network: NetworkType): RpcProvider {
-  const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl
-    || process.env.NEXT_PUBLIC_RPC_URL
-    || "https://rpc.starknet-testnet.lava.build";
+  const rpcUrl = getRpcUrl(network);
   let provider = _providers.get(rpcUrl);
   if (!provider) {
     provider = new RpcProvider({ nodeUrl: rpcUrl });

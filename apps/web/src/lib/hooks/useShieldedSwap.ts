@@ -371,12 +371,6 @@ export function useShieldedSwap(): UseShieldedSwapResult {
 
         if (abortRef.current) return null;
 
-        console.log("[ShieldedSwap] Selected note:", {
-          commitment: selectedNote.commitment.slice(0, 16) + "...",
-          denomination: selectedNote.denomination,
-          leafIndex: selectedNote.leafIndex,
-        });
-
         setState((prev) => ({
           ...prev,
           progress: 15,
@@ -431,13 +425,6 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           selectedNote.leafIndex = merkleProof.leafIndex;
         }
 
-        console.log("[ShieldedSwap] Merkle proof generated:", {
-          root: merkleProof.root.slice(0, 16) + "...",
-          siblings: merkleProof.siblings.length,
-          leafIndex: merkleProof.leafIndex,
-          treeSize: merkleProof.tree_size,
-        });
-
         if (abortRef.current) return null;
 
         setState((prev) => ({
@@ -450,13 +437,6 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         const effectiveLeafIndex = merkleProof.leafIndex;
         const nullifier = deriveNullifier(
           BigInt(selectedNote.nullifierSecret),
-          effectiveLeafIndex
-        );
-
-        console.log(
-          "[ShieldedSwap] Nullifier derived:",
-          nullifierToFelt(nullifier).slice(0, 16) + "...",
-          "for leafIndex:",
           effectiveLeafIndex
         );
 
@@ -653,10 +633,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
                             outputCommitmentFelt,
                             leafIndex
                           );
-                          console.log(
-                            "[ShieldedSwap] Output note leafIndex:",
-                            leafIndex
-                          );
+                          // leafIndex captured from event
                         }
                       } catch {
                         // Not the right event, continue
@@ -702,9 +679,6 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           };
           await saveNote(address, outputNote);
 
-          console.log(
-            "[ShieldedSwap] Swap confirmed. Input note spent, output note saved."
-          );
         } else {
           console.warn(
             "[ShieldedSwap] Tx submitted but not yet confirmed. Input note NOT marked spent."
