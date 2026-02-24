@@ -207,7 +207,7 @@ async function fetchMetaAddress(
       viewing_pub_key: result[2] || "0x0",
     };
   } catch (err) {
-    console.error("[Stealth] fetchMetaAddress error:", err);
+    console.error("[Stealth] fetchMetaAddress error:", err instanceof Error ? err.message : "unknown error");
     return null;
   }
 }
@@ -249,7 +249,7 @@ async function fetchAnnouncement(
       stealth_address: BigInt(result[2] || "0"),
     };
   } catch (err) {
-    console.error("[Stealth] Failed to fetch announcement:", err);
+    console.error("[Stealth] Failed to fetch announcement:", err instanceof Error ? err.message : "unknown error");
     return null;
   }
 }
@@ -343,7 +343,6 @@ export function useStealthOnChain(address: string | undefined) {
           ],
         },
       ]);
-      console.log("[Stealth] Register meta-address TX:", tx.transaction_hash);
       return tx.transaction_hash;
     },
     onSuccess: () => {
@@ -420,7 +419,6 @@ export function useStealthOnChain(address: string | undefined) {
             ],
           },
         ]);
-        console.log("[Stealth] Claim TX:", tx.transaction_hash);
         return tx.transaction_hash;
       }
 
@@ -456,7 +454,6 @@ export function useStealthOnChain(address: string | undefined) {
         },
       ]);
 
-      console.log("[Stealth] Batch claim TX:", tx.transaction_hash);
       return tx.transaction_hash;
     },
     onSuccess: () => {

@@ -34,7 +34,8 @@ import {
 } from "@/lib/crypto/elgamal";
 import { saveNote, markNoteSpent } from "@/lib/crypto/keyStore";
 import type { PrivacyNote, PrivacyDenomination } from "@/lib/crypto";
-import { CONTRACTS, EXTERNAL_TOKENS } from "@/lib/contracts/addresses";
+import { CONTRACTS, EXTERNAL_TOKENS, getRpcUrl } from "@/lib/contracts/addresses";
+import type { NetworkType } from "@/lib/contracts/addresses";
 import type { ProvingStage } from "@/components/privacy/ProvingFlowCard";
 
 // ============================================================================
@@ -110,8 +111,8 @@ const INITIAL_STATE: GaslessDepositState = {
   commitment: null,
 };
 
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ||
-  "https://api.cartridge.gg/x/starknet/sepolia";
+const GASLESS_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+const RPC_URL = getRpcUrl(GASLESS_NETWORK);
 
 const ASSET_SAGE = "0"; // SAGE asset ID in privacy pools
 
@@ -222,7 +223,6 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         if (!validation.valid) {
           throw new Error(validation.reason || "Session validation failed");
         }
-        console.log("✅ Session validated");
       }
 
       // ========================================
@@ -292,7 +292,6 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
       ];
 
       const provingTimeMs = Math.round(performance.now() - provingStart);
-      console.log(`✅ Cryptographic proof generated in ${provingTimeMs}ms`);
 
       setState((prev) => ({
         ...prev,
@@ -322,9 +321,8 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         const allowanceResult = await tokenContract.allowance(address, addresses.PRIVACY_POOLS);
         const currentAllowance = BigInt(allowanceResult.toString());
         needsApproval = currentAllowance < amountWei;
-        console.log(`📋 Current allowance: ${currentAllowance}, needs approval: ${needsApproval}`);
       } catch (err) {
-        console.warn("Could not check allowance:", err);
+        console.warn("Could not check allowance:", err instanceof Error ? err.message : "unknown error");
       }
 
       // Build calls
@@ -407,8 +405,6 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         gasSponsored = result.gasSponsored;
       }
 
-      console.log(`✅ Transaction submitted: ${txHash}`);
-
       // ========================================
       // SAVE NOTE IMMEDIATELY (before confirmation)
       // Prevents note loss if page closes during confirmation wait.
@@ -426,7 +422,6 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
       };
 
       await saveNote(address, privacyNote);
-      console.log("💾 Note persisted to IndexedDB (pre-confirmation)");
 
       // ========================================
       // STAGE 6: WAIT FOR CONFIRMATION
@@ -468,12 +463,11 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         commitment: commitmentFelt,
       });
 
-      console.log(`🎉 Deposit confirmed! TX: ${txHash}`);
       return txHash;
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Deposit failed";
-      console.error("❌ Deposit error:", errorMessage);
+      console.error("Deposit error:", errorMessage);
 
       setState((prev) => ({
         ...prev,

@@ -596,3 +596,25 @@ export function getTokenAddressForSymbol(
   if (tokenSymbol === "SAGE") return CONTRACTS[network]?.SAGE_TOKEN || "0x0";
   return EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]] || "0x0";
 }
+
+/**
+ * Get the RPC URL for a given network.
+ * On mainnet, requires NEXT_PUBLIC_MAINNET_RPC_URL to be set.
+ * Falls back to NETWORK_CONFIG values.
+ */
+export function getRpcUrl(network: NetworkType): string {
+  if (network === "mainnet") {
+    const mainnetRpc = process.env.NEXT_PUBLIC_MAINNET_RPC_URL;
+    if (!mainnetRpc) throw new Error("NEXT_PUBLIC_MAINNET_RPC_URL is required for mainnet");
+    return mainnetRpc;
+  }
+  return process.env.NEXT_PUBLIC_RPC_URL || NETWORK_CONFIG[network]?.rpcUrl || NETWORK_CONFIG.sepolia.rpcUrl;
+}
+
+/**
+ * Get the Starknet chain ID string for SNIP-12 typed data domains.
+ */
+export function getStarknetChainId(network?: NetworkType): string {
+  const net = network || (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+  return net === "mainnet" ? "SN_MAIN" : "SN_SEPOLIA";
+}
