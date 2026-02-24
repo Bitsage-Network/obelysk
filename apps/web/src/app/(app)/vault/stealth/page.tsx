@@ -284,7 +284,7 @@ export default function StealthAddressesPage() {
           },
           {
             label: "Total Unclaimed Value",
-            value: isLoading ? null : hasEncryptedAmounts ? "Encrypted" : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} SAGE`,
+            value: isLoading ? null : hasEncryptedAmounts ? "Encrypted" : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} STRK`,
             icon: hasEncryptedAmounts ? Lock : Wallet,
             color: "text-emerald-400",
             glow: "bg-emerald-500/8",
