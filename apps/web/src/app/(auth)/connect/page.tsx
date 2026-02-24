@@ -44,7 +44,7 @@ export default function ConnectPage() {
     if (isConnected && address && mounted) {
       const verified = sessionStorage.getItem("obelysk_verified");
       if (verified === address) {
-        router.push("/wallet");
+        router.push("/home");
       } else {
         setConnectPhase("approve-connection");
       }
@@ -83,7 +83,7 @@ export default function ConnectPage() {
       await signTypedDataAsync(connectionTypedData);
       sessionStorage.setItem("obelysk_verified", address);
       setConnectPhase("redirecting");
-      router.push("/wallet");
+      router.push("/home");
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : "Signature rejected");
     } finally {
@@ -148,7 +148,7 @@ export default function ConnectPage() {
 
   const handleDemoMode = () => {
     localStorage.setItem("obelysk_demo_mode", "true");
-    router.push("/wallet");
+    router.push("/home");
   };
 
   const displayError = localError || (connectError?.message);
@@ -318,7 +318,7 @@ export default function ConnectPage() {
               </div>
               <p className="text-xs text-gray-400 font-mono truncate">{address}</p>
               <motion.button
-                onClick={() => router.push("/wallet")}
+                onClick={() => router.push("/home")}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="mt-3 w-full py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-lg font-medium flex items-center justify-center gap-2"

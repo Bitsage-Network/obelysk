@@ -301,11 +301,11 @@ export async function readEpochFromContract(
     const phaseMap: ContractEpochPhase[] = ["Commit", "Reveal", "Settle", "Closed"];
     const phase = phaseMap[phaseIndex] ?? "Closed";
 
-    // D11: Read epoch_duration from contract, fall back to 10 for pre-upgrade contracts
+    // D11: Read epoch_duration from contract, fall back to 50 (current on-chain default)
     // Estimate blocks remaining in phase
     // Contract uses: epoch_duration per phase, 3 phases per epoch
     // phase = ((current_block - genesis_block) % (3 * epoch_duration)) / epoch_duration
-    const epochDuration = durationResult ? Number(BigInt(durationResult[0])) || 10 : 10;
+    const epochDuration = durationResult ? Number(BigInt(durationResult[0])) || 50 : 50;
     const totalEpochBlocks = 3 * epochDuration;
     const phaseOffset = phaseIndex * epochDuration;
     const blocksInPhase = epochDuration;

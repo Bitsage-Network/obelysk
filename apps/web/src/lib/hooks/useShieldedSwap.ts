@@ -56,6 +56,7 @@ import {
 import {
   NETWORK_CONFIG,
   TOKEN_METADATA,
+  getPrivacyPoolAddress,
   type NetworkType,
 } from "@/lib/contracts/addresses";
 import { fetchMerkleProofWithFallback } from "@/lib/crypto/localMerkleProof";
@@ -404,10 +405,11 @@ export function useShieldedSwap(): UseShieldedSwapResult {
           message: "Fetching Merkle inclusion proof...",
         }));
 
-        // Fetch Merkle proof — tries coordinator API first, falls back to local tree
+        // Fetch Merkle proof — tries coordinator API first, falls back to on-chain LeanIMT
         const merkleProof = await fetchMerkleProofWithFallback(
           selectedNote.commitment,
-          network as NetworkType
+          network as NetworkType,
+          sourcePool,
         );
 
         if (!merkleProof) {

@@ -737,11 +737,12 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             encryptedWant.c1_y.toString(),
             encryptedWant.c2_x.toString(),
             encryptedWant.c2_y.toString(),
-            // Proof bundle (simplified)
-            proofBundle.giveRangeProof.challenge.toString(),
-            proofBundle.wantRangeProof.challenge.toString(),
-            proofBundle.rateProof.challenge.toString(),
-            proofBundle.balanceProof.challenge.toString(),
+            // Proof bundle (validated — zero challenges would make proofs trivially forgeable)
+            ...[proofBundle.giveRangeProof.challenge, proofBundle.wantRangeProof.challenge,
+                proofBundle.rateProof.challenge, proofBundle.balanceProof.challenge].map(c => {
+              if (c === 0n) throw new Error("Invalid proof: challenge cannot be zero (Fiat-Shamir broken)");
+              return c.toString();
+            }),
           ],
         };
 

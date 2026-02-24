@@ -69,8 +69,18 @@ export interface AvnuQuote {
   sellAmountInUsd: number;
   gasFees: string;
   gasFeesInUsd: number;
+  /** Price impact / estimated slippage (0-1 scale) */
   priceImpact: number;
+  estimatedSlippage?: number;
   routes: AvnuRoute[];
+  gasless?: {
+    active: boolean;
+    gasTokenPrices?: Array<{
+      tokenAddress: string;
+      gasFeesInGasToken: string;
+      gasFeesInUsd: number;
+    }>;
+  };
 }
 
 export interface AvnuBuildResult {
@@ -135,14 +145,14 @@ function validateQuoteResponse(data: unknown): data is AvnuQuote[] {
     if (typeof q.buyTokenAddress !== "string") return false;
     if (typeof q.sellAmount !== "string") return false;
     if (typeof q.buyAmount !== "string") return false;
-    // buyAmount must be a valid positive integer
+    // buyAmount must be a valid positive integer (decimal or hex)
     try {
       const amt = BigInt(q.buyAmount as string);
       if (amt < 0n) return false;
     } catch {
       return false;
     }
-    if (typeof q.priceImpact !== "number" || !isFinite(q.priceImpact)) return false;
+    // priceImpact or estimatedSlippage — either is acceptable, both optional
     if (!Array.isArray(q.routes)) return false;
   }
   return true;
@@ -356,10 +366,12 @@ export async function fetchAvnuQuote(params: {
   validateQuoteInput({ sellToken, buyToken, sellAmount, takerAddress });
 
   const baseUrl = getApiUrl(network);
+  // AVNU API requires sellAmount in hex format (e.g. "0xde0b6b3a7640000")
+  const sellAmountHex = "0x" + BigInt(sellAmount).toString(16);
   const searchParams = new URLSearchParams({
     sellTokenAddress: sellToken,
     buyTokenAddress: buyToken,
-    sellAmount,
+    sellAmount: sellAmountHex,
     takerAddress,
     size: String(Math.min(size, 10)), // cap server-side cost
   });
@@ -382,6 +394,13 @@ export async function fetchAvnuQuote(params: {
 
   if (!validateQuoteResponse(data)) {
     throw new Error("AVNU returned malformed quote response");
+  }
+
+  // Normalize: populate priceImpact from estimatedSlippage if missing
+  for (const quote of data) {
+    if (typeof quote.priceImpact !== "number") {
+      quote.priceImpact = typeof quote.estimatedSlippage === "number" ? quote.estimatedSlippage : 0;
+    }
   }
 
   return data;

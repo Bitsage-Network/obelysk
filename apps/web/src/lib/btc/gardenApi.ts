@@ -56,12 +56,12 @@ export interface GardenAssetAmount {
 }
 
 export interface GardenQuoteResponse {
-  source: GardenAssetAmount;
-  destination: GardenAssetAmount;
+  source: GardenAssetAmount & { display?: string; value?: string };
+  destination: GardenAssetAmount & { display?: string; value?: string };
   solver_id: string;
   estimated_time: number;
   slippage: number;
-  fee: string;
+  fee: number | string;
   fixed_fee: string;
 }
 
@@ -142,12 +142,35 @@ async function gardenFetch<T>(url: string, init?: RequestInit): Promise<T> {
     headers: { ...headers(), ...init?.headers },
   });
 
+  const body = await res.text();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    if (!res.ok) throw new Error(`Garden API error (${res.status}): ${body || res.statusText}`);
+    throw new Error(`Garden API returned non-JSON: ${body.slice(0, 200)}`);
+  }
+
+  // Garden wraps responses in {"status":"Ok"|"Error","result":...,"error":...}
+  if (parsed && typeof parsed === "object" && "status" in parsed) {
+    const wrapper = parsed as { status: string; result?: unknown; error?: string };
+    if (wrapper.status === "Error") {
+      throw new Error(`Garden API error: ${wrapper.error || "Unknown error"}`);
+    }
+    if (!res.ok) {
+      throw new Error(`Garden API error (${res.status}): ${wrapper.error || body}`);
+    }
+    // Unwrap the result if present
+    if ("result" in wrapper && wrapper.result !== undefined) {
+      return wrapper.result as T;
+    }
+  }
+
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
     throw new Error(`Garden API error (${res.status}): ${body || res.statusText}`);
   }
 
-  return res.json();
+  return parsed as T;
 }
 
 // ============================================================================

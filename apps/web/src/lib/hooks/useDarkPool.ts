@@ -202,6 +202,10 @@ export function useDarkPool(): UseDarkPoolResult {
   const balancesRef = useRef<DarkPoolBalance[]>([]);
   balancesRef.current = balances;
 
+  // Keep a ref to latest epoch so refreshOrders can check epoch without causing dep churn
+  const currentEpochRef = useRef<EpochInfo | null>(null);
+  currentEpochRef.current = currentEpoch;
+
   // Relay mode
   const [relayMode, setRelayMode] = useState(false);
   const [relayConnected, setRelayConnected] = useState(false);
@@ -263,8 +267,8 @@ export function useDarkPool(): UseDarkPoolResult {
         const stored = localStorage.getItem(`${SESSION_KEY_STORAGE}-${address}`);
         if (stored) {
           const parsed = JSON.parse(stored) as {
-            privateKey: string;
             publicKey: string;
+            privateKey?: string;  // Legacy — no longer stored for security
             createdAt?: number;
             expiresAt?: number;
             network?: string;
@@ -272,20 +276,26 @@ export function useDarkPool(): UseDarkPoolResult {
 
           // C5: Reject expired session keys
           const now = Date.now();
-          if (parsed.expiresAt && now > parsed.expiresAt) {
+          const isExpired = !!(parsed.expiresAt && now > parsed.expiresAt);
+          const isWrongNetwork = !!(parsed.network && parsed.network !== network);
+          const storedPubKey: string | undefined = parsed.publicKey;
+
+          if (isExpired) {
             localStorage.removeItem(`${SESSION_KEY_STORAGE}-${address}`);
-            // Fall through to generate new key
-          }
-          // C5: Reject cross-network session keys
-          else if (parsed.network && parsed.network !== network) {
+          } else if (isWrongNetwork) {
             // Don't remove — may still be valid on other network
-            // Fall through to generate new key
-          } else {
+          } else if (storedPubKey) {
             // Verify it's still registered on-chain
             const onChainKey = await readSessionKey(network as NetworkType, address!);
-            if (onChainKey === parsed.publicKey) {
-              sessionKeyRef.current = { privateKey: parsed.privateKey, publicKey: parsed.publicKey };
-              return sessionKeyRef.current;
+            if (onChainKey === storedPubKey) {
+              // Private key only lives in memory (sessionKeyRef) — if lost, re-generate
+              const cached = sessionKeyRef.current as { privateKey: string; publicKey: string } | null;
+              if (cached && cached.publicKey === storedPubKey) {
+                return cached;
+              }
+              // Public key matches on-chain but we lost the private key (page refresh)
+              // Must re-generate and re-register
+              localStorage.removeItem(`${SESSION_KEY_STORAGE}-${address}`);
             }
           }
         }
@@ -307,11 +317,13 @@ export function useDarkPool(): UseDarkPoolResult {
       sessionKeyRef.current = keypair;
 
       // C5: Persist with expiry (24h) and network
+      // NOTE: Only store the public key in localStorage; private key stays in memory only
+      // to prevent XSS-based key theft. Session key must be re-generated after page refresh.
       try {
         const SESSION_KEY_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
         const now = Date.now();
         localStorage.setItem(`${SESSION_KEY_STORAGE}-${address}`, JSON.stringify({
-          ...keypair,
+          publicKey: keypair.publicKey,
           createdAt: now,
           expiresAt: now + SESSION_KEY_TTL_MS,
           network,
@@ -452,6 +464,7 @@ export function useDarkPool(): UseDarkPoolResult {
       const notes = await loadOrderNotes(address);
 
       // Sync order status from contract for non-terminal orders
+      const currentEpochId = currentEpochRef.current?.epoch ?? 0;
       const synced = await Promise.all(
         notes.map(async (note) => {
           if (
@@ -472,6 +485,14 @@ export function useDarkPool(): UseDarkPoolResult {
                 Expired: "expired",
               };
               let newStatus = statusMap[contractOrder.status] ?? note.status;
+
+              // Edge case: contract still says "Revealed" but the epoch has moved on.
+              // This means the order was not filled and the epoch settled without it.
+              // Mark as expired locally so the UI doesn't show stale "revealed" status.
+              if (newStatus === "revealed" && currentEpochId > note.epoch) {
+                newStatus = "expired";
+              }
+
               // Check if a filled order has already been claimed on-chain
               if (newStatus === "filled") {
                 const claimed = await readIsOrderClaimed(network as NetworkType, note.orderId);
@@ -534,9 +555,14 @@ export function useDarkPool(): UseDarkPoolResult {
     }
   }, [network, address]);
 
-  // Load orders on mount
+  // Load orders on mount + periodic refresh every 15s.
+  // This ensures order statuses sync from the contract (e.g. "revealed" → "expired")
+  // even when the user isn't actively performing operations.
+  const ORDER_REFRESH_INTERVAL = 15_000;
   useEffect(() => {
     refreshOrders();
+    const interval = setInterval(refreshOrders, ORDER_REFRESH_INTERVAL);
+    return () => clearInterval(interval);
   }, [refreshOrders]);
 
   // --------------------------------------------------------------------------
@@ -567,11 +593,26 @@ export function useDarkPool(): UseDarkPoolResult {
       submittingRef.current = true;
 
       try {
-        // Phase gate: verify we're in commit phase from contract
-        const epochNow = await readEpochFromContract(network as NetworkType);
-        if (epochNow && epochNow.phase !== "Commit") {
-          setError(`Cannot commit during ${epochNow.phase} phase. Wait for next Commit phase.`);
-          return;
+        // Phase gate: verify we're in commit phase.
+        // Use cached epoch first (saves ~500ms RPC), fall back to contract read if stale.
+        let epochNow: Awaited<ReturnType<typeof readEpochFromContract>> = null;
+        const cachedPhase = currentEpoch?.phase;
+        const cachedBlocks = currentEpoch?.blocksRemaining ?? 0;
+
+        if (cachedPhase === "commit" && cachedBlocks >= 3) {
+          // Cached epoch says commit with enough blocks — skip the RPC call to save time
+          epochNow = null; // will use currentEpoch.epoch below
+        } else {
+          // Stale cache or tight timing — do a fresh read
+          epochNow = await readEpochFromContract(network as NetworkType);
+          if (epochNow && epochNow.phase !== "Commit") {
+            setError(`Cannot commit during ${epochNow.phase} phase. Wait for next Commit phase.`);
+            return;
+          }
+          if (epochNow && epochNow.blocksRemaining < 2) {
+            setError("Commit phase ending too soon — order would likely revert. Will retry next epoch.");
+            return;
+          }
         }
 
         setStage("building");
@@ -660,15 +701,16 @@ export function useDarkPool(): UseDarkPoolResult {
           }
 
           const parsed = parseOrderIdFromReceipt(receipt as unknown as { events?: Array<{ keys?: string[]; data?: string[] }> });
-          // C7: Use crypto random fallback instead of Date.now() to avoid timing leak
-          orderId = parsed ?? BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join(""));
+          if (!parsed) {
+            throw new Error("Failed to parse order ID from transaction events. Check tx on explorer: " + txHash);
+          }
+          orderId = parsed;
         } catch (receiptErr) {
           // Re-throw revert errors (C3)
           if (receiptErr instanceof Error && receiptErr.message.startsWith("Transaction reverted")) {
             throw receiptErr;
           }
-          // C7: Crypto random fallback for order ID
-          orderId = BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join(""));
+          throw receiptErr;
         }
 
         const epoch = epochNow?.epoch ?? currentEpoch?.epoch ?? 0;

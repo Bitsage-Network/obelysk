@@ -135,7 +135,8 @@ export function useAvnuSwap(): UseAvnuSwapResult {
           refreshRef.current = null;
         }
       } else {
-        // Resume: re-fetch immediately then restart interval (via ref to avoid stale closure)
+        // Resume: abort any stale in-flight request, re-fetch, restart interval
+        if (abortRef.current) abortRef.current.abort();
         if (lastParamsRef.current && doFetchQuotesRef.current) {
           doFetchQuotesRef.current(lastParamsRef.current);
           startAutoRefresh();

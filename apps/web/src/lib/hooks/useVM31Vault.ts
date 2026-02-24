@@ -563,35 +563,31 @@ export function useVM31Vault() {
             }));
             if (batchPollRef.current) clearInterval(batchPollRef.current);
 
-            // Auto-fetch merkle paths for notes in this batch
-            setVaultNotes((prev) => {
-              const notesInBatch = prev.filter(
-                (n) => n.batchId === batchId && !n.merkleProofAvailable,
-              );
-              for (const note of notesInBatch) {
-                fetchMerklePath(note.commitment)
-                  .then((result) => {
-                    if (result) {
-                      setVaultNotes((cur) =>
-                        cur.map((n) =>
-                          n.commitment === note.commitment
-                            ? {
-                                ...n,
-                                merklePath: result.merklePath,
-                                merkleRoot: result.merkleRoot,
-                                merkleProofAvailable: true,
-                              }
-                            : n,
-                        ),
-                      );
-                    }
-                  })
-                  .catch((err) => {
-                    console.warn("[VM31] Merkle path fetch failed for", note.commitment, ":", err instanceof Error ? err.message : err);
-                  });
+            // Auto-fetch merkle paths for notes in this batch (sequential to avoid parallel state races)
+            const notesInBatch = vaultNotes.filter(
+              (n) => n.batchId === batchId && !n.merkleProofAvailable,
+            );
+            for (const note of notesInBatch) {
+              try {
+                const result = await fetchMerklePath(note.commitment);
+                if (result) {
+                  setVaultNotes((cur) =>
+                    cur.map((n) =>
+                      n.commitment === note.commitment
+                        ? {
+                            ...n,
+                            merklePath: result.merklePath,
+                            merkleRoot: result.merkleRoot,
+                            merkleProofAvailable: true,
+                          }
+                        : n,
+                    ),
+                  );
+                }
+              } catch (err) {
+                console.warn("[VM31] Merkle path fetch failed for", note.commitment, ":", err instanceof Error ? err.message : err);
               }
-              return prev; // Don't mutate synchronously — async updates above
-            });
+            }
           } else if (status.status === "proving") {
             setState((p) => ({
               ...p,
@@ -610,10 +606,7 @@ export function useVM31Vault() {
             if (batchPollRef.current) clearInterval(batchPollRef.current);
           }
         } catch (err) {
-          // Throttled warning — log ~10% of retries to avoid flooding console
-          if (Math.random() < 0.1) {
-            console.warn("[VM31] Batch poll error:", err instanceof Error ? err.message : err);
-          }
+          console.warn("[VM31] Batch poll error:", err instanceof Error ? err.message : err);
         }
       }, 5_000);
     },
