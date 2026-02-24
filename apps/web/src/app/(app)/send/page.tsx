@@ -18,7 +18,6 @@ import {
   Wallet,
   RefreshCw,
   ChevronDown,
-  AlertCircle,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -26,12 +25,15 @@ import { PrivacyBalanceCard, PrivacyModeToggle } from "@/components/privacy/Priv
 import { ProofDetails } from "@/components/privacy/ProofDetails";
 import { useSafeObelyskWallet } from "@/lib/obelysk/ObelyskWalletContext";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
-import { NETWORK_CONFIG } from "@/lib/contracts/addresses";
+import { NETWORK_CONFIG, TOKEN_METADATA } from "@/lib/contracts/addresses";
+import type { NetworkType } from "@/lib/contracts/addresses";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { SUPPORTED_ASSETS, type Asset, DEFAULT_ASSET } from "@/lib/contracts/assets";
 import { useAccount } from "@starknet-react/core";
-import { useSendPageData } from "@/lib/hooks/useApiData";
+import { useSavedContacts } from "@/lib/hooks/useApiData";
+import { useAllTokenBalances } from "@/lib/contracts";
+import { useTransactionHistory } from "@/lib/hooks/useTransactionHistory";
 import { usePrivacyPool } from "@/lib/hooks/usePrivacyPool";
 import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
 import { PRIVACY_DENOMINATIONS, type PrivacyDenomination } from "@/lib/crypto";
@@ -53,6 +55,49 @@ export default function SendPage() {
       <SendPageInner />
     </Suspense>
   );
+}
+
+function parseU256(value: unknown): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') return BigInt(Math.floor(value));
+  if (typeof value === 'string') {
+    try { return BigInt(value); } catch { return 0n; }
+  }
+  if (Array.isArray(value)) {
+    if (value.length >= 2) {
+      try {
+        const low = BigInt(value[0]);
+        const high = BigInt(value[1]);
+        return low + (high << 128n);
+      } catch { /* fall through */ }
+    }
+    if (value.length === 1) return parseU256(value[0]);
+  }
+  if (value && typeof value === 'object') {
+    const v = value as Record<string, unknown>;
+    if ('low' in v && 'high' in v) {
+      try {
+        const low = BigInt(v.low as any);
+        const high = BigInt(v.high as any);
+        return low + (high << 128n);
+      } catch { return 0n; }
+    }
+    if ('balance' in v) return parseU256(v.balance);
+    if ('amount' in v) return parseU256(v.amount);
+    if ('value' in v) return parseU256(v.value);
+  }
+  return 0n;
+}
+
+function formatBalance(raw: bigint | undefined, decimals: number): string {
+  if (!raw || raw === 0n) return "0.00";
+  const divisor = 10n ** BigInt(decimals);
+  const whole = raw / divisor;
+  const frac = raw % divisor;
+  const fracStr = frac.toString().padStart(decimals, "0").slice(0, 4);
+  const trimmed = fracStr.replace(/0+$/, "") || "0";
+  if (whole === 0n && raw > 0n) return `0.${fracStr}`;
+  return `${whole.toLocaleString()}.${trimmed}`;
 }
 
 function SendPageInner() {
@@ -120,16 +165,15 @@ function SendPageInner() {
     return () => { cancelled = true; };
   }, [address, paymasterCheckEligibility]);
 
-  // Fetch real data from API
-  const {
-    recentTransfers,
-    isLoadingTransfers,
-    contacts: savedContacts,
-    isLoadingContacts,
-    addContact,
-    assetBalances: apiAssetBalances,
-    isLoadingBalances,
-  } = useSendPageData(address);
+  // On-chain token balances (same approach as home page)
+  const onChainBalances = useAllTokenBalances(address, network as NetworkType);
+  const isLoadingBalances = onChainBalances.isLoading;
+
+  // On-chain transaction history
+  const { transactions: onChainTransactions, isLoading: isLoadingTransfers } = useTransactionHistory(address, network as NetworkType);
+
+  // Contacts (gracefully returns empty when API unavailable)
+  const { contacts: savedContacts, isLoading: isLoadingContacts, addContact } = useSavedContacts(address);
 
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
@@ -169,27 +213,36 @@ function SendPageInner() {
     amount: number;
   } | null>(null);
 
-  // Build asset balances from API data, with SAGE from Obelysk wallet as fallback
+  // Build asset balances from on-chain data
   const assetBalances = useMemo(() => {
-    const balances: Record<string, { public: string; private: string }> = {
-      SAGE: { public: balance.public, private: balance.private },
-    };
+    const result: Record<string, { public: string; private: string }> = {};
 
-    // Merge API balances
-    for (const assetBalance of apiAssetBalances) {
-      balances[assetBalance.symbol] = {
-        public: assetBalance.public_balance,
-        private: assetBalance.private_balance,
-      };
+    for (const symbol of ["SAGE", "ETH", "STRK", "USDC", "wBTC"] as const) {
+      const bal = onChainBalances[symbol];
+      if (bal) {
+        const raw = bal.data !== undefined ? parseU256(bal.data) : 0n;
+        const decimals = bal.decimals ?? (TOKEN_METADATA[symbol]?.decimals ?? 18);
+        result[symbol] = {
+          public: formatBalance(raw, decimals),
+          private: "0.00",
+        };
+      } else {
+        result[symbol] = { public: "0.00", private: "0.00" };
+      }
     }
 
-    // Ensure SAGE uses Obelysk wallet if not in API response
-    if (!balances.SAGE || balances.SAGE.public === "0") {
-      balances.SAGE = { public: balance.public, private: balance.private };
+    // SAGE private balance from Obelysk wallet
+    if (balance.private && balance.private !== "0") {
+      result.SAGE = { ...result.SAGE, private: balance.private };
     }
 
-    return balances;
-  }, [apiAssetBalances, balance.public, balance.private]);
+    // If SAGE on-chain shows 0 but Obelysk wallet has balance, use it
+    if (result.SAGE.public === "0.00" && balance.public && balance.public !== "0") {
+      result.SAGE = { ...result.SAGE, public: balance.public };
+    }
+
+    return result;
+  }, [onChainBalances, balance.public, balance.private]);
 
   // Convert amount to fixed denominations using greedy algorithm
   const amountToDenominations = useCallback((amountStr: string): PrivacyDenomination[] => {
@@ -937,7 +990,7 @@ function SendPageInner() {
         <div className="p-4 border-b border-surface-border flex items-center justify-between">
           <h3 className="font-medium text-white">Recent Transfers</h3>
           <span className="text-xs text-gray-500">
-            {isLoadingTransfers ? "Loading..." : `${recentTransfers.length} transactions`}
+            {isLoadingTransfers ? "Loading..." : `${onChainTransactions.length} transactions`}
           </span>
         </div>
         <div className="divide-y divide-surface-border">
@@ -945,66 +998,54 @@ function SendPageInner() {
             <div className="flex items-center justify-center py-8">
               <Loader2 className="w-6 h-6 text-brand-400 animate-spin" />
             </div>
-          ) : recentTransfers.length === 0 ? (
+          ) : onChainTransactions.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-gray-400">
               <Send className="w-8 h-8 mb-2 opacity-50" />
               <p className="text-sm">No recent transfers</p>
               <p className="text-xs text-gray-500 mt-1">Your transfers will appear here</p>
             </div>
           ) : (
-            recentTransfers.map((tx) => (
+            onChainTransactions.slice(0, 10).map((tx) => (
               <div key={tx.id} className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <div className={cn(
                     "p-2 rounded-lg",
-                    tx.status === "completed"
+                    tx.type === "receive"
                       ? "bg-emerald-500/20"
-                      : tx.status === "failed"
-                        ? "bg-red-500/20"
-                        : "bg-orange-500/20"
+                      : "bg-blue-500/20"
                   )}>
-                    {tx.status === "completed" ? (
+                    {tx.type === "receive" ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : tx.status === "failed" ? (
-                      <AlertCircle className="w-4 h-4 text-red-400" />
                     ) : (
-                      <Clock className="w-4 h-4 text-orange-400" />
+                      <Send className="w-4 h-4 text-blue-400" />
                     )}
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-white font-mono text-sm">{tx.to}</span>
-                      {tx.is_private && (
-                        <span className="text-brand-400">
-                          <EyeOff className="w-3 h-3" />
-                        </span>
-                      )}
+                      <span className="text-white font-medium capitalize">{tx.type}</span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-gray-500">{tx.time}</span>
-                      {tx.tx_hash && !tx.is_private && (
+                      {tx.txHash && (
                         <a
-                          href={`${explorerUrl}/tx/${tx.tx_hash}`}
+                          href={`${explorerUrl}/tx/${tx.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-brand-400 hover:underline flex items-center gap-1"
                         >
-                          {tx.tx_hash.slice(0, 8)}...{tx.tx_hash.slice(-6)} <ExternalLink className="w-2.5 h-2.5" />
+                          {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)} <ExternalLink className="w-2.5 h-2.5" />
                         </a>
-                      )}
-                      {tx.is_private && (
-                        <span className="text-xs text-brand-400/60 font-mono">encrypted</span>
                       )}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  {tx.is_private ? (
-                    <span className="text-brand-400 font-mono tracking-wider">•••••</span>
-                  ) : (
-                    <span className="text-white font-medium">{tx.amount}</span>
-                  )}
-                  <p className="text-xs text-gray-500">{tx.token_symbol || "SAGE"}</p>
+                  <span className={cn(
+                    "font-medium",
+                    tx.type === "receive" ? "text-emerald-400" : "text-white"
+                  )}>
+                    {tx.type === "receive" ? "+" : "-"}{tx.amountFormatted}
+                  </span>
+                  <p className="text-xs text-gray-500">{tx.token || "SAGE"}</p>
                 </div>
               </div>
             ))
