@@ -549,8 +549,8 @@ export default function BtcVaultPage() {
     const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
     const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
 
-    // Assets known to be live on all non-devnet networks
-    const liveAssets = new Set(["wBTC"]);
+    // All BTC vault assets are live on non-devnet networks
+    const liveAssets = new Set(BTC_VAULT_ASSETS as readonly string[]);
 
     return BTC_VAULT_ASSETS.map((symbol) => {
       const tokenAddr = String(tokens[symbol as keyof typeof tokens] ?? "0x0");

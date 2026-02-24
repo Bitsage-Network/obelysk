@@ -302,10 +302,11 @@ export const EXTERNAL_TOKENS = {
     USDC: "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
     // Wrapped BTC on Starknet Mainnet
     wBTC: "0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac",
-    // BTC variants — TBD on mainnet
-    LBTC: "0x0",    // Lombard Staked BTC
-    tBTC: "0x0",    // Threshold BTC
-    SolvBTC: "0x0", // Solv BTC
+    // BTC variants — Live on Starknet Mainnet (via StarkGate)
+    // Source: https://github.com/starknet-io/starknet-addresses/blob/master/bridged_tokens/mainnet.json
+    LBTC: "0x036834a40984312f7f7de8d31e3f6305b325389eaeea5b1c0664b2fb936461a4",    // Lombard Staked BTC (8 decimals)
+    tBTC: "0x04daa17763b286d1e59b97c283c0b8c949994c361e426a28f743c67bdfe9a32f",    // Threshold BTC (18 decimals)
+    SolvBTC: "0x0593e034dda23eea82d2ba9a30960ed42cf4a01502cc2351dc9b9881f9931a68", // Solv BTC (18 decimals)
   },
   devnet: {
     // Devnet uses same addresses but they may not be deployed
