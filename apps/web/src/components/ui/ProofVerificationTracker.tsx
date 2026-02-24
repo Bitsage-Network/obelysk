@@ -64,7 +64,7 @@ export function ProofVerificationTracker({
   proofs,
   onRetry,
   onDismiss,
-  explorerBaseUrl = "https://sepolia.starkscan.co/tx/",
+  explorerBaseUrl = "https://sepolia.voyager.online/tx/",
   compact = false,
   className,
 }: ProofVerificationTrackerProps) {

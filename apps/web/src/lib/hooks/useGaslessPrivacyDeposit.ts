@@ -32,7 +32,7 @@ import {
   encrypt as elgamalEncrypt,
   randomScalar,
 } from "@/lib/crypto/elgamal";
-import { saveNote } from "@/lib/crypto/keyStore";
+import { saveNote, markNoteSpent } from "@/lib/crypto/keyStore";
 import type { PrivacyNote, PrivacyDenomination } from "@/lib/crypto";
 import { CONTRACTS, EXTERNAL_TOKENS } from "@/lib/contracts/addresses";
 import type { ProvingStage } from "@/components/privacy/ProvingFlowCard";
@@ -410,6 +410,25 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
       console.log(`✅ Transaction submitted: ${txHash}`);
 
       // ========================================
+      // SAVE NOTE IMMEDIATELY (before confirmation)
+      // Prevents note loss if page closes during confirmation wait.
+      // ========================================
+      const privacyNote: PrivacyNote = {
+        denomination,
+        commitment: commitmentFelt,
+        nullifierSecret: nullifierSecret.toString(),
+        blinding: noteData.blinding.toString(),
+        leafIndex: 0,
+        depositTxHash: txHash,
+        createdAt: Date.now(),
+        spent: false,
+        tokenSymbol: "SAGE",
+      };
+
+      await saveNote(address, privacyNote);
+      console.log("💾 Note persisted to IndexedDB (pre-confirmation)");
+
+      // ========================================
       // STAGE 6: WAIT FOR CONFIRMATION
       // ========================================
       setState((prev) => ({
@@ -425,30 +444,10 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
       const receiptAny = receipt as { execution_status?: string };
 
       if (receiptAny.execution_status === "REVERTED" || receiptAny.execution_status === "REJECTED") {
+        // Mark the optimistic note as spent since the tx failed
+        await markNoteSpent(commitmentFelt, `reverted:${txHash}`);
         throw new Error(`Transaction failed: ${receiptAny.execution_status}`);
       }
-
-      // ========================================
-      // STAGE 7: SAVE NOTE & FINALIZE
-      // ========================================
-      setState((prev) => ({
-        ...prev,
-        message: "Saving private note...",
-        progress: 90,
-      }));
-
-      const privacyNote: PrivacyNote = {
-        denomination,
-        commitment: commitmentFelt,
-        nullifierSecret: nullifierSecret.toString(),
-        blinding: noteData.blinding.toString(),
-        leafIndex: 0, // Will be updated from events
-        depositTxHash: txHash,
-        createdAt: Date.now(),
-        spent: false,
-      };
-
-      await saveNote(address, privacyNote);
 
       // Record in session
       if (sessionActive && !skipSessionValidation) {

@@ -311,7 +311,7 @@ function StepIndicator({ steps }: { steps: TransactionStep[] }) {
             <p className="text-xs text-gray-500 mt-0.5">{step.description}</p>
             {step.txHash && (
               <a
-                href={`https://starkscan.co/tx/${step.txHash}`}
+                href={`https://voyager.online/tx/${step.txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-1"

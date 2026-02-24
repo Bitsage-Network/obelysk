@@ -589,12 +589,40 @@ export function useDarkPoolEvents(
     pollCount: 0,
   });
 
+  // Start from a recent block, NOT block 0.
+  // On Sepolia there are millions of blocks — querying from 0 causes
+  // the RPC to silently timeout or return empty results.
   const lastBlockRef = useRef<number>(0);
+  const initializedRef = useRef(false);
   const mountedRef = useRef(true);
   const intervalRef = useRef<NodeJS.Timeout>();
 
   const poll = useCallback(async () => {
     if (!mountedRef.current) return;
+
+    // On first poll, fetch current block and look back ~500 blocks (~30 min)
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      try {
+        const { NETWORK_CONFIG: netCfg } = await import("../contracts/addresses");
+        const rpcUrl = netCfg[network]?.rpcUrl;
+        if (rpcUrl) {
+          const res = await fetch(rpcUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", method: "starknet_blockNumber", params: [], id: 1 }),
+          });
+          const json = await res.json();
+          const currentBlock = typeof json.result === "number" ? json.result : 0;
+          if (currentBlock > 500) {
+            lastBlockRef.current = currentBlock - 500;
+          }
+        }
+      } catch {
+        // If we can't fetch the block number, we'll use 0 and hope for the best
+      }
+    }
+
     setState((prev) => ({ ...prev, isPolling: true, error: null }));
 
     try {
@@ -611,6 +639,10 @@ export function useDarkPoolEvents(
         lastBlockRef.current = Math.max(
           ...result.events.map((e) => e.blockNumber),
         ) + 1;
+      } else if (lastBlockRef.current === 0) {
+        // No events found from block 0 — advance to avoid re-querying the entire chain
+        // This shouldn't happen with the initialization above, but guard against it
+        initializedRef.current = false; // retry initialization on next poll
       }
 
       const newEvents: DarkPoolEventItem[] = [];

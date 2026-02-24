@@ -524,7 +524,7 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
                     <div className="flex items-center gap-2 justify-end">
                       {order.txHash && (
                         <a
-                          href={`https://sepolia.starkscan.co/tx/${order.txHash}`}
+                          href={`https://sepolia.voyager.online/tx/${order.txHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-brand-400 hover:text-brand-300"

@@ -20,9 +20,23 @@ import {
   CURVE_ORDER,
   type ElGamalCiphertext,
 } from "./constants";
-import { scalarMult, addPoints, mod, randomScalar, getGenerator } from "./elgamal";
+import { scalarMult, addPoints, mod, randomScalar, getGenerator, isOnCurve } from "./elgamal";
 import { hash as starkHash } from "starknet";
 import { logger } from "@/lib/utils/logger";
+
+/**
+ * Constant-time comparison for bigint MACs.
+ * Prevents timing attacks by always comparing all bytes.
+ */
+function constantTimeEqual(a: bigint, b: bigint): boolean {
+  const aHex = a.toString(16).padStart(64, '0');
+  const bHex = b.toString(16).padStart(64, '0');
+  let diff = 0;
+  for (let i = 0; i < aHex.length; i++) {
+    diff |= aHex.charCodeAt(i) ^ bHex.charCodeAt(i);
+  }
+  return diff === 0;
+}
 
 // AE Hint structure matching Cairo contract
 export interface AEHint {
@@ -54,6 +68,9 @@ export function deriveSharedSecret(
   privateKey: bigint,
   publicKey: ECPoint
 ): bigint {
+  if (!isOnCurve(publicKey)) {
+    throw new Error("[ECDH] Public key is not on curve — rejecting to prevent invalid shared secret");
+  }
   const sharedPoint = scalarMult(privateKey, publicKey);
   // Hash to get uniform 252-bit secret
   return poseidonHash([sharedPoint.x, sharedPoint.y]);
@@ -132,6 +149,9 @@ export function createAEHintFromRandomness(
   randomness: bigint,
   receiverPublicKey: ECPoint
 ): AEHint {
+  if (!isOnCurve(receiverPublicKey)) {
+    throw new Error("[AEHint] Receiver public key is not on curve");
+  }
   // Shared secret = r * receiver_pk (same as ElGamal's pk^r)
   const sharedPoint = scalarMult(randomness, receiverPublicKey);
   const sharedSecret = poseidonHash([sharedPoint.x, sharedPoint.y]);
@@ -172,7 +192,7 @@ export function decryptAEHint(
   const macKey = deriveMacKey(sharedSecret, hint.nonce);
   const expectedMac = computeMac(macKey, hint.encryptedAmount, hint.nonce);
 
-  if (expectedMac !== hint.mac) {
+  if (!constantTimeEqual(expectedMac, hint.mac)) {
     logger.warn("[AEHint] MAC verification failed");
     return null;
   }

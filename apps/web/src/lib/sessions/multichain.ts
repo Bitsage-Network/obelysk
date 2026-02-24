@@ -133,8 +133,9 @@ function generateNonce(): string {
     window.crypto.getRandomValues(bytes);
     return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
   }
-  // Fallback for SSR
-  return '0x' + Math.random().toString(16).slice(2) + Date.now().toString(16);
+  // Fallback for SSR — use Node.js crypto
+  const { randomBytes } = require('crypto');
+  return '0x' + randomBytes(32).toString('hex');
 }
 
 /**
@@ -545,7 +546,7 @@ export const CHAIN_CONFIG: Record<ChainType, {
     name: 'Starknet',
     signatureScheme: 'STARK',
     addressFormat: /^0x[a-fA-F0-9]{64}$/,
-    explorerUrl: 'https://sepolia.starkscan.co',
+    explorerUrl: 'https://sepolia.voyager.online',
   },
   ethereum: {
     name: 'Ethereum',

@@ -125,8 +125,11 @@ export function parsePaymentUri(uri: string): {
  */
 export function isValidObelyskAddress(input: string): boolean {
   const address = parseObelyskAddress(input);
-  // Starknet addresses are 64 hex chars (or 66 with 0x)
-  return /^0x[a-fA-F0-9]{1,64}$/.test(address);
+  // Starknet felt252 addresses: 1-64 hex chars after 0x, but reject zero address
+  if (!/^0x[a-fA-F0-9]{1,64}$/.test(address)) return false;
+  // Reject zero address — sending to 0x0 is almost certainly a mistake
+  if (/^0x0+$/.test(address)) return false;
+  return true;
 }
 
 /**

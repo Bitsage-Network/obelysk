@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
-export default function PrivacyPoolRedirect() {
+export default function VaultPage() {
   redirect("/vault/privacy-pool");
 }

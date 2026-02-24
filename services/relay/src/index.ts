@@ -39,6 +39,15 @@ app.use(
 );
 app.use(express.json({ limit: "100kb" }));
 
+// Security headers
+app.use((_req, res, next) => {
+  res.removeHeader("X-Powered-By");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 // API key authentication middleware
 function requireApiKey(
   req: express.Request,
@@ -46,7 +55,14 @@ function requireApiKey(
   next: express.NextFunction
 ): void {
   const apiKey = config.apiKey;
-  if (!apiKey) return next(); // No key configured = open (dev mode only)
+  if (!apiKey) {
+    // Require API key in production — fail closed
+    if (process.env.NODE_ENV === "production") {
+      res.status(503).json({ status: "error", error: "Service misconfigured: API key required" });
+      return;
+    }
+    return next(); // Dev mode only: open access when no key configured
+  }
 
   const provided =
     req.headers["x-api-key"] ||
@@ -125,9 +141,10 @@ app.post("/relay", requireApiKey, async (req, res) => {
     const result = await submitRelay(payload);
     res.status(result.status === "submitted" ? 200 : 500).json(result);
   } catch (err) {
+    console.error("[Relay] Submission error:", err instanceof Error ? err.message : err);
     res.status(500).json({
       status: "error",
-      error: err instanceof Error ? err.message : "Internal relay error",
+      error: "Transaction submission failed",
       transactionHash: "",
     });
   } finally {
@@ -139,18 +156,24 @@ app.post("/relay", requireApiKey, async (req, res) => {
 // Transaction status polling endpoint
 // ==========================================================================
 
-app.get("/status/:txHash", async (req, res) => {
+app.get("/status/:txHash", requireApiKey, async (req, res) => {
+  // Validate txHash format to prevent injection
+  const txHash = req.params.txHash;
+  if (!/^0x[a-fA-F0-9]{1,64}$/.test(txHash)) {
+    res.status(400).json({ status: "error", error: "Invalid transaction hash format" });
+    return;
+  }
   try {
     const { RpcProvider } = await import("starknet");
     const provider = new RpcProvider({ nodeUrl: config.rpcUrl });
-    const receipt = await provider.getTransactionReceipt(req.params.txHash);
+    const receipt = await provider.getTransactionReceipt(txHash);
     res.json({
-      txHash: req.params.txHash,
+      txHash,
       status: receipt.statusReceipt || "RECEIVED",
     });
   } catch {
     res.json({
-      txHash: req.params.txHash,
+      txHash,
       status: "NOT_FOUND",
     });
   }

@@ -396,7 +396,7 @@ export function MultiStepTransaction({
   onSkip,
   onComplete,
   onCancel,
-  explorerBaseUrl = "https://starkscan.co",
+  explorerBaseUrl = "https://voyager.online",
   showTimeline = true,
   compact = false,
   className = "",

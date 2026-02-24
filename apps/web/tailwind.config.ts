@@ -1,5 +1,28 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Helper to convert hex to Tailwind-compatible RGB function format.
+ * This enables opacity modifiers like bg-surface-card/80.
+ */
+function hexToRgb(hex: string): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.substring(0, 2), 16);
+  const g = parseInt(h.substring(2, 4), 16);
+  const b = parseInt(h.substring(4, 6), 16);
+  return `${r} ${g} ${b}`;
+}
+
+/**
+ * Convert a flat color map of hex values to rgb() format for Tailwind opacity support.
+ */
+function rgbColors(colors: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(colors)) {
+    result[key] = `rgb(${hexToRgb(value)} / <alpha-value>)`;
+  }
+  return result;
+}
+
 export default {
   content: [
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
@@ -12,51 +35,51 @@ export default {
       },
       colors: {
         // Obelysk Brand Colors - Violet primary with Fuchsia accent
-        brand: {
+        brand: rgbColors({
           50: "#f5f3ff",
           100: "#ede9fe",
           200: "#ddd6fe",
           300: "#c4b5fd",
           400: "#a78bfa",
-          500: "#8b5cf6", // Primary violet - exact spec
+          500: "#8b5cf6",
           600: "#7c3aed",
           700: "#6d28d9",
           800: "#5b21b6",
           900: "#4c1d95",
           950: "#2e1065",
-        },
+        }),
         // Fuchsia accent for AI/privacy features
-        accent: {
+        accent: rgbColors({
           fuchsia: "#d946ef",
           "fuchsia-light": "#e879f9",
           "fuchsia-dark": "#c026d3",
           cyan: "#22d3ee",
           emerald: "#10b981",
           orange: "#f97316",
-        },
+        }),
         // Surface colors - Ultra-dark theme
-        surface: {
-          dark: "#0a0a0f",      // space-black
-          card: "#12121a",      // slightly lighter
-          elevated: "#1a1a24",  // elevated surfaces
-          border: "#2a2a3a",    // subtle borders
+        surface: rgbColors({
+          dark: "#0a0a0f",
+          card: "#12121a",
+          elevated: "#1a1a24",
+          border: "#2a2a3a",
           "border-light": "#3a3a4a",
-        },
+        }),
         // Semantic colors
         success: {
-          DEFAULT: "#10b981",
-          light: "#34d399",
-          dark: "#059669",
+          DEFAULT: `rgb(${hexToRgb("#10b981")} / <alpha-value>)`,
+          light: `rgb(${hexToRgb("#34d399")} / <alpha-value>)`,
+          dark: `rgb(${hexToRgb("#059669")} / <alpha-value>)`,
         },
         warning: {
-          DEFAULT: "#f59e0b",
-          light: "#fbbf24",
-          dark: "#d97706",
+          DEFAULT: `rgb(${hexToRgb("#f59e0b")} / <alpha-value>)`,
+          light: `rgb(${hexToRgb("#fbbf24")} / <alpha-value>)`,
+          dark: `rgb(${hexToRgb("#d97706")} / <alpha-value>)`,
         },
         error: {
-          DEFAULT: "#ef4444",
-          light: "#f87171",
-          dark: "#dc2626",
+          DEFAULT: `rgb(${hexToRgb("#ef4444")} / <alpha-value>)`,
+          light: `rgb(${hexToRgb("#f87171")} / <alpha-value>)`,
+          dark: `rgb(${hexToRgb("#dc2626")} / <alpha-value>)`,
         },
       },
       fontFamily: {

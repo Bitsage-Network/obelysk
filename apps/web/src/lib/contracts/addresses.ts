@@ -487,13 +487,13 @@ export const NETWORK_CONFIG = {
     chainId: "0x534e5f5345504f4c4941",
     name: "Starknet Sepolia",
     rpcUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo",
-    explorerUrl: "https://sepolia.starkscan.co",
+    explorerUrl: "https://sepolia.voyager.online",
   },
   mainnet: {
     chainId: "0x534e5f4d41494e",
     name: "Starknet Mainnet",
     rpcUrl: process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://starknet-mainnet.public.blastapi.io",
-    explorerUrl: "https://starkscan.co",
+    explorerUrl: "https://voyager.online",
   },
 };
 
@@ -511,7 +511,7 @@ export const EKUBO_CORE = {
 export const EXTERNAL_LINKS = {
   starkgate: "https://starkgate.starknet.io",
   avnu: "https://app.avnu.fi",
-  starkscan: (network: NetworkType = "sepolia") => NETWORK_CONFIG[network]?.explorerUrl || "https://starkscan.co",
+  explorer: (network: NetworkType = "sepolia") => NETWORK_CONFIG[network]?.explorerUrl || "https://voyager.online",
   docs: "https://docs.bitsage.network",
   discord: "https://discord.gg/bitsage",
   twitter: "https://twitter.com/bitsage",

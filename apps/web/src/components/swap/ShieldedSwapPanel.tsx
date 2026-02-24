@@ -28,7 +28,9 @@ import {
   EyeOff,
   Sparkles,
   ArrowRight,
+  ArrowDownToLine,
 } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { useAccount, useConnect } from "@starknet-react/core";
 import {
@@ -342,10 +344,13 @@ export function ShieldedSwapPanel({
 
   const effectiveSlippage = showCustomSlippage ? parseInt(customSlippage) || 100 : slippageBps;
   const poolsValid = !poolValidationError;
+  const hasNotes = privacyBalance !== null && privacyBalance > 0;
+  const insufficientNotes = privacyBalance !== null && parseFloat(inputAmount) > privacyBalance;
   const canSwap =
     isConnected && inputToken && outputToken &&
     inputToken.symbol !== outputToken.symbol &&
-    parseFloat(inputAmount) > 0 && !isSwapping && poolsValid;
+    parseFloat(inputAmount) > 0 && !isSwapping && poolsValid &&
+    hasNotes && !insufficientNotes;
 
   // ============================================================================
   // RENDER
@@ -817,6 +822,21 @@ export function ShieldedSwapPanel({
                   className="w-full py-4 rounded-2xl font-semibold text-sm bg-white/[0.02] text-gray-600 cursor-not-allowed"
                 >
                   Select different tokens
+                </button>
+              ) : !hasNotes && inputToken ? (
+                <Link
+                  href="/vault/privacy-pool"
+                  className="w-full py-4 rounded-2xl font-semibold text-sm bg-violet-500/[0.08] border border-violet-500/15 text-violet-400 text-center flex items-center justify-center gap-2 hover:bg-violet-500/[0.12] transition-all"
+                >
+                  <ArrowDownToLine className="w-4 h-4" />
+                  Deposit {inputToken.symbol} to Privacy Pool first
+                </Link>
+              ) : insufficientNotes && inputToken ? (
+                <button
+                  disabled
+                  className="w-full py-4 rounded-2xl font-semibold text-sm bg-white/[0.02] text-gray-600 cursor-not-allowed"
+                >
+                  Insufficient shielded {inputToken.symbol} (pool: {privacyBalance?.toFixed(4)})
                 </button>
               ) : (
                 <motion.button
