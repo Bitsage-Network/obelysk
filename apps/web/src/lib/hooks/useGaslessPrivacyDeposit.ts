@@ -111,7 +111,7 @@ const INITIAL_STATE: GaslessDepositState = {
 };
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ||
-  "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/CrJvEXftXMfkXvyJfunp3mQVEfDU2D81";
+  "https://api.cartridge.gg/x/starknet/sepolia";
 
 const ASSET_SAGE = "0"; // SAGE asset ID in privacy pools
 

@@ -198,6 +198,10 @@ export function useDarkPool(): UseDarkPoolResult {
   const pendingReveals = useRef<Map<bigint, { order: DarkPoolOrder; epoch: number }>>(new Map());
   const submittingRef = useRef(false);
 
+  // Keep a ref to latest balances so claimFill never uses stale closure data
+  const balancesRef = useRef<DarkPoolBalance[]>([]);
+  balancesRef.current = balances;
+
   // Relay mode
   const [relayMode, setRelayMode] = useState(false);
   const [relayConnected, setRelayConnected] = useState(false);
@@ -867,8 +871,9 @@ export function useDarkPool(): UseDarkPoolResult {
         const receiveRandomness = randomScalar();
         const receiveEncrypted = elgamalEncrypt(receiveAmount, privacyKeys.publicKey, receiveRandomness);
 
-        // Read current receive balance to compute new hint
-        const currentReceiveBal = balances.find((b) => b.asset === receiveAsset);
+        // Read current receive balance from ref to avoid stale closure
+        const latestBalances = balancesRef.current;
+        const currentReceiveBal = latestBalances.find((b) => b.asset === receiveAsset);
         const currentReceiveDecrypted = currentReceiveBal?.decrypted ?? 0n;
         const newReceiveBalance = currentReceiveDecrypted + receiveAmount;
         const receiveHint = createAEHintFromRandomness(newReceiveBalance, randomScalar(), privacyKeys.publicKey);
@@ -877,8 +882,8 @@ export function useDarkPool(): UseDarkPoolResult {
         const spendRandomness = randomScalar();
         const spendEncrypted = elgamalEncrypt(spendAmount, privacyKeys.publicKey, spendRandomness);
 
-        // Read current spend balance to compute new hint
-        const currentSpendBal = balances.find((b) => b.asset === spendAsset);
+        // Read current spend balance from ref to avoid stale closure
+        const currentSpendBal = latestBalances.find((b) => b.asset === spendAsset);
         const currentSpendDecrypted = currentSpendBal?.decrypted ?? 0n;
         const newSpendBalance = currentSpendDecrypted > spendAmount ? currentSpendDecrypted - spendAmount : 0n;
         const spendHint = createAEHintFromRandomness(newSpendBalance, randomScalar(), privacyKeys.publicKey);

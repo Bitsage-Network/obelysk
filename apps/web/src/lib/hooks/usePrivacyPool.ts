@@ -596,7 +596,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         let needsApproval = true;
         try {
           const provider = new RpcProvider({
-            nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/CrJvEXftXMfkXvyJfunp3mQVEfDU2D81",
+            nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://api.cartridge.gg/x/starknet/sepolia",
           });
           const tokenContract = new Contract({ abi: ERC20_ABI, address: tokenAddress, providerOrAccount: provider });
           const allowanceResult = await tokenContract.allowance(address, poolAddress);

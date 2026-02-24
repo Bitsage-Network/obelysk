@@ -11,10 +11,10 @@
  */
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import { useReadContract, useAccount } from '@starknet-react/core';
+import { useReadContract, useAccount, useProvider } from '@starknet-react/core';
 import { getContractAddresses, NetworkType } from '../contracts';
 import GovernanceTreasuryABI from '../contracts/abis/GovernanceTreasury.json';
-import { Abi } from 'starknet';
+import { Abi, CallData } from 'starknet';
 
 // ============================================================================
 // Constants
@@ -232,26 +232,84 @@ export function useProposals(
 
   const addresses = getContractAddresses(network);
   const governanceAddress = addresses.GOVERNANCE_TREASURY;
+  const { provider } = useProvider();
 
-  // Fetch proposals by iterating through IDs
+  // Fetch proposals by iterating through IDs via provider.callContract
   useEffect(() => {
     const fetchProposals = async () => {
-      if (!governanceAddress || governanceAddress === '0x0') {
+      if (!governanceAddress || governanceAddress === '0x0' || !provider) {
         setIsLoading(false);
         return;
       }
 
       setIsLoading(true);
+      setIsError(false);
       const fetchedProposals: OnChainProposal[] = [];
 
-      // We'll use a simple approach: try to fetch proposals 1-maxId
-      // In production, you'd get proposal_count from contract first
       for (let i = 1; i <= maxId; i++) {
         try {
-          // This is a simplified approach - in production use batch calls
-          // For now, we'll rely on the individual useProposal hooks
+          const result = await provider.callContract({
+            contractAddress: governanceAddress,
+            entrypoint: 'get_proposal',
+            calldata: CallData.compile([{ low: i, high: 0 }]),
+          });
+
+          if (!result || result.length === 0) break;
+
+          // Parse raw felt array into proposal
+          const raw: Record<string, unknown> = {};
+          // Minimal parsing — the struct layout follows Cairo Serde order
+          raw.proposer = result[0] || '0x0';
+          raw.title = result[1] || '0x0';
+          raw.description = result[2] || '0x0';
+          raw.target = result[3] || '0x0';
+          raw.value = { low: result[4] || '0', high: result[5] || '0' };
+          raw.calldata = result[6] || '0x0';
+          raw.votes_for = { low: result[7] || '0', high: result[8] || '0' };
+          raw.votes_against = { low: result[9] || '0', high: result[10] || '0' };
+          raw.start_time = result[11] || '0';
+          raw.end_time = result[12] || '0';
+          raw.execution_time = result[13] || '0';
+          raw.executed = result[14] === '0x1';
+          raw.cancelled = result[15] === '0x1';
+          raw.proposal_type = result[16];
+
+          const votesFor = parseU256(raw.votes_for as { low: bigint; high: bigint } | undefined);
+          const votesAgainst = parseU256(raw.votes_against as { low: bigint; high: bigint } | undefined);
+          const endTime = Number(raw.end_time || 0);
+          const executed = raw.executed as boolean;
+          const cancelled = raw.cancelled as boolean;
+          const quorumThreshold = 100000n * (10n ** 18n); // 100k tokens
+          const totalVotes = votesFor + votesAgainst;
+          const forPct = totalVotes > 0n ? Number((votesFor * 10000n) / totalVotes) / 100 : 0;
+          const againstPct = totalVotes > 0n ? Number((votesAgainst * 10000n) / totalVotes) / 100 : 0;
+          const status = determineStatus(executed, cancelled, endTime, votesFor, votesAgainst, quorumThreshold);
+
+          fetchedProposals.push({
+            id: i.toString(),
+            proposer: String(raw.proposer),
+            title: felt252ToString(String(raw.title)),
+            description: felt252ToString(String(raw.description)),
+            target: String(raw.target),
+            value: parseU256(raw.value as { low: bigint; high: bigint } | undefined),
+            calldata: String(raw.calldata),
+            votesFor,
+            votesAgainst,
+            startTime: new Date(Number(raw.start_time || 0) * 1000),
+            endTime: new Date(endTime * 1000),
+            executionTime: new Date(Number(raw.execution_time || 0) * 1000),
+            executed,
+            cancelled,
+            proposalType: parseProposalType(raw.proposal_type),
+            status,
+            totalVotes,
+            forPercentage: forPct,
+            againstPercentage: againstPct,
+            quorumReached: totalVotes >= quorumThreshold,
+            timeRemaining: Math.max(0, endTime - Math.floor(Date.now() / 1000)),
+          });
         } catch {
-          // Proposal doesn't exist, stop fetching
+          // Proposal doesn't exist at this ID, stop fetching
           break;
         }
       }
@@ -261,7 +319,7 @@ export function useProposals(
     };
 
     fetchProposals();
-  }, [governanceAddress, maxId]);
+  }, [governanceAddress, maxId, provider]);
 
   return {
     proposals,

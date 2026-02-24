@@ -31,12 +31,9 @@ import {
   hybridDecrypt,
   type AEHint,
 } from "../crypto/aeHints";
-import { CONTRACTS } from "../contracts/addresses";
+import { getContractAddress, type NetworkType } from "../contracts/addresses";
 import { poseidonHash } from "../crypto/nullifier";
-
-// Use centralized contract addresses
-const CONFIDENTIAL_SWAP_ADDRESS = CONTRACTS.sepolia.CONFIDENTIAL_SWAP;
-const CONFIDENTIAL_TRANSFER_ADDRESS = CONTRACTS.sepolia.CONFIDENTIAL_TRANSFER;
+import { useNetwork } from "../contexts/NetworkContext";
 
 // Asset IDs matching Cairo contract
 export type AssetId = "SAGE" | "USDC" | "STRK" | "ETH" | "BTC" | string;
@@ -144,6 +141,7 @@ export interface CreateOrderParams {
 
 export interface DirectSwapParams {
   orderId: bigint;
+  giveAsset: AssetId;
   giveAmount: bigint;
   wantAmount: bigint;
 }
@@ -151,6 +149,7 @@ export interface DirectSwapParams {
 export interface ExecuteMatchParams {
   makerOrderId: bigint;
   takerOrderId: bigint;
+  giveAsset: AssetId;
   fillGive: bigint;
   fillWant: bigint;
 }
@@ -282,8 +281,11 @@ const CONFIDENTIAL_SWAP_ABI = [
 ];
 
 /**
- * Generate a simplified range proof for an encrypted amount
- * In production, this would use proper Bulletproofs or similar
+ * Generate a simplified range proof for an encrypted amount.
+ *
+ * WARNING: TESTNET ONLY — These proofs use Poseidon hashes as fake EC points,
+ * NOT real elliptic curve commitments. They are trivially forgeable.
+ * For mainnet, replace with proper Bulletproofs or IPA-based range proofs.
  */
 function generateRangeProof(
   amount: bigint,
@@ -322,7 +324,10 @@ function generateRangeProof(
 }
 
 /**
- * Generate a rate proof showing give * rate = want
+ * Generate a rate proof showing give * rate = want.
+ *
+ * WARNING: TESTNET ONLY — Uses Poseidon hashes as fake EC points.
+ * Replace with real Schnorr/Sigma protocol for mainnet.
  */
 function generateRateProof(
   giveAmount: bigint,
@@ -389,6 +394,13 @@ function generateBalanceProof(
 export function useConfidentialSwap(): UseConfidentialSwapReturn {
   const { address, account } = useAccount();
   const { sendAsync } = useSendTransaction({});
+  const { network } = useNetwork();
+
+  // Network-aware contract addresses
+  const CONFIDENTIAL_SWAP_ADDRESS = useMemo(
+    () => getContractAddress(network as NetworkType, "CONFIDENTIAL_SWAP"),
+    [network]
+  );
 
   // Privacy keys hook for key management
   const { unlockKeys } = usePrivacyKeys();
@@ -410,7 +422,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
   const provider = useMemo(
     () =>
       new RpcProvider({
-        nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo",
+        nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://api.cartridge.gg/x/starknet/sepolia",
       }),
     []
   );
@@ -418,7 +430,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
   // Contract instance
   const contract = useMemo(
     () => new Contract({ abi: CONFIDENTIAL_SWAP_ABI, address: CONFIDENTIAL_SWAP_ADDRESS, providerOrAccount: provider }),
-    [provider]
+    [provider, CONFIDENTIAL_SWAP_ADDRESS]
   );
 
   /**
@@ -502,6 +514,27 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         const rangeProofGive = generateRangeProof(giveAmount, randomness);
         const rangeProofWant = generateRangeProof(wantAmount, randomness);
 
+        // Serialize a range proof's full data for Cairo Serde
+        const serializeRangeProof = (rp: RangeProof): string[] => {
+          const data: string[] = [];
+          // bitCommitments array: length + (x, y) pairs
+          data.push(rp.bitCommitments.length.toString());
+          for (const c of rp.bitCommitments) {
+            data.push(c.x.toString());
+            data.push(c.y.toString());
+          }
+          // challenge
+          data.push(rp.challenge.toString());
+          // responses array: length + elements
+          data.push(rp.responses.length.toString());
+          for (const r of rp.responses) {
+            data.push(r.toString());
+          }
+          // numBits
+          data.push(rp.numBits.toString());
+          return data;
+        };
+
         // Format for contract call
         const call = {
           contractAddress: CONFIDENTIAL_SWAP_ADDRESS,
@@ -525,12 +558,10 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             minFillPct.toString(),
             // expiry_duration
             expiryDuration.toString(),
-            // range_proof_give (simplified)
-            rangeProofGive.numBits.toString(),
-            rangeProofGive.challenge.toString(),
-            // range_proof_want (simplified)
-            rangeProofWant.numBits.toString(),
-            rangeProofWant.challenge.toString(),
+            // range_proof_give (full serialization)
+            ...serializeRangeProof(rangeProofGive),
+            // range_proof_want (full serialization)
+            ...serializeRangeProof(rangeProofWant),
           ],
         };
 
@@ -547,9 +578,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         const provider = new RpcProvider({ nodeUrl: rpcUrl });
         const receipt = await provider.waitForTransaction(txHash, { retryInterval: 2000 });
 
-        // Parse order ID from transaction events or return value
-        // The create_order function returns u256, which should be in the events
-        let orderId = 1n; // Fallback
+        // Parse order ID from transaction events
+        // The create_order function emits OrderCreated with order_id as u256
+        let orderId: bigint | null = null;
         const receiptAny = receipt as { events?: Array<{ data?: string[] }> };
         if (receiptAny.events && receiptAny.events.length > 0) {
           // Find OrderCreated event and extract order_id
@@ -561,6 +592,9 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             orderId = low + (high << 128n);
             console.log("[ConfidentialSwap] Parsed order ID:", orderId.toString());
           }
+        }
+        if (orderId === null) {
+          throw new Error("Failed to parse order ID from transaction events");
         }
 
         setState((s) => ({ ...s, isLoading: false }));
@@ -643,7 +677,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
    * Execute a direct swap against an existing order
    */
   const directSwap = useCallback(
-    async ({ orderId, giveAmount, wantAmount }: DirectSwapParams): Promise<bigint> => {
+    async ({ orderId, giveAsset, giveAmount, wantAmount }: DirectSwapParams): Promise<bigint> => {
       if (!address || !account) {
         throw new Error("Wallet not connected");
       }
@@ -663,10 +697,10 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         const encryptedGive = encrypt(giveAmount, keyPair.publicKey, randomness);
         const encryptedWant = encrypt(wantAmount, keyPair.publicKey, randomness);
 
-        // Get user's current balance
+        // Get user's current balance for the actual give asset
         const balanceResult = await contract.call("get_swap_balance", [
           address,
-          assetToFelt("SAGE").toString(), // Assuming SAGE for now
+          assetToFelt(giveAsset).toString(),
         ]) as unknown[];
         const balance = BigInt((balanceResult[0] as string | bigint)?.toString() || "0");
 
@@ -751,6 +785,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
     async ({
       makerOrderId,
       takerOrderId,
+      giveAsset,
       fillGive,
       fillWant,
     }: ExecuteMatchParams): Promise<bigint> => {
@@ -771,10 +806,10 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         const encryptedFillGive = encrypt(fillGive, keyPair.publicKey, randomness);
         const encryptedFillWant = encrypt(fillWant, keyPair.publicKey, randomness);
 
-        // Get balance for proof
+        // Get balance for the actual give asset
         const balanceResult = await contract.call("get_swap_balance", [
           address,
-          assetToFelt("SAGE").toString(),
+          assetToFelt(giveAsset).toString(),
         ]) as unknown[];
         const balance = BigInt((balanceResult[0] as string | bigint)?.toString() || "0");
 
