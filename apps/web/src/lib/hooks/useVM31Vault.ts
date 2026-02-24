@@ -22,6 +22,7 @@ import { useAccount } from "@starknet-react/core";
 import { useQuery } from "@tanstack/react-query";
 import { RpcProvider, Contract, CallData, cairo, num } from "starknet";
 import { CONTRACTS, NETWORK_CONFIG, EXTERNAL_TOKENS, VM31_ASSET_ID_FOR_TOKEN } from "../contracts/addresses";
+import { BTC_VAULT_ASSETS } from "../contracts/assets";
 import { useNetwork } from "../contexts/NetworkContext";
 import { usePrivacyKeys } from "./usePrivacyKeys";
 import { saveNote, markNoteSpent } from "../crypto/keyStore";
@@ -367,11 +368,11 @@ export function useVM31Vault() {
       const tokenAddress = String(tokens?.[symbol as keyof typeof tokens] ?? "0x0");
       const vm31AssetId = VM31_ASSET_ID_FOR_TOKEN[symbol] ?? 0;
       const decimalsMap: Record<string, number> = {
-        wBTC: 8, LBTC: 8, tBTC: 8, SolvBTC: 8,
+        wBTC: 8, LBTC: 8, tBTC: 18, SolvBTC: 18,
       };
 
-      // wBTC is live on sepolia + mainnet — always available on non-devnet
-      const liveAssets = new Set(["wBTC"]);
+      // All BTC vault assets are live on non-devnet networks
+      const liveAssets = new Set(BTC_VAULT_ASSETS as readonly string[]);
       const available = liveAssets.has(symbol) && networkKey !== "devnet"
         ? true
         : tokenAddress !== "0x0" && tokenAddress.length > 4;
