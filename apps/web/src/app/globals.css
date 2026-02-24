@@ -63,6 +63,12 @@ body {
   @apply bg-surface-card/90 border border-surface-border/60 rounded-2xl backdrop-blur-md;
 }
 
+/* Form input field — dark theme */
+.input-field {
+  @apply w-full px-4 py-3 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white font-mono text-sm;
+  @apply placeholder:text-gray-600 focus:outline-none focus:border-brand-500/40 focus:ring-1 focus:ring-brand-500/10 transition-colors;
+}
+
 /* ============================================================================
    Glow Effects
    ============================================================================ */
