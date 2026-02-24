@@ -91,21 +91,18 @@ jobs:
           path: contracts/target/dev/
           retention-days: 7
 
-  vm31-relayer:
-    name: Build & Test VM31 Relayer
-    runs-on: ubuntu-latest
-    continue-on-error: true  # libs/stwo-ml is not in repo yet; don't block deploy
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: services/vm31-relayer -> target
-
-      - name: Build (with redis feature)
-        run: cd services/vm31-relayer && cargo build --features redis
-
-      - name: Run tests
-        run: cd services/vm31-relayer && cargo test
+  # vm31-relayer:
+  #   name: Build & Test VM31 Relayer
+  #   runs-on: ubuntu-latest
+  #   # Disabled: libs/stwo-ml path dependency is not checked into the repo yet.
+  #   # Re-enable once stwo-ml is vendored or published to crates.io.
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@stable
+  #     - uses: Swatinem/rust-cache@v2
+  #       with:
+  #         workspaces: services/vm31-relayer -> target
+  #     - name: Build (with redis feature)
+  #       run: cd services/vm31-relayer && cargo build --features redis
+  #     - name: Run tests
+  #       run: cd services/vm31-relayer && cargo test
