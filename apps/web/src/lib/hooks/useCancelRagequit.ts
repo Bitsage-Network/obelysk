@@ -20,9 +20,10 @@ import {
 } from "@/lib/contracts";
 import type { MerkleProof } from "@/lib/crypto/merkle";
 import PrivacyPoolsABI from "@/lib/contracts/abis/PrivacyPools.json";
+import { getRpcUrl, type NetworkType } from "@/lib/contracts/addresses";
 
-// Default RPC for Starknet Sepolia
-const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
+// RPC URL — network-aware
+const RPC_URL = getRpcUrl((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
 
 interface InclusionSet {
   id: string;

@@ -183,12 +183,10 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
     }
 
     // Request signature from wallet - this triggers wallet popup
-    console.log("[PrivacyKeys] Requesting wallet signature...");
     const chainIdStr = chainId.toString();
     const typedData = getTypedData(chainIdStr, address);
 
     const signature = await signTypedDataAsync(typedData);
-    console.log("[PrivacyKeys] Signature received");
 
     // Convert signature to bytes
     // Starknet signature is [r, s] as felt252
@@ -276,15 +274,12 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
       throw new Error("Wallet not connected");
     }
 
-    console.log("[PrivacyKeys] Requesting signature for reveal...");
-
     try {
       // Always request a new signature (forceSign = true)
       await deriveKEKFromWallet(true);
-      console.log("[PrivacyKeys] Reveal signature verified");
       return true;
     } catch (error) {
-      console.error("[PrivacyKeys] Reveal signature failed:", error);
+      console.error("[PrivacyKeys] Reveal signature failed:", error instanceof Error ? error.message : "Unknown error");
       throw error;
     }
   }, [address, chainId, deriveKEKFromWallet]);
@@ -293,8 +288,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
   // NOTE: This uses cached KEK - call revealWithDecryption() for full flow with signature
   const decryptNotesWithProof = useCallback(async (): Promise<DecryptedNote[]> => {
     if (!address) throw new Error("Wallet not connected");
-
-    console.log("[PrivacyKeys] Starting ElGamal decryption...");
 
     // Use cached KEK (signature already requested by revealWithDecryption)
     const kek = await deriveKEKFromWallet(false); // Use cache, don't force new signature
@@ -306,7 +299,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
 
     // Get unspent notes
     const notes = await getUnspentNotes(address);
-    console.log("[PrivacyKeys] Decrypting", notes.length, "notes");
 
     const decryptedNotes: DecryptedNote[] = [];
     const G = getGenerator();
@@ -331,12 +323,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
         // Recover plaintext amount via discrete log on H
         // decrypt() handles this internally via baby-step giant-step
         const decryptedAmount = decrypt(ciphertext, keyPair.privateKey);
-
-        console.log("[PrivacyKeys] Decrypted note:", {
-          commitment: note.commitment.slice(0, 16) + "...",
-          storedAmount: note.denomination,
-          decryptedAmount: decryptedAmount.toString(),
-        });
 
         decryptedNotes.push({
           note,
@@ -363,8 +349,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
         const mH = scalarMult(amountBigInt, H);
         const c2 = addPoints(mH, pkR);
         const sharedSecret = scalarMult(keyPair.privateKey, c1);
-
-        console.log("[PrivacyKeys] Note without ciphertext, using stored denomination:", note.denomination);
 
         decryptedNotes.push({
           note,
@@ -394,8 +378,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
   }> => {
     if (!address) throw new Error("Wallet not connected");
 
-    console.log("[PrivacyKeys] Performing full reveal with ElGamal decryption...");
-
     // Request signature only if not cached - ONE signature for entire flow
     // If KEK is cached, this will return immediately without wallet popup
     const kek = await deriveKEKFromWallet(false);
@@ -413,12 +395,6 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
       (sum, dn) => sum + dn.decryptedAmount,
       0n
     );
-
-    console.log("[PrivacyKeys] Reveal complete:", {
-      totalBalance: totalBalance.toString(),
-      noteCount: decryptedNotes.length,
-      publicKey: `0x${keyPair.publicKey.x.toString(16).slice(0, 16)}...`,
-    });
 
     return {
       totalBalance,
@@ -553,7 +529,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
         publicKey,
       }));
     } catch (error) {
-      console.error("Failed to refresh state:", error);
+      console.error("Failed to refresh state:", error instanceof Error ? error.message : "Unknown error");
     }
   }, [address]);
 

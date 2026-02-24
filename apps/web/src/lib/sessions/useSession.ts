@@ -9,6 +9,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useAccount, useProvider } from '@starknet-react/core';
 import { Call } from 'starknet';
 import { BitSageSessionManager, createSessionManager } from './sessionManager';
+import { getStarknetChainId } from '@/lib/contracts/addresses';
 import {
   Session,
   SessionConfig,
@@ -42,7 +43,7 @@ export function useSessionManager() {
       sessionManagerInstance = createSessionManager(
         provider,
         contracts.SESSION_MANAGER || '0x0', // Will use actual deployed address
-        'SN_SEPOLIA'
+        getStarknetChainId()
       );
       // Initialize storage
       sessionManagerInstance.init().catch(console.error);
@@ -166,7 +167,7 @@ export function useSession() {
       try {
         // Get KEK signature for decryption
         const kekSignature = await account.signMessage({
-          domain: { name: 'BitSage KEK', version: '1', chainId: 'SN_SEPOLIA' },
+          domain: { name: 'BitSage KEK', version: '1', chainId: getStarknetChainId() },
           types: { KEK: [{ name: 'purpose', type: 'string' }] },
           primaryType: 'KEK',
           message: { purpose: 'session-key-encryption' },

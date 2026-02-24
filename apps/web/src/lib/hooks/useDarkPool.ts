@@ -31,6 +31,7 @@ import {
   type NetworkType,
   type TokenSymbol,
   getTokenAddressForSymbol,
+  getRpcUrl,
 } from "@/lib/contracts/addresses";
 import {
   type DarkPoolOrder,
@@ -240,9 +241,7 @@ export function useDarkPool(): UseDarkPoolResult {
 
   // RPC provider for tx receipt reads
   const provider = useMemo(() => {
-    const rpcUrl = NETWORK_CONFIG[network as NetworkType]?.rpcUrl
-      || process.env.NEXT_PUBLIC_RPC_URL
-      || "https://rpc.starknet-testnet.lava.build";
+    const rpcUrl = getRpcUrl(network as NetworkType);
     return new RpcProvider({ nodeUrl: rpcUrl });
   }, [network]);
 

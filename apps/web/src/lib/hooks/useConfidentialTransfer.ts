@@ -28,7 +28,7 @@ import {
   type AEHint,
 } from "../crypto/aeHints";
 import { usePrivacyKeys } from "./usePrivacyKeys";
-import { CONTRACTS } from "../contracts/addresses";
+import { CONTRACTS, getRpcUrl, type NetworkType } from "../contracts/addresses";
 import { useNetwork } from "../contexts/NetworkContext";
 
 // Use centralized contract address — falls back to sepolia
@@ -183,11 +183,12 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
   });
 
   // Provider for read calls
+  const { network } = useNetwork();
   const provider = useMemo(
     () => new RpcProvider({
-      nodeUrl: process.env.NEXT_PUBLIC_RPC_URL || "https://rpc.starknet-testnet.lava.build",
+      nodeUrl: getRpcUrl((network as NetworkType) || (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia"),
     }),
-    []
+    [network]
   );
 
   /**
@@ -208,7 +209,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       const pkY = BigInt(result[1] || "0");
       return pkX !== 0n || pkY !== 0n;
     } catch (error) {
-      console.error("[ConfidentialTransfer] isRegistered error:", error);
+      console.error("[ConfidentialTransfer] isRegistered error:", error instanceof Error ? error.message : "Unknown error");
       return false;
     }
   }, [address, provider]);
@@ -227,7 +228,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       // Check if already registered on-chain
       const registered = await isRegistered();
       if (registered) {
-        console.log("[ConfidentialTransfer] Already registered on-chain");
         setState((s) => ({ ...s, isLoading: false, isRegistered: true }));
         return;
       }
@@ -235,7 +235,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       // Initialize or unlock privacy keys using usePrivacyKeys hook
       let userPublicKey = publicKey;
       if (!hasKeys) {
-        console.log("[ConfidentialTransfer] Initializing privacy keys...");
         await initializeKeys();
         // Wait for keys to be available
         const keyPair = await unlockKeys();
@@ -244,7 +243,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         }
         userPublicKey = keyPair.publicKey;
       } else if (!userPublicKey) {
-        console.log("[ConfidentialTransfer] Unlocking existing keys...");
         const keyPair = await unlockKeys();
         if (!keyPair) {
           throw new Error("Failed to unlock privacy keys");
@@ -262,8 +260,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         y: "0x" + userPublicKey.y.toString(16),
       };
 
-      console.log("[ConfidentialTransfer] Registering public key:", pkCalldata);
-
       const tx = await sendAsync([
         {
           contractAddress: CONFIDENTIAL_TRANSFER_ADDRESS,
@@ -272,7 +268,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         },
       ]);
 
-      console.log("[ConfidentialTransfer] Register TX:", tx.transaction_hash);
       await provider.waitForTransaction(tx.transaction_hash);
 
       setState((s) => ({ ...s, isLoading: false, isRegistered: true }));
@@ -307,8 +302,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         // Create AE hint for O(1) decryption
         const aeHint = createAEHintFromRandomness(amount, randomness, keyPair.publicKey);
 
-        console.log("[ConfidentialTransfer] Funding:", { asset, amount: amount.toString() });
-
         // First approve token transfer
         const tokenAddress = getTokenAddress(asset);
         const approveTx = await sendAsync([
@@ -338,7 +331,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           },
         ]);
 
-        console.log("[ConfidentialTransfer] Fund TX:", tx.transaction_hash);
         await provider.waitForTransaction(tx.transaction_hash);
 
         setState((s) => ({ ...s, isLoading: false }));
@@ -419,8 +411,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         const senderHint = createAEHintFromRandomness(currentBalance - amount, randomness, keyPair.publicKey);
         const receiverHint = createAEHintFromRandomness(amount, randomness, receiverPk);
 
-        console.log("[ConfidentialTransfer] Transferring:", { to, asset, amount: amount.toString() });
-
         const tx = await sendAsync([
           {
             contractAddress: CONFIDENTIAL_TRANSFER_ADDRESS,
@@ -438,7 +428,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           },
         ]);
 
-        console.log("[ConfidentialTransfer] Transfer TX:", tx.transaction_hash);
         await provider.waitForTransaction(tx.transaction_hash);
 
         setState((s) => ({ ...s, isLoading: false }));
@@ -472,7 +461,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           },
         ]);
 
-        console.log("[ConfidentialTransfer] Rollover TX:", tx.transaction_hash);
         await provider.waitForTransaction(tx.transaction_hash);
 
         setState((s) => ({ ...s, isLoading: false }));
@@ -515,8 +503,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           randomness
         );
 
-        console.log("[ConfidentialTransfer] Withdrawing:", { to, asset, amount: amount.toString() });
-
         const tx = await sendAsync([
           {
             contractAddress: CONFIDENTIAL_TRANSFER_ADDRESS,
@@ -530,7 +516,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           },
         ]);
 
-        console.log("[ConfidentialTransfer] Withdraw TX:", tx.transaction_hash);
         await provider.waitForTransaction(tx.transaction_hash);
 
         setState((s) => ({ ...s, isLoading: false }));
@@ -574,7 +559,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         const balance = await hybridDecrypt(cipher, keyPair.privateKey, undefined, 10000000000n);
         return balance;
       } catch (error) {
-        console.error("[ConfidentialTransfer] getBalance error:", error);
+        console.error("[ConfidentialTransfer] getBalance error:", error instanceof Error ? error.message : "Unknown error");
         return 0n;
       }
     },

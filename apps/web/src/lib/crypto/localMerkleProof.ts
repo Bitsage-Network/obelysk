@@ -85,7 +85,6 @@ export async function fetchMerkleProofWithFallback(
     if (response.ok) {
       const data = await response.json();
       if (data.found) {
-        console.log("[MerkleProof] Using coordinator API");
         return {
           siblings: data.siblings,
           path_indices: data.path_indices.map((p: number) => p),
@@ -100,7 +99,6 @@ export async function fetchMerkleProofWithFallback(
   }
 
   // 2. Fall back to on-chain storage reading with correct domain-separated hashing
-  console.log("[MerkleProof] API unavailable, reading on-chain storage for LeanIMT proof...");
   return fetchMerkleProofLocal(commitment, network, poolAddress);
 }
 

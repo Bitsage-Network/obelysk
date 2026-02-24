@@ -362,14 +362,11 @@ export async function generateMerkleProofOnChain(
   const needsFetch = cache.commitments.length === 0;
 
   if (needsFetch) {
-    console.log(`[MerkleProof] Reading deposits from pool ${contractAddr.slice(0, 12)}...`);
     const totalDeposits = await fetchTotalDeposits(rpcUrl, contractAddr);
-    console.log(`[MerkleProof] Total deposits: ${totalDeposits}`);
 
     cache.commitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
     cache.nodes = new Map();
     cache.root = null;
-    console.log(`[MerkleProof] Read ${cache.commitments.length} commitments`);
   }
 
   // Find our commitment
@@ -379,7 +376,6 @@ export async function generateMerkleProofOnChain(
 
   // If not found, re-fetch in case new deposits happened since cache
   if (leafIndex === -1 && !needsFetch) {
-    console.log("[MerkleProof] Commitment not in cache, re-fetching...");
     const totalDeposits = await fetchTotalDeposits(rpcUrl, contractAddr);
     cache.commitments = await fetchCommitmentsFromStorage(rpcUrl, contractAddr, totalDeposits);
     cache.nodes = new Map();
@@ -391,17 +387,14 @@ export async function generateMerkleProofOnChain(
   }
 
   if (leafIndex === -1) {
-    console.warn("[MerkleProof] Commitment not found:", normalizedCommitment);
     return null;
   }
 
   // Rebuild tree if cache is stale
   if (cache.nodes.size === 0 || !cache.root) {
-    console.log("[MerkleProof] Rebuilding LeanIMT...");
-    const { nodes, root, depth } = rebuildTree(cache.commitments);
+    const { nodes, root } = rebuildTree(cache.commitments);
     cache.nodes = nodes;
     cache.root = root;
-    console.log(`[MerkleProof] Tree rebuilt: root=${root.slice(0, 20)}... depth=${depth} size=${cache.commitments.length}`);
   }
 
   // Generate proof
@@ -420,8 +413,6 @@ export async function generateMerkleProofOnChain(
     console.error("[MerkleProof] Local proof verification FAILED");
     return null;
   }
-
-  console.log(`[MerkleProof] Proof verified. Siblings: ${siblings.length}, Root: ${root.slice(0, 20)}...`);
 
   return {
     siblings,
@@ -468,7 +459,7 @@ export async function verifyRootAgainstChain(
   const match = normalizedLocal === normalizedOnChain;
 
   if (!match) {
-    console.warn("[MerkleProof] Root mismatch! Local:", normalizedLocal, "On-chain:", normalizedOnChain);
+    console.warn("[MerkleProof] Root mismatch");
   }
 
   return { match, localRoot: normalizedLocal, onChainRoot: normalizedOnChain };
