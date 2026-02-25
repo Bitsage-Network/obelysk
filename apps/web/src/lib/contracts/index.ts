@@ -2,10 +2,9 @@
 // Provides hooks and utilities for interacting with deployed contracts
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
+import { useContract, useReadContract, useProvider, useSendTransaction } from "@starknet-react/core";
 import type { Abi, Call } from "starknet";
-import { RpcProvider } from "starknet";
-import { CONTRACTS, NETWORK_CONFIG } from "./addresses";
+import { CONTRACTS } from "./addresses";
 
 // Import ABIs
 import SAGETokenAbi from "./abis/SAGEToken.json";
@@ -86,27 +85,27 @@ import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 const POLL_INTERVAL_MS = 15_000;
 
 /**
- * Generic hook to fetch any ERC20 balance via direct RPC callContract.
- * Bypasses starknet-react's useReadContract + abi-wan-kanabi parser which
- * is unreliable for external tokens on starknet-react v5.
+ * Generic hook to fetch any ERC20 balance via direct provider.callContract.
+ * Uses the same starknet-react provider (and RPC endpoint) as useReadContract,
+ * but bypasses the abi-wan-kanabi ABI parser which is unreliable for external
+ * tokens on starknet-react v5 + starknet.js v8.
  */
 export function useErc20Balance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  network: NetworkType = "sepolia",
+  _network: NetworkType = "sepolia",
 ) {
+  const { provider } = useProvider();
   const [data, setData] = useState<bigint | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl;
-  const enabled = !!tokenAddress && tokenAddress !== "0x0" && !!userAddress && !!rpcUrl;
+  const enabled = !!tokenAddress && tokenAddress !== "0x0" && !!userAddress && !!provider;
 
   const fetchBalance = useCallback(async () => {
     if (!enabled) return;
     try {
-      const provider = new RpcProvider({ nodeUrl: rpcUrl });
       const result = await provider.callContract({
         contractAddress: tokenAddress!,
         entrypoint: "balance_of",
@@ -120,7 +119,7 @@ export function useErc20Balance(
     } catch (err) {
       setError(err instanceof Error ? err : new Error("Failed to fetch balance"));
     }
-  }, [enabled, tokenAddress, userAddress, rpcUrl]);
+  }, [enabled, provider, tokenAddress, userAddress]);
 
   const refetch = useCallback(() => {
     setIsLoading(true);
