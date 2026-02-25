@@ -31,7 +31,7 @@ import { NETWORK_CONFIG, TOKEN_METADATA } from "@/lib/contracts/addresses";
 import type { NetworkType } from "@/lib/contracts/addresses";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { SUPPORTED_ASSETS, type Asset, DEFAULT_ASSET } from "@/lib/contracts/assets";
+import { SUPPORTED_ASSETS, PRIVACY_POOL_ASSETS, type Asset, DEFAULT_ASSET } from "@/lib/contracts/assets";
 import { useAccount } from "@starknet-react/core";
 import { useSavedContacts } from "@/lib/hooks/useApiData";
 import { useAllTokenBalances } from "@/lib/contracts";
@@ -248,13 +248,14 @@ function SendPageInner() {
     amount: number;
   } | null>(null);
 
-  // Reset private balance toggle when switching away from SAGE
+  // Reset private balance toggle when switching to an asset without a privacy pool
+  const hasPrivacyPool = PRIVACY_POOL_ASSETS.includes(selectedAsset.id);
   useEffect(() => {
-    if (selectedAsset.id !== "SAGE") {
+    if (!hasPrivacyPool) {
       setUsePrivateBalance(false);
       if (sendMode === "private") setSendMode("public");
     }
-  }, [selectedAsset.id]);
+  }, [hasPrivacyPool]);
 
   // Build asset balances from on-chain data
   const assetBalances = useMemo(() => {
@@ -313,7 +314,7 @@ function SendPageInner() {
     const denominations = amountToDenominations(amountStr);
 
     if (denominations.length === 0) {
-      toast.error("Invalid Amount", "Amount must be at least 0.1 SAGE");
+      toast.error("Invalid Amount", `Amount must be at least 0.1 ${selectedAsset.symbol}`);
       return;
     }
 
@@ -330,21 +331,21 @@ function SendPageInner() {
         const denom = denominations[i];
         toast.info(
           "Depositing...",
-          `Processing ${i + 1}/${denominations.length}: ${denom} SAGE`
+          `Processing ${i + 1}/${denominations.length}: ${denom} ${selectedAsset.symbol}`
         );
-        await deposit(denom);
+        await deposit(denom, selectedAsset.symbol);
       }
 
       toast.success(
         "Wrapped Successfully",
-        `${amountStr} SAGE wrapped into ${denominations.length} privacy note(s)`
+        `${amountStr} ${selectedAsset.symbol} wrapped into ${denominations.length} privacy note(s)`
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Wrap failed";
       toast.error("Wrap Failed", message);
       throw error;
     }
-  }, [amountToDenominations, deposit, toast, isKeysDerived, derivePrivacyKeys]);
+  }, [amountToDenominations, deposit, toast, isKeysDerived, derivePrivacyKeys, selectedAsset.symbol]);
 
   // Unwrap: Withdraw from privacy pool to public balance
   const handleUnwrap = useCallback(async (amountStr: string) => {
@@ -385,7 +386,7 @@ function SendPageInner() {
       if (accumulated < targetAmount) {
         toast.error(
           "Insufficient Notes",
-          `Can only withdraw ${accumulated} SAGE from available notes`
+          `Can only withdraw ${accumulated} ${selectedAsset.symbol} from available notes`
         );
         return;
       }
@@ -395,21 +396,21 @@ function SendPageInner() {
         const note = notesToWithdraw[i];
         toast.info(
           "Withdrawing...",
-          `Processing ${i + 1}/${notesToWithdraw.length}: ${note.denomination} SAGE`
+          `Processing ${i + 1}/${notesToWithdraw.length}: ${note.denomination} ${selectedAsset.symbol}`
         );
         await withdraw(note);
       }
 
       toast.success(
         "Unwrapped Successfully",
-        `${accumulated} SAGE withdrawn from ${notesToWithdraw.length} note(s)`
+        `${accumulated} ${selectedAsset.symbol} withdrawn from ${notesToWithdraw.length} note(s)`
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unwrap failed";
       toast.error("Unwrap Failed", message);
       throw error;
     }
-  }, [getSpendableNotes, withdraw, toast, isKeysDerived, derivePrivacyKeys]);
+  }, [getSpendableNotes, withdraw, toast, isKeysDerived, derivePrivacyKeys, selectedAsset.symbol]);
 
   const handleSend = async () => {
     setIsSending(true);
@@ -446,14 +447,17 @@ function SendPageInner() {
           await derivePrivacyKeys();
         }
 
-        // 2. Find a note that covers the amount
+        // 2. Find a note that covers the amount (filter by selected token)
         const amountNum = parseFloat(amount);
-        const notes = poolStats.yourNotes.filter(n => !n.spent && n.denomination >= amountNum);
+        const tokenNotes = poolStats.yourNotes.filter(
+          n => !n.spent && (!n.tokenSymbol || n.tokenSymbol === selectedAsset.symbol)
+        );
+        const notes = tokenNotes.filter(n => n.denomination >= amountNum);
 
         if (notes.length === 0) {
           throw new Error(
-            `No suitable note found for amount ${amount} SAGE. ` +
-            `Available notes: ${poolStats.yourNotes.filter(n => !n.spent).map(n => n.denomination).join(", ")} SAGE`
+            `No suitable note found for amount ${amount} ${selectedAsset.symbol}. ` +
+            `Available notes: ${tokenNotes.map(n => n.denomination).join(", ")} ${selectedAsset.symbol}`
           );
         }
 
@@ -623,13 +627,15 @@ function SendPageInner() {
                 <p className="text-sm text-gray-400">Wallet Balance</p>
                 <div className="flex items-center gap-3">
                   <span className="text-white font-medium">{currentAssetBalance.public} {selectedAsset.symbol}</span>
-                  {selectedAsset.id === "SAGE" && (
+                  {hasPrivacyPool && (
                     <>
                       <span className="text-gray-600">|</span>
                       <span className="text-brand-400 font-mono text-sm">
-                        {isPrivateRevealed ? balance.private : "•••••"} private
+                        {isPrivateRevealed
+                          ? (selectedAsset.id === "SAGE" ? balance.private : currentAssetBalance.private)
+                          : "•••••"} private
                       </span>
-                      {parseFloat(balance.pending) > 0 && (
+                      {selectedAsset.id === "SAGE" && parseFloat(balance.pending) > 0 && (
                         <>
                           <span className="text-gray-600">|</span>
                           <span className="text-orange-400 text-sm flex items-center gap-1">
@@ -665,11 +671,11 @@ function SendPageInner() {
         )}
       </motion.div>
 
-      {/* Balance Card — SAGE privacy wrap/unwrap only */}
-      {selectedAsset.id === "SAGE" && (
+      {/* Balance Card — privacy wrap/unwrap for any pool-supported asset */}
+      {hasPrivacyPool && (
         <PrivacyBalanceCard
-          publicBalance={balance.public}
-          privateBalance={balance.private}
+          publicBalance={currentAssetBalance.public}
+          privateBalance={selectedAsset.id === "SAGE" ? balance.private : currentAssetBalance.private}
           isRevealed={isPrivateRevealed}
           onReveal={revealPrivateBalance}
           onHide={hidePrivateBalance}
@@ -679,6 +685,7 @@ function SendPageInner() {
           staleNotesCount={staleNotesCount}
           localNotesBalance={localNotesBalance}
           onClearStaleNotes={clearStaleNotes}
+          symbol={selectedAsset.symbol}
         />
       )}
 
@@ -719,7 +726,7 @@ function SendPageInner() {
                 </span>
               </h3>
               <p className="text-sm text-gray-400">
-                {privateSendNote.amount} SAGE sent with zero-knowledge proof
+                {privateSendNote.amount} {selectedAsset.symbol} sent with zero-knowledge proof
               </p>
             </div>
           </div>
@@ -778,12 +785,12 @@ function SendPageInner() {
             <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-surface-elevated/50 border border-surface-border">
               {([
                 { id: "public" as SendMode, label: "Public", icon: Eye, desc: "Standard transfer" },
-                { id: "private" as SendMode, label: "Private", icon: EyeOff, desc: "Hidden amount (SAGE)" },
+                { id: "private" as SendMode, label: "Private", icon: EyeOff, desc: "Hidden amount (ZK)" },
                 { id: "stealth" as SendMode, label: "Stealth", icon: Shield, desc: "Hidden recipient" },
               ]).map((mode) => {
                 const Icon = mode.icon;
                 const isActive = sendMode === mode.id;
-                const isDisabled = mode.id === "private" && selectedAsset.id !== "SAGE";
+                const isDisabled = mode.id === "private" && !hasPrivacyPool;
                 return (
                   <button
                     key={mode.id}
@@ -930,7 +937,7 @@ function SendPageInner() {
               <div>
                 <p className="text-sm font-medium text-white">Send from</p>
                 <p className="text-xs text-gray-500">
-                  {usePrivateBalance ? "Private balance (SAGE)" : "Public balance"}
+                  {usePrivateBalance ? `Private balance (${selectedAsset.symbol})` : "Public balance"}
                 </p>
               </div>
             </div>
@@ -945,7 +952,7 @@ function SendPageInner() {
                 <span className="text-white font-medium">{currentAssetBalance.public}</span>
               )}
               <span className="text-sm text-gray-400">{selectedAsset.symbol}</span>
-              {selectedAsset.id === "SAGE" && (
+              {hasPrivacyPool && (
                 <button
                   onClick={() => setUsePrivateBalance(!usePrivateBalance)}
                   className="text-xs text-brand-400 hover:text-brand-300"
