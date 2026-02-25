@@ -102,8 +102,15 @@ function useErc20Balance(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // Debug: log on every render to verify hook is alive
+  if (typeof window !== "undefined") {
+    console.log(`[ERC20 HOOK] token=${tokenAddress?.slice(0, 10) ?? "none"} user=${userAddress?.slice(0, 10) ?? "none"} rpc=${ERC20_RPC_URL?.slice(0, 30)}`);
+  }
+
   const fetchBalance = useCallback(async () => {
+    console.log(`[ERC20 FETCH] token=${tokenAddress?.slice(0, 10)} user=${userAddress?.slice(0, 10)}`);
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
+      console.log(`[ERC20 SKIP] guard clause — token=${!!tokenAddress} user=${!!userAddress}`);
       return;
     }
 
@@ -119,7 +126,7 @@ function useErc20Balance(
       const low = BigInt(result[0]);
       const high = result.length > 1 ? BigInt(result[1]) : 0n;
       const balance = low + (high << 128n);
-      console.log(`[ERC20] ${tokenAddress.slice(0, 10)} → ${balance.toString()}`);
+      console.log(`[ERC20 OK] ${tokenAddress.slice(0, 10)} → ${balance.toString()}`);
       setData(balance);
       setError(null);
     } catch (e) {
