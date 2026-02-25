@@ -188,28 +188,28 @@ async function fetchMetaAddress(
 
   const provider = new RpcProvider({ nodeUrl: rpcUrl });
 
+  // Primary path: call get_meta_address directly.
+  // If the user isn't registered, the contract will revert and we catch it.
+  // This avoids any has_meta_address boolean parsing issues.
   try {
-    // Check if user has a registered meta-address
-    const hasResult = await provider.callContract(
-      { contractAddress: registryAddress, entrypoint: "has_meta_address", calldata: [userAddress] },
-      "latest",
-    );
+    const result = await provider.callContract({
+      contractAddress: registryAddress,
+      entrypoint: "get_meta_address",
+      calldata: [userAddress],
+    });
 
-    // Cairo bool: 0x1 = true, 0x0 = false. Also handle "1" / "0" string forms.
-    const rawVal = hasResult[0] || "0x0";
-    const hasMetaAddress = rawVal === "0x1" || rawVal === "1" || BigInt(rawVal) === 1n;
-    if (!hasMetaAddress) return null;
-
-    const result = await provider.callContract(
-      { contractAddress: registryAddress, entrypoint: "get_meta_address", calldata: [userAddress] },
-      "latest",
-    );
+    // Normalize: starknet.js v8 returns string[], but handle {result: string[]} for safety
+    const data: string[] = Array.isArray(result)
+      ? result
+      : (result as unknown as { result: string[] }).result || [];
 
     // StealthMetaAddress struct: spending_pubkey(x,y), viewing_pubkey(x,y), scheme_id
-    // Validate we got meaningful data (not all zeros)
-    const spendingX = result[0] || "0x0";
-    const viewingX = result[2] || "0x0";
+    const spendingX = data[0] || "0x0";
+    const spendingY = data[1] || "0x0";
+    const viewingX = data[2] || "0x0";
+    const viewingY = data[3] || "0x0";
 
+    // Validate we got non-zero pubkeys
     if (BigInt(spendingX) === 0n && BigInt(viewingX) === 0n) {
       return null;
     }
@@ -219,24 +219,12 @@ async function fetchMetaAddress(
       viewing_pub_key: viewingX,
     };
   } catch (err) {
-    // If get_meta_address fails but we know user tried to register, try direct read
-    console.error("[Stealth] fetchMetaAddress error:", err instanceof Error ? err.message : "unknown error");
-
-    // Fallback: try get_meta_address directly without has_meta_address check
-    try {
-      const result = await provider.callContract(
-        { contractAddress: registryAddress, entrypoint: "get_meta_address", calldata: [userAddress] },
-        "latest",
-      );
-      const spendingX = result[0] || "0x0";
-      const viewingX = result[2] || "0x0";
-      if (BigInt(spendingX) !== 0n || BigInt(viewingX) !== 0n) {
-        return { spending_pub_key: spendingX, viewing_pub_key: viewingX };
-      }
-    } catch {
-      // Both calls failed — user is genuinely not registered
+    // Contract reverts if user has no meta-address — this is expected for unregistered users
+    const msg = err instanceof Error ? err.message : String(err);
+    // Only log if it's NOT the expected "not registered" revert
+    if (!msg.includes("not registered") && !msg.includes("No meta") && !msg.includes("not found")) {
+      console.warn("[Stealth] fetchMetaAddress error:", msg);
     }
-
     return null;
   }
 }
@@ -255,17 +243,14 @@ async function fetchAnnouncement(
   try {
     // announcement_index is u256, serialize as (low, high)
     const idxBig = BigInt(announcementIndex);
-    const result = await provider.callContract(
-      {
-        contractAddress: registryAddress,
-        entrypoint: "get_announcement",
-        calldata: [
-          "0x" + (idxBig & BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).toString(16),
-          "0x" + (idxBig >> 128n).toString(16),
-        ],
-      },
-      "latest",
-    );
+    const result = await provider.callContract({
+      contractAddress: registryAddress,
+      entrypoint: "get_announcement",
+      calldata: [
+        "0x" + (idxBig & BigInt("0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF")).toString(16),
+        "0x" + (idxBig >> 128n).toString(16),
+      ],
+    });
 
     // StealthPaymentAnnouncement struct layout:
     // ephemeral_pubkey(x,y), stealth_address, encrypted_amount(c1_x, c1_y, c2_x, c2_y),
