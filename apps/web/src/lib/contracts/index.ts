@@ -82,7 +82,13 @@ export function useSageAllowance(
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
 // Standard Starknet ERC20 ABI for balance_of (snake_case, with u256 struct)
+// Requires impl → interface mapping for starknet.js v8 ABI parser
 const ERC20_BALANCE_OF_ABI = [
+  {
+    type: "impl",
+    name: "ERC20Impl",
+    interface_name: "ERC20Balance",
+  },
   {
     type: "struct",
     name: "core::integer::u256",
@@ -104,7 +110,7 @@ const ERC20_BALANCE_OF_ABI = [
       },
     ],
   },
-] as Abi;
+] as const;
 
 /**
  * Hook to get ETH balance via useReadContract with balance_of
