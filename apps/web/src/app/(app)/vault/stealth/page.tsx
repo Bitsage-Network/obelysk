@@ -99,7 +99,7 @@ export default function StealthAddressesPage() {
         const { RpcProvider } = await import("starknet");
         const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
         const result = await provider.callContract({
-          contractAddress: "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5",
+          contractAddress: "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59",
           entrypoint: "get_meta_address",
           calldata: [address],
         });
@@ -134,7 +134,7 @@ export default function StealthAddressesPage() {
       const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
       try {
         const existing = await provider.callContract({
-          contractAddress: "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5",
+          contractAddress: "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59",
           entrypoint: "get_meta_address",
           calldata: [address],
         });
@@ -331,7 +331,7 @@ export default function StealthAddressesPage() {
           },
           {
             label: "Total Unclaimed Value",
-            value: isLoading ? null : hasEncryptedAmounts ? "Encrypted" : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} STRK`,
+            value: isLoading ? null : hasEncryptedAmounts ? "Encrypted" : `${totalUnclaimed.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} tokens`,
             icon: hasEncryptedAmounts ? Lock : Wallet,
             color: "text-emerald-400",
             glow: "bg-emerald-500/8",
