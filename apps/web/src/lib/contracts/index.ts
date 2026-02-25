@@ -78,12 +78,40 @@ export function useSageAllowance(
 
 // ============================================
 // External Token Balance Hooks (ETH, STRK, USDC, wBTC)
-// Uses direct RpcProvider.callContract — bypasses abi-wan-kanabi
-// which silently skips queries for external tokens when using
-// useReadContract with a mismatched ABI interface structure.
+// Uses direct RpcProvider.callContract — bypasses abi-wan-kanabi.
+// Token addresses hardcoded to avoid EXTERNAL_TOKENS import issue
+// (bundler/tree-shaking causes EXTERNAL_TOKENS[network] → undefined).
 // ============================================
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
+
+// Hardcoded official Starknet token addresses — these never change.
+// Eliminates dependency on EXTERNAL_TOKENS dynamic lookup which
+// returns undefined in the production bundle.
+const TOKEN_ADDRESSES: Record<string, Record<string, string>> = {
+  sepolia: {
+    ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    USDC: "0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080",
+    wBTC: "0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e",
+  },
+  mainnet: {
+    ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    USDC: "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
+    wBTC: "0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac",
+  },
+  devnet: {
+    ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    USDC: "0x0",
+    wBTC: "0x0",
+  },
+};
+
+function getTokenAddr(network: string, symbol: string): string {
+  return TOKEN_ADDRESSES[network]?.[symbol] || TOKEN_ADDRESSES.sepolia[symbol] || "0x0";
+}
 
 // Module-level RPC URL — same pattern as usePrivacyPool (proven to work client-side)
 const ERC20_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL
@@ -102,15 +130,8 @@ function useErc20Balance(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
-  // Debug: log on every render to verify hook is alive
-  if (typeof window !== "undefined") {
-    console.log(`[ERC20 HOOK] token=${tokenAddress?.slice(0, 10) ?? "none"} user=${userAddress?.slice(0, 10) ?? "none"} rpc=${ERC20_RPC_URL?.slice(0, 30)}`);
-  }
-
   const fetchBalance = useCallback(async () => {
-    console.log(`[ERC20 FETCH] token=${tokenAddress?.slice(0, 10)} user=${userAddress?.slice(0, 10)}`);
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
-      console.log(`[ERC20 SKIP] guard clause — token=${!!tokenAddress} user=${!!userAddress}`);
       return;
     }
 
@@ -122,27 +143,20 @@ function useErc20Balance(
         entrypoint: "balance_of",
         calldata: [userAddress],
       });
-      // u256 = low + (high << 128)
       const low = BigInt(result[0]);
       const high = result.length > 1 ? BigInt(result[1]) : 0n;
-      const balance = low + (high << 128n);
-      console.log(`[ERC20 OK] ${tokenAddress.slice(0, 10)} → ${balance.toString()}`);
-      setData(balance);
+      setData(low + (high << 128n));
       setError(null);
     } catch (e) {
-      console.error(`[ERC20 ERR] ${tokenAddress?.slice(0, 10)}:`, e);
+      console.error(`[ERC20] ${tokenAddress?.slice(0, 10)}:`, e);
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
       setIsLoading(false);
     }
   }, [tokenAddress, userAddress]);
 
-  // Fetch on mount and when deps change
-  useEffect(() => {
-    fetchBalance();
-  }, [fetchBalance]);
+  useEffect(() => { fetchBalance(); }, [fetchBalance]);
 
-  // Poll every 30 seconds
   useEffect(() => {
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") return;
     const interval = setInterval(fetchBalance, 30_000);
@@ -152,28 +166,20 @@ function useErc20Balance(
   return { data, isLoading, error, refetch: fetchBalance };
 }
 
-// Safe lookup with fallback — network from context may not match EXTERNAL_TOKENS keys
-function getExternalTokens(network: string) {
-  const tokens = EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS];
-  if (tokens) return tokens;
-  console.warn(`[ERC20] Unknown network "${network}", falling back to sepolia`);
-  return EXTERNAL_TOKENS.sepolia;
-}
-
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getExternalTokens(network).ETH, address);
+  return useErc20Balance(getTokenAddr(network, "ETH"), address);
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getExternalTokens(network).STRK, address);
+  return useErc20Balance(getTokenAddr(network, "STRK"), address);
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getExternalTokens(network).USDC, address);
+  return useErc20Balance(getTokenAddr(network, "USDC"), address);
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getExternalTokens(network).wBTC, address);
+  return useErc20Balance(getTokenAddr(network, "wBTC"), address);
 }
 
 /**
@@ -195,9 +201,6 @@ export function useTokenBalance(
  * Returns balances for SAGE, ETH, STRK, USDC, wBTC
  */
 export function useAllTokenBalances(address: string | undefined, network: NetworkType = "sepolia") {
-  if (typeof window !== "undefined") {
-    console.log(`[ALL_BALANCES] network="${network}" keys=${Object.keys(EXTERNAL_TOKENS)} match=${!!EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS]}`);
-  }
   const sage = useSageBalance(address, network);
   const eth = useEthBalance(address, network);
   const strk = useStrkBalance(address, network);
