@@ -1,9 +1,11 @@
 // Contract client for BitSage Network
 // Provides hooks and utilities for interacting with deployed contracts
 
+import { useState, useEffect, useCallback } from "react";
 import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
+import { RpcProvider } from "starknet";
 import type { Abi, Call } from "starknet";
-import { CONTRACTS } from "./addresses";
+import { CONTRACTS, getRpcUrl } from "./addresses";
 
 // Import ABIs
 import SAGETokenAbi from "./abis/SAGEToken.json";
@@ -76,58 +78,84 @@ export function useSageAllowance(
 
 // ============================================
 // External Token Balance Hooks (ETH, STRK, USDC, wBTC)
-// Reuses SAGE ABI (which has a proper impl→interface→balance_of chain
-// that abi-wan-kanabi can parse) — works for any standard ERC20.
+// Uses direct RpcProvider.callContract — bypasses abi-wan-kanabi
+// which silently skips queries for external tokens when using
+// useReadContract with a mismatched ABI interface structure.
 // ============================================
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
+/**
+ * Direct RPC-based ERC20 balance hook.
+ * Bypasses useReadContract + abi-wan-kanabi entirely — calls balance_of
+ * via raw starknet_call so no ABI validation can silently skip the query.
+ */
+function useErc20Balance(
+  tokenAddress: string | undefined,
+  userAddress: string | undefined,
+  network: NetworkType = "sepolia",
+) {
+  const [data, setData] = useState<bigint | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  const fetchBalance = useCallback(async () => {
+    if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
+      setData(undefined);
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      const rpcUrl = getRpcUrl(network);
+      const provider = new RpcProvider({ nodeUrl: rpcUrl });
+      const result = await provider.callContract({
+        contractAddress: tokenAddress,
+        entrypoint: "balance_of",
+        calldata: [userAddress],
+      });
+      // u256 = low + (high << 128)
+      const low = BigInt(result[0]);
+      const high = result.length > 1 ? BigInt(result[1]) : 0n;
+      setData(low + (high << 128n));
+      setError(null);
+    } catch (e) {
+      console.error(`[useErc20Balance] ${tokenAddress}:`, e);
+      setError(e instanceof Error ? e : new Error(String(e)));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [tokenAddress, userAddress, network]);
+
+  // Fetch on mount and when deps change
+  useEffect(() => {
+    fetchBalance();
+  }, [fetchBalance]);
+
+  // Poll every 15 seconds
+  useEffect(() => {
+    if (!tokenAddress || !userAddress || tokenAddress === "0x0") return;
+    const interval = setInterval(fetchBalance, 15_000);
+    return () => clearInterval(interval);
+  }, [fetchBalance, tokenAddress, userAddress]);
+
+  return { data, isLoading, error, refetch: fetchBalance };
+}
+
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.ETH;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ABIS.sageToken,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address, network);
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.STRK;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ABIS.sageToken,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address, network);
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.USDC;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ABIS.sageToken,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address, network);
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.wBTC;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ABIS.sageToken,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address, network);
 }
 
 /**
@@ -136,16 +164,13 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
 export function useTokenBalance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  _network: NetworkType = "sepolia"
+  network: NetworkType = "sepolia"
 ) {
-  return useReadContract({
-    address: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
-    abi: ABIS.sageToken,
-    functionName: "balance_of",
-    args: userAddress ? [userAddress] : undefined,
-    enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(
+    tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined,
+    userAddress,
+    network,
+  );
 }
 
 /**
