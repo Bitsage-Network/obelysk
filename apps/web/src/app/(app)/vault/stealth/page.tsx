@@ -84,6 +84,7 @@ export default function StealthAddressesPage() {
     register,
     isRegistering,
     registryDeployed,
+    refetch,
   } = useStealthOnChain(address);
 
   const isRegistered = !!metaAddressData;
@@ -118,9 +119,9 @@ export default function StealthAddressesPage() {
       await register({ spendingPubKey, viewingPubKey });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Registration failed";
-      // If already registered, just refetch — not an error
+      // If already registered, refetch to pick up existing on-chain data
       if (msg.includes("Already registered")) {
-        // Force refetch to pick up existing registration
+        refetch();
         return;
       }
       setRegisterError(msg);

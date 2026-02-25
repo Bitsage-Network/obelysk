@@ -184,16 +184,20 @@ async function fetchMetaAddress(
   userAddress: string,
 ): Promise<{ spending_pub_key: string; viewing_pub_key: string } | null> {
   if (!registryAddress || registryAddress === "0x0") return null;
+  if (!rpcUrl) return null;
 
   const provider = new RpcProvider({ nodeUrl: rpcUrl });
 
   try {
+    // Check if user has a registered meta-address
     const hasResult = await provider.callContract(
       { contractAddress: registryAddress, entrypoint: "has_meta_address", calldata: [userAddress] },
       "latest",
     );
 
-    const hasMetaAddress = hasResult[0] !== "0x0";
+    // Cairo bool: 0x1 = true, 0x0 = false. Also handle "1" / "0" string forms.
+    const rawVal = hasResult[0] || "0x0";
+    const hasMetaAddress = rawVal === "0x1" || rawVal === "1" || BigInt(rawVal) === 1n;
     if (!hasMetaAddress) return null;
 
     const result = await provider.callContract(
@@ -202,12 +206,37 @@ async function fetchMetaAddress(
     );
 
     // StealthMetaAddress struct: spending_pubkey(x,y), viewing_pubkey(x,y), scheme_id
+    // Validate we got meaningful data (not all zeros)
+    const spendingX = result[0] || "0x0";
+    const viewingX = result[2] || "0x0";
+
+    if (BigInt(spendingX) === 0n && BigInt(viewingX) === 0n) {
+      return null;
+    }
+
     return {
-      spending_pub_key: result[0] || "0x0",
-      viewing_pub_key: result[2] || "0x0",
+      spending_pub_key: spendingX,
+      viewing_pub_key: viewingX,
     };
   } catch (err) {
+    // If get_meta_address fails but we know user tried to register, try direct read
     console.error("[Stealth] fetchMetaAddress error:", err instanceof Error ? err.message : "unknown error");
+
+    // Fallback: try get_meta_address directly without has_meta_address check
+    try {
+      const result = await provider.callContract(
+        { contractAddress: registryAddress, entrypoint: "get_meta_address", calldata: [userAddress] },
+        "latest",
+      );
+      const spendingX = result[0] || "0x0";
+      const viewingX = result[2] || "0x0";
+      if (BigInt(spendingX) !== 0n || BigInt(viewingX) !== 0n) {
+        return { spending_pub_key: spendingX, viewing_pub_key: viewingX };
+      }
+    } catch {
+      // Both calls failed — user is genuinely not registered
+    }
+
     return null;
   }
 }
@@ -292,10 +321,12 @@ export function useStealthOnChain(address: string | undefined) {
 
   // Fetch meta-address from contract
   const metaAddressQuery = useQuery({
-    queryKey: ["stealthMetaAddress", address, network],
+    queryKey: ["stealthMetaAddress", address, network, registryAddress],
     queryFn: () => fetchMetaAddress(rpcUrl, registryAddress, address!),
-    enabled: !!address && registryDeployed,
-    staleTime: 300_000,
+    enabled: !!address && registryDeployed && !!rpcUrl,
+    staleTime: 30_000,
+    retry: 2,
+    refetchOnMount: true,
   });
 
   // Fetch stealth payments via on-chain event scanning
