@@ -1,9 +1,11 @@
 // Contract client for BitSage Network
 // Provides hooks and utilities for interacting with deployed contracts
 
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
 import type { Abi, Call } from "starknet";
-import { CONTRACTS } from "./addresses";
+import { RpcProvider } from "starknet";
+import { CONTRACTS, NETWORK_CONFIG } from "./addresses";
 
 // Import ABIs
 import SAGETokenAbi from "./abis/SAGEToken.json";
@@ -76,100 +78,89 @@ export function useSageAllowance(
 
 // ============================================
 // External Token Balance Hooks (ETH, STRK, USDC, wBTC)
-// Uses standard ERC20 ABI for balance_of
+// Uses direct RpcProvider.callContract to bypass ABI parsing issues
 // ============================================
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
-// Standard Starknet ERC20 ABI for balance_of (snake_case, with u256 struct)
-// Requires impl → interface mapping for starknet.js v8 ABI parser
-const ERC20_BALANCE_OF_ABI = [
-  {
-    type: "impl",
-    name: "ERC20Impl",
-    interface_name: "ERC20Balance",
-  },
-  {
-    type: "struct",
-    name: "core::integer::u256",
-    members: [
-      { name: "low", type: "core::integer::u128" },
-      { name: "high", type: "core::integer::u128" },
-    ],
-  },
-  {
-    type: "interface",
-    name: "ERC20Balance",
-    items: [
-      {
-        type: "function",
-        name: "balance_of",
-        inputs: [{ name: "account", type: "core::starknet::contract_address::ContractAddress" }],
-        outputs: [{ type: "core::integer::u256" }],
-        state_mutability: "view",
-      },
-    ],
-  },
-] as const;
+const POLL_INTERVAL_MS = 15_000;
 
 /**
- * Hook to get ETH balance via useReadContract with balance_of
+ * Generic hook to fetch any ERC20 balance via direct RPC callContract.
+ * Bypasses starknet-react's useReadContract + abi-wan-kanabi parser which
+ * is unreliable for external tokens on starknet-react v5.
  */
+export function useErc20Balance(
+  tokenAddress: string | undefined,
+  userAddress: string | undefined,
+  network: NetworkType = "sepolia",
+) {
+  const [data, setData] = useState<bigint | undefined>(undefined);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl;
+  const enabled = !!tokenAddress && tokenAddress !== "0x0" && !!userAddress && !!rpcUrl;
+
+  const fetchBalance = useCallback(async () => {
+    if (!enabled) return;
+    try {
+      const provider = new RpcProvider({ nodeUrl: rpcUrl });
+      const result = await provider.callContract({
+        contractAddress: tokenAddress!,
+        entrypoint: "balance_of",
+        calldata: [userAddress!],
+      });
+      // balance_of returns u256 as two felts: [low, high]
+      const low = BigInt(result[0]);
+      const high = result[1] ? BigInt(result[1]) : 0n;
+      setData(low + (high << 128n));
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error("Failed to fetch balance"));
+    }
+  }, [enabled, tokenAddress, userAddress, rpcUrl]);
+
+  const refetch = useCallback(() => {
+    setIsLoading(true);
+    fetchBalance().finally(() => setIsLoading(false));
+  }, [fetchBalance]);
+
+  // Initial fetch + poll
+  useEffect(() => {
+    if (!enabled) {
+      setData(undefined);
+      setError(null);
+      return;
+    }
+
+    setIsLoading(true);
+    fetchBalance().finally(() => setIsLoading(false));
+
+    intervalRef.current = setInterval(fetchBalance, POLL_INTERVAL_MS);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [enabled, fetchBalance]);
+
+  return { data, isLoading, error, refetch };
+}
+
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.ETH;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ERC20_BALANCE_OF_ABI,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address, network);
 }
 
-/**
- * Hook to get STRK balance via useReadContract with balance_of
- */
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.STRK;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ERC20_BALANCE_OF_ABI,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress,
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address, network);
 }
 
-/**
- * Hook to get USDC balance via useReadContract with balance_of
- */
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.USDC;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ERC20_BALANCE_OF_ABI,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address, network);
 }
 
-/**
- * Hook to get wBTC balance via useReadContract with balance_of
- */
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  const tokenAddress = EXTERNAL_TOKENS[network]?.wBTC;
-  return useReadContract({
-    address: tokenAddress as `0x${string}`,
-    abi: ERC20_BALANCE_OF_ABI,
-    functionName: "balance_of",
-    args: address ? [address] : undefined,
-    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address, network);
 }
 
 /**
@@ -178,16 +169,9 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
 export function useTokenBalance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  _network: NetworkType = "sepolia"
+  network: NetworkType = "sepolia"
 ) {
-  return useReadContract({
-    address: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
-    abi: ERC20_BALANCE_OF_ABI,
-    functionName: "balance_of",
-    args: userAddress ? [userAddress] : undefined,
-    enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
-    watch: true,
-  });
+  return useErc20Balance(tokenAddress, userAddress, network);
 }
 
 /**
@@ -201,7 +185,6 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
   const usdc = useUsdcBalance(address, network);
   const wbtc = useWbtcBalance(address, network);
 
-  // All hooks now use useReadContract with balance_of — data is raw u256
   return {
     SAGE: {
       data: sage.data,
@@ -236,10 +219,10 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
     isLoading: sage.isLoading || eth.isLoading || strk.isLoading || usdc.isLoading || wbtc.isLoading,
     refetchAll: () => {
       sage.refetch?.();
-      eth.refetch?.();
-      strk.refetch?.();
-      usdc.refetch?.();
-      wbtc.refetch?.();
+      eth.refetch();
+      strk.refetch();
+      usdc.refetch();
+      wbtc.refetch();
     },
   };
 }

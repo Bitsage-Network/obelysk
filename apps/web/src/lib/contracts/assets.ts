@@ -287,7 +287,7 @@ export const TRADING_PAIRS = [
 ];
 
 // Assets available for privacy pools
-export const PRIVACY_POOL_ASSETS = ["SAGE", "USDC", "STRK"];
+export const PRIVACY_POOL_ASSETS = ["SAGE", "ETH", "STRK", "USDC", "wBTC"];
 
 // BTC-backed assets available for VM31 Privacy Vaults
 export const BTC_VAULT_ASSETS = ["wBTC", "LBTC", "tBTC", "SolvBTC"] as const;
