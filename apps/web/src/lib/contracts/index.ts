@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
 import { RpcProvider } from "starknet";
 import type { Abi, Call } from "starknet";
-import { CONTRACTS, getRpcUrl } from "./addresses";
+import { CONTRACTS } from "./addresses";
 
 // Import ABIs
 import SAGETokenAbi from "./abis/SAGEToken.json";
@@ -85,6 +85,10 @@ export function useSageAllowance(
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
+// Module-level RPC URL — same pattern as usePrivacyPool (proven to work client-side)
+const ERC20_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL
+  || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
+
 /**
  * Direct RPC-based ERC20 balance hook.
  * Bypasses useReadContract + abi-wan-kanabi entirely — calls balance_of
@@ -93,7 +97,6 @@ import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 function useErc20Balance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  network: NetworkType = "sepolia",
 ) {
   const [data, setData] = useState<bigint | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
@@ -101,14 +104,12 @@ function useErc20Balance(
 
   const fetchBalance = useCallback(async () => {
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
-      setData(undefined);
       return;
     }
 
     try {
       setIsLoading(true);
-      const rpcUrl = getRpcUrl(network);
-      const provider = new RpcProvider({ nodeUrl: rpcUrl });
+      const provider = new RpcProvider({ nodeUrl: ERC20_RPC_URL });
       const result = await provider.callContract({
         contractAddress: tokenAddress,
         entrypoint: "balance_of",
@@ -117,25 +118,27 @@ function useErc20Balance(
       // u256 = low + (high << 128)
       const low = BigInt(result[0]);
       const high = result.length > 1 ? BigInt(result[1]) : 0n;
-      setData(low + (high << 128n));
+      const balance = low + (high << 128n);
+      console.log(`[ERC20] ${tokenAddress.slice(0, 10)} → ${balance.toString()}`);
+      setData(balance);
       setError(null);
     } catch (e) {
-      console.error(`[useErc20Balance] ${tokenAddress}:`, e);
+      console.error(`[ERC20 ERR] ${tokenAddress?.slice(0, 10)}:`, e);
       setError(e instanceof Error ? e : new Error(String(e)));
     } finally {
       setIsLoading(false);
     }
-  }, [tokenAddress, userAddress, network]);
+  }, [tokenAddress, userAddress]);
 
   // Fetch on mount and when deps change
   useEffect(() => {
     fetchBalance();
   }, [fetchBalance]);
 
-  // Poll every 15 seconds
+  // Poll every 30 seconds
   useEffect(() => {
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") return;
-    const interval = setInterval(fetchBalance, 15_000);
+    const interval = setInterval(fetchBalance, 30_000);
     return () => clearInterval(interval);
   }, [fetchBalance, tokenAddress, userAddress]);
 
@@ -143,19 +146,19 @@ function useErc20Balance(
 }
 
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address, network);
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address);
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address, network);
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address);
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address, network);
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address);
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address, network);
+  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address);
 }
 
 /**
@@ -164,12 +167,11 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
 export function useTokenBalance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  network: NetworkType = "sepolia"
+  _network: NetworkType = "sepolia"
 ) {
   return useErc20Balance(
     tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined,
     userAddress,
-    network,
   );
 }
 
