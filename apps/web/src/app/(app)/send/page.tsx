@@ -18,6 +18,8 @@ import {
   Wallet,
   RefreshCw,
   ChevronDown,
+  AlertCircle,
+  Scan,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -40,6 +42,7 @@ import { PRIVACY_DENOMINATIONS, type PrivacyDenomination } from "@/lib/crypto";
 import { useToast } from "@/lib/providers/ToastProvider";
 import { parsePaymentUri, parseObelyskAddress } from "@/lib/obelysk/address";
 import { useAVNUPaymaster } from "@/lib/paymaster/avnuPaymaster";
+import { useSendStealthPayment } from "@/lib/hooks/useSendStealthPayment";
 
 function SendPageFallback() {
   return (
@@ -175,9 +178,41 @@ function SendPageInner() {
   // Contacts (gracefully returns empty when API unavailable)
   const { contacts: savedContacts, isLoading: isLoadingContacts, addContact } = useSavedContacts(address);
 
+  // Stealth send hook
+  const {
+    status: stealthStatus,
+    error: stealthError,
+    txHash: stealthTxHash,
+    recipientRegistered: stealthRecipientRegistered,
+    lookupRecipient: stealthLookup,
+    sendStealthPayment,
+    reset: resetStealth,
+  } = useSendStealthPayment();
+
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [privacyMode, setPrivacyMode] = useState(false);
+
+  // Send mode: "public" | "private" | "stealth"
+  type SendMode = "public" | "private" | "stealth";
+  const initialMode = searchParams.get("mode") === "stealth" ? "stealth" : "public";
+  const [sendMode, setSendMode] = useState<SendMode>(initialMode);
+
+  // Sync sendMode ↔ privacyMode
+  const handleModeChange = useCallback((mode: SendMode) => {
+    setSendMode(mode);
+    setPrivacyMode(mode === "private");
+    if (mode === "private") setUsePrivateBalance(true);
+    if (mode === "stealth") resetStealth();
+  }, [resetStealth]);
+
+  // Auto-lookup stealth recipient when address changes in stealth mode
+  useEffect(() => {
+    if (sendMode !== "stealth") return;
+    if (!recipient || recipient.length < 10 || !/^0x[a-fA-F0-9]{1,64}$/.test(recipient)) return;
+    const timeout = setTimeout(() => stealthLookup(recipient), 600);
+    return () => clearTimeout(timeout);
+  }, [recipient, sendMode, stealthLookup]);
 
   // Parse obelysk: payment URIs when pasted or typed into recipient field
   const handleRecipientInput = useCallback((value: string) => {
@@ -374,7 +409,25 @@ function SendPageInner() {
     setPrivateSendNote(null);
 
     try {
-      if (privacyMode || usePrivateBalance) {
+      if (sendMode === "stealth") {
+        // ============================================
+        // STEALTH SEND — one-time stealth address
+        // ============================================
+        const txHash = await sendStealthPayment(recipient, amount);
+        if (!txHash) throw new Error(stealthError || "Stealth payment failed");
+
+        toast.success("Stealth payment sent!");
+        setSendSuccess(true);
+
+        setTimeout(() => {
+          setShowConfirm(false);
+          setSendSuccess(false);
+          setAmount("");
+          setRecipient("");
+          resetStealth();
+        }, 3000);
+
+      } else if (privacyMode || usePrivateBalance) {
         // ============================================
         // PRIVATE SEND - Uses real ZK proofs on-chain
         // ============================================
@@ -503,9 +556,9 @@ function SendPageInner() {
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">Send {selectedAsset.symbol}</h1>
+        <h1 className="text-2xl font-bold text-white">Send {sendMode === "stealth" ? "SAGE" : selectedAsset.symbol}</h1>
         <p className="text-gray-400 mt-1">
-          Transfer tokens publicly or privately
+          Transfer tokens publicly, privately, or via stealth
         </p>
       </div>
 
@@ -668,14 +721,138 @@ function SendPageInner() {
         className="glass-card"
       >
         <div className="p-6 space-y-5">
-          {/* Privacy Mode Toggle */}
-          <PrivacyModeToggle
-            enabled={privacyMode}
-            onToggle={(enabled) => {
-              setPrivacyMode(enabled);
-              if (enabled) setUsePrivateBalance(true);
-            }}
-          />
+          {/* Send Mode Selector: Public / Private / Stealth */}
+          <div className="space-y-3">
+            <label className="block text-xs text-gray-500 uppercase tracking-wider font-medium">Send Mode</label>
+            <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-surface-elevated/50 border border-surface-border">
+              {([
+                { id: "public" as SendMode, label: "Public", icon: Eye, desc: "Standard transfer" },
+                { id: "private" as SendMode, label: "Private", icon: EyeOff, desc: "Hidden amount" },
+                { id: "stealth" as SendMode, label: "Stealth", icon: Shield, desc: "Hidden recipient" },
+              ]).map((mode) => {
+                const Icon = mode.icon;
+                const isActive = sendMode === mode.id;
+                return (
+                  <button
+                    key={mode.id}
+                    type="button"
+                    onClick={() => handleModeChange(mode.id)}
+                    className={cn(
+                      "flex flex-col items-center gap-1 py-3 px-2 rounded-lg transition-all text-center",
+                      isActive
+                        ? mode.id === "stealth"
+                          ? "bg-gradient-to-b from-fuchsia-600/20 to-indigo-600/20 border border-fuchsia-500/30 text-white"
+                          : mode.id === "private"
+                            ? "bg-gradient-to-b from-brand-600/20 to-accent-fuchsia/20 border border-brand-500/30 text-white"
+                            : "bg-white/[0.06] border border-white/[0.1] text-white"
+                        : "text-gray-500 hover:text-gray-300 border border-transparent"
+                    )}
+                  >
+                    <Icon className={cn("w-4 h-4", isActive ? (mode.id === "stealth" ? "text-fuchsia-400" : mode.id === "private" ? "text-brand-400" : "text-white") : "")} />
+                    <span className="text-xs font-semibold">{mode.label}</span>
+                    <span className="text-[10px] text-gray-500">{mode.desc}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Stealth / Private Explainer */}
+          <AnimatePresence mode="wait">
+            {sendMode === "stealth" && (
+              <motion.div
+                key="stealth-info"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-4 rounded-xl bg-gradient-to-r from-fuchsia-600/10 to-indigo-600/10 border border-fuchsia-500/20 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <Shield className="w-5 h-5 text-fuchsia-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-white">Stealth Send</p>
+                      <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                        Creates a <span className="text-fuchsia-400">one-time stealth address</span> for the recipient.
+                        Their real address never appears on-chain — only they can detect and claim the payment using their viewing key.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2.5 rounded-lg bg-black/20 border border-white/[0.04]">
+                      <p className="text-gray-500 mb-1">Amount</p>
+                      <p className="text-fuchsia-400 font-medium">Encrypted (ElGamal)</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-black/20 border border-white/[0.04]">
+                      <p className="text-gray-500 mb-1">Recipient</p>
+                      <p className="text-fuchsia-400 font-medium">Hidden (stealth address)</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2 pt-1">
+                    <Info className="w-3.5 h-3.5 text-gray-600 shrink-0 mt-0.5" />
+                    <p className="text-[10px] text-gray-600 leading-relaxed">
+                      Stealth sends use SAGE tokens only. The recipient must have registered their stealth meta-address on the Stealth Registry.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {sendMode === "private" && (
+              <motion.div
+                key="private-info"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="p-4 rounded-xl bg-gradient-to-r from-brand-600/10 to-accent-fuchsia/10 border border-brand-500/20 space-y-3">
+                  <div className="flex items-start gap-3">
+                    <EyeOff className="w-5 h-5 text-brand-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-sm font-semibold text-white">Private Send</p>
+                      <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+                        Uses <span className="text-brand-400">zero-knowledge proofs</span> to hide the transfer amount.
+                        The sender and recipient addresses are still visible on-chain, but the amount is encrypted.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div className="p-2.5 rounded-lg bg-black/20 border border-white/[0.04]">
+                      <p className="text-gray-500 mb-1">Amount</p>
+                      <p className="text-brand-400 font-medium">Hidden (ZK proof)</p>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-black/20 border border-white/[0.04]">
+                      <p className="text-gray-500 mb-1">Recipient</p>
+                      <p className="text-gray-400 font-medium">Visible on-chain</p>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Stealth: recipient registration check */}
+          {sendMode === "stealth" && recipient.length > 10 && (
+            <div className="flex items-center gap-2 text-xs">
+              {stealthStatus === "looking_up" && (
+                <><Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" /> Checking recipient registration...</>
+              )}
+              {stealthRecipientRegistered === true && (
+                <span className="text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Recipient has a registered stealth meta-address
+                </span>
+              )}
+              {stealthRecipientRegistered === false && stealthStatus !== "looking_up" && stealthStatus !== "idle" && (
+                <span className="text-amber-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5" /> Recipient has not registered — they cannot receive stealth payments
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Source Balance Toggle */}
           <div className={cn(
@@ -882,24 +1059,32 @@ function SendPageInner() {
           {/* Transaction Preview */}
           <div className={cn(
             "p-4 rounded-xl border space-y-3",
-            privacyMode 
-              ? "bg-gradient-to-r from-brand-600/10 to-accent-fuchsia/10 border-brand-500/30" 
-              : "bg-surface-elevated/50 border-surface-border"
+            sendMode === "stealth"
+              ? "bg-gradient-to-r from-fuchsia-600/10 to-indigo-600/10 border-fuchsia-500/30"
+              : privacyMode
+                ? "bg-gradient-to-r from-brand-600/10 to-accent-fuchsia/10 border-brand-500/30"
+                : "bg-surface-elevated/50 border-surface-border"
           )}>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">You send</span>
-              {privacyMode ? (
+              {sendMode === "stealth" ? (
+                <span className="text-fuchsia-400 font-mono tracking-wider">••••••• SAGE</span>
+              ) : privacyMode ? (
                 <span className="text-brand-400 font-mono tracking-wider">••••••• {selectedAsset.symbol}</span>
               ) : (
                 <span className="text-white">{amount || "0.00"} {selectedAsset.symbol}</span>
               )}
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-gray-400">Recipient sees</span>
-              {privacyMode ? (
-                <span className="text-brand-400 font-mono tracking-wider">••••••• {selectedAsset.symbol}</span>
+              <span className="text-gray-400">Recipient</span>
+              {sendMode === "stealth" ? (
+                <span className="text-fuchsia-400 flex items-center gap-1">
+                  <Shield className="w-3 h-3" /> Stealth address (hidden)
+                </span>
               ) : (
-                <span className="text-white">{amount || "0.00"} {selectedAsset.symbol}</span>
+                <span className="text-white font-mono text-xs">
+                  {recipient ? `${recipient.slice(0, 8)}...${recipient.slice(-6)}` : "—"}
+                </span>
               )}
             </div>
             <div className="flex items-center justify-between text-sm">
@@ -916,9 +1101,13 @@ function SendPageInner() {
             </div>
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">Privacy</span>
-              {privacyMode ? (
+              {sendMode === "stealth" ? (
+                <span className="text-fuchsia-400 flex items-center gap-1">
+                  <Shield className="w-3 h-3" /> Recipient + amount hidden
+                </span>
+              ) : privacyMode ? (
                 <span className="text-brand-400 flex items-center gap-1">
-                  <EyeOff className="w-3 h-3" /> End-to-end encrypted
+                  <EyeOff className="w-3 h-3" /> Amount hidden (ZK proof)
                 </span>
               ) : (
                 <span className="text-gray-400 flex items-center gap-1">
@@ -928,33 +1117,69 @@ function SendPageInner() {
             </div>
           </div>
 
-          {/* Privacy Info */}
-          {privacyMode && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-brand-600/10 border border-brand-500/20">
-              <Shield className="w-4 h-4 text-brand-400 mt-0.5 flex-shrink-0" />
-              <div className="text-xs text-gray-400">
-                <strong className="text-brand-400">Private Transfer:</strong> This transaction will 
-                generate a ZK proof (~2ms). The amount and recipient will show as{" "}
-                <span className="font-mono text-brand-400">? → ?</span> on block explorers. 
-                Only you and the recipient can see the actual values.
+          {/* Stealth error display */}
+          {sendMode === "stealth" && stealthError && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-red-600/10 border border-red-500/20">
+              <AlertCircle className="w-4 h-4 text-red-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-red-400">{stealthError}</p>
+            </div>
+          )}
+
+          {/* Stealth success display */}
+          {sendMode === "stealth" && stealthTxHash && stealthStatus === "confirmed" && (
+            <div className="flex items-start gap-2 p-3 rounded-lg bg-emerald-600/10 border border-emerald-500/20">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+              <div className="text-xs text-emerald-400">
+                <p className="font-medium">Stealth payment confirmed</p>
+                <a
+                  href={`${explorerUrl}/tx/${stealthTxHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1 mt-1 text-emerald-400/70 hover:text-emerald-400 transition-colors"
+                >
+                  View on explorer <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
             </div>
           )}
 
           {/* Send Button */}
           <button
-            onClick={() => setShowConfirm(true)}
-            disabled={!isValidAmount || !isValidRecipient}
+            onClick={() => {
+              if (sendMode === "stealth") {
+                // Stealth sends go directly (no confirmation modal needed — wallet will prompt)
+                handleSend();
+              } else {
+                setShowConfirm(true);
+              }
+            }}
+            disabled={
+              !isValidAmount || !isValidRecipient ||
+              (sendMode === "stealth" && !stealthRecipientRegistered) ||
+              stealthStatus === "sending"
+            }
             className={cn(
               "w-full py-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-all",
-              !isValidAmount || !isValidRecipient
+              !isValidAmount || !isValidRecipient || (sendMode === "stealth" && !stealthRecipientRegistered) || stealthStatus === "sending"
                 ? "bg-surface-elevated text-gray-500 cursor-not-allowed"
-                : privacyMode
-                  ? "bg-gradient-to-r from-brand-600 to-accent-fuchsia hover:from-brand-500 hover:to-accent-fuchsia/90 text-white"
-                  : "btn-glow"
+                : sendMode === "stealth"
+                  ? "bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white"
+                  : privacyMode
+                    ? "bg-gradient-to-r from-brand-600 to-accent-fuchsia hover:from-brand-500 hover:to-accent-fuchsia/90 text-white"
+                    : "btn-glow"
             )}
           >
-            {privacyMode ? (
+            {stealthStatus === "sending" ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                Sending Stealth...
+              </>
+            ) : sendMode === "stealth" ? (
+              <>
+                <Shield className="w-5 h-5" />
+                Send via Stealth
+              </>
+            ) : privacyMode ? (
               <>
                 <EyeOff className="w-5 h-5" />
                 Send Privately
@@ -1070,12 +1295,14 @@ function SendPageInner() {
                     <CheckCircle2 className="w-8 h-8 text-emerald-400" />
                   </motion.div>
                   <h3 className="text-xl font-semibold text-white mb-2">
-                    Transfer {privacyMode ? "Sent Privately" : "Complete"}!
+                    Transfer {sendMode === "stealth" ? "Sent via Stealth" : privacyMode ? "Sent Privately" : "Complete"}!
                   </h3>
                   <p className="text-gray-400 text-sm">
-                    {privacyMode 
-                      ? "Your private transfer has been sent. The transaction appears as ? → ? on-chain."
-                      : `${amount} SAGE sent successfully.`
+                    {sendMode === "stealth"
+                      ? "Your stealth payment has been sent. The recipient can scan for it using their viewing key."
+                      : privacyMode
+                        ? "Your private transfer has been sent. The transaction appears as ? → ? on-chain."
+                        : `${amount} SAGE sent successfully.`
                     }
                   </p>
                 </div>
