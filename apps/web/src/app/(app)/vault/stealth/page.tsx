@@ -100,6 +100,25 @@ export default function StealthAddressesPage() {
     if (!address) return;
     setRegisterError(null);
     try {
+      // Pre-flight: check on-chain if already registered to avoid RPC error
+      const { RpcProvider } = await import("starknet");
+      const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
+      try {
+        const existing = await provider.callContract({
+          contractAddress: "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5",
+          entrypoint: "get_meta_address",
+          calldata: [address],
+        });
+        const data: string[] = Array.isArray(existing) ? existing : [];
+        if (data.length >= 4 && BigInt(data[0] || "0") !== 0n) {
+          // Already registered — just refetch to update UI
+          refetch();
+          return;
+        }
+      } catch {
+        // get_meta_address reverted — user is not registered, proceed
+      }
+
       // Initialize keys if not done yet
       if (!hasKeys) {
         await initializeKeys();
@@ -118,9 +137,9 @@ export default function StealthAddressesPage() {
 
       await register({ spendingPubKey, viewingPubKey });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Registration failed";
+      const msg = err instanceof Error ? err.message : String(err);
       // If already registered, refetch to pick up existing on-chain data
-      if (msg.includes("Already registered")) {
+      if (msg.includes("Already registered") || msg.includes("already registered")) {
         refetch();
         return;
       }
