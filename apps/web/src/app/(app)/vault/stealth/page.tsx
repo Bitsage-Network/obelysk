@@ -551,7 +551,7 @@ export default function StealthAddressesPage() {
             </div>
 
             <p className="text-[13px] text-gray-500 leading-relaxed">
-              Send SAGE tokens so that the recipient&apos;s real address never appears on-chain. A one-time stealth address is generated for each payment — only the recipient can detect and claim it.
+              Send tokens privately via one-time stealth addresses. The recipient&apos;s real address never appears on-chain — only they can detect and claim the payment using their viewing key.
             </p>
 
             <div className="grid grid-cols-2 gap-2 text-[11px]">

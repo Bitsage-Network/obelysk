@@ -47,7 +47,6 @@ export function useSendStealthPayment() {
   const SEPOLIA_STEALTH_REGISTRY =
     "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5";
   const registryAddress = contracts?.STEALTH_REGISTRY || SEPOLIA_STEALTH_REGISTRY;
-  const sageTokenAddress = contracts?.SAGE_TOKEN || "0x0";
 
   const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl || "";
 
@@ -93,7 +92,12 @@ export function useSendStealthPayment() {
   );
 
   const sendStealthPayment = useCallback(
-    async (recipientAddress: string, amount: string): Promise<string | null> => {
+    async (
+      recipientAddress: string,
+      amount: string,
+      tokenAddress: string,
+      decimals: number
+    ): Promise<string | null> => {
       setError(null);
       setTxHash(null);
 
@@ -109,6 +113,12 @@ export function useSendStealthPayment() {
         return null;
       }
 
+      if (!tokenAddress || tokenAddress === "0x0") {
+        setError("Invalid token address");
+        setStatus("error");
+        return null;
+      }
+
       const parsedAmount = parseFloat(amount);
       if (isNaN(parsedAmount) || parsedAmount <= 0) {
         setError("Invalid amount");
@@ -117,8 +127,10 @@ export function useSendStealthPayment() {
       }
 
       try {
-        // Convert to u256 (18 decimals)
-        const amountWei = BigInt(Math.floor(parsedAmount * 1e18));
+        // Convert to u256 using the token's decimals
+        const [whole = "0", frac = ""] = amount.split(".");
+        const paddedFrac = frac.padEnd(decimals, "0").slice(0, decimals);
+        const amountWei = BigInt(whole) * BigInt(10 ** decimals) + BigInt(paddedFrac);
         const amountLow = amountWei & ((1n << 128n) - 1n);
         const amountHigh = amountWei >> 128n;
 
@@ -130,9 +142,9 @@ export function useSendStealthPayment() {
 
         // Multicall: approve + send_stealth_payment
         const tx = await sendAsync([
-          // Call 1: SAGE.approve(registry, amount)
+          // Call 1: token.approve(registry, amount)
           {
-            contractAddress: sageTokenAddress,
+            contractAddress: tokenAddress,
             entrypoint: "approve",
             calldata: [
               registryAddress,
@@ -140,7 +152,7 @@ export function useSendStealthPayment() {
               "0x" + amountHigh.toString(16),
             ],
           },
-          // Call 2: registry.send_stealth_payment(worker, amount, ephemeral_secret, encryption_randomness, job_id)
+          // Call 2: registry.send_stealth_payment(worker, amount, ephemeral_secret, encryption_randomness, job_id, token)
           {
             contractAddress: registryAddress,
             entrypoint: "send_stealth_payment",
@@ -157,6 +169,8 @@ export function useSendStealthPayment() {
               // job_id: u256 (low=0, high=0)
               "0x0",
               "0x0",
+              // token: ContractAddress
+              tokenAddress,
             ],
           },
         ]);
@@ -172,7 +186,7 @@ export function useSendStealthPayment() {
         return null;
       }
     },
-    [account, address, sendAsync, sageTokenAddress, registryAddress],
+    [account, address, sendAsync, registryAddress],
   );
 
   const reset = useCallback(() => {

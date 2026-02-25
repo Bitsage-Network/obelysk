@@ -413,7 +413,9 @@ function SendPageInner() {
         // ============================================
         // STEALTH SEND — one-time stealth address
         // ============================================
-        const txHash = await sendStealthPayment(recipient, amount);
+        const { getTokenAddressForSymbol } = await import("@/lib/contracts/addresses");
+        const stealthTokenAddress = selectedAsset.contractAddress || getTokenAddressForSymbol(network, selectedAsset.id) || "0x0";
+        const txHash = await sendStealthPayment(recipient, amount, stealthTokenAddress, selectedAsset.decimals);
         if (!txHash) throw new Error(stealthError || "Stealth payment failed");
 
         toast.success("Stealth payment sent!");
@@ -556,7 +558,7 @@ function SendPageInner() {
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-white">Send {sendMode === "stealth" ? "SAGE" : selectedAsset.symbol}</h1>
+        <h1 className="text-2xl font-bold text-white">Send {selectedAsset.symbol}</h1>
         <p className="text-gray-400 mt-1">
           Transfer tokens publicly, privately, or via stealth
         </p>
@@ -793,7 +795,7 @@ function SendPageInner() {
                   <div className="flex items-start gap-2 pt-1">
                     <Info className="w-3.5 h-3.5 text-gray-600 shrink-0 mt-0.5" />
                     <p className="text-[10px] text-gray-600 leading-relaxed">
-                      Stealth sends use SAGE tokens only. The recipient must have registered their stealth meta-address on the Stealth Registry.
+                      Supports all tokens. The recipient must have registered their stealth meta-address on the Stealth Registry.
                     </p>
                   </div>
                 </div>
@@ -1068,7 +1070,7 @@ function SendPageInner() {
             <div className="flex items-center justify-between text-sm">
               <span className="text-gray-400">You send</span>
               {sendMode === "stealth" ? (
-                <span className="text-fuchsia-400 font-mono tracking-wider">••••••• SAGE</span>
+                <span className="text-fuchsia-400 font-mono tracking-wider">••••••• {selectedAsset.symbol}</span>
               ) : privacyMode ? (
                 <span className="text-brand-400 font-mono tracking-wider">••••••• {selectedAsset.symbol}</span>
               ) : (

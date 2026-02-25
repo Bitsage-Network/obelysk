@@ -19,6 +19,7 @@
 // - Pedersen hash for address derivation
 // - Schnorr proofs for spending authorization
 
+use starknet::ContractAddress;
 use core::poseidon::poseidon_hash_span;
 use sage_contracts::obelysk::elgamal::{
     ECPoint, ElGamalCiphertext,
@@ -62,6 +63,8 @@ pub struct StealthPaymentAnnouncement {
     pub timestamp: u64,
     /// Associated job ID (0 if direct transfer)
     pub job_id: u256,
+    /// Token contract address for this payment
+    pub token: ContractAddress,
 }
 
 /// Spending proof for claiming stealth payments

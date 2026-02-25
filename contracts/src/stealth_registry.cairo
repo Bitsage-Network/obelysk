@@ -68,7 +68,8 @@ pub trait IStealthRegistry<TContractState> {
         amount: u256,
         ephemeral_secret: felt252,
         encryption_randomness: felt252,
-        job_id: u256
+        job_id: u256,
+        token: ContractAddress
     ) -> u256; // Returns announcement index
 
     /// Send stealth payment directly to a meta-address (no lookup)
@@ -78,7 +79,8 @@ pub trait IStealthRegistry<TContractState> {
         amount: u256,
         ephemeral_secret: felt252,
         encryption_randomness: felt252,
-        job_id: u256
+        job_id: u256,
+        token: ContractAddress
     ) -> u256;
 
     /// Claim a stealth payment by providing spending proof
@@ -232,6 +234,9 @@ mod StealthRegistry {
         // Payment amounts (stored separately for gas efficiency)
         payment_amounts: Map<u256, u256>,  // announcement_index -> amount
 
+        // Per-announcement token address (for multi-token stealth payments)
+        payment_tokens: Map<u256, ContractAddress>,  // announcement_index -> token
+
         // Claim tracking
         claimed: Map<u256, bool>,  // announcement_index -> is_claimed
         claimed_by: Map<u256, ContractAddress>,  // announcement_index -> claimer
@@ -316,6 +321,7 @@ mod StealthRegistry {
         ephemeral_pubkey_x: felt252,
         view_tag: u8,
         job_id: u256,
+        token: ContractAddress,
         timestamp: u64,
     }
 
@@ -489,7 +495,8 @@ mod StealthRegistry {
             amount: u256,
             ephemeral_secret: felt252,
             encryption_randomness: felt252,
-            job_id: u256
+            job_id: u256,
+            token: ContractAddress
         ) -> u256 {
             // Look up worker's meta-address
             assert!(self.has_meta_address.read(worker), "Worker not registered");
@@ -500,7 +507,8 @@ mod StealthRegistry {
                 amount,
                 ephemeral_secret,
                 encryption_randomness,
-                job_id
+                job_id,
+                token
             )
         }
 
@@ -510,7 +518,8 @@ mod StealthRegistry {
             amount: u256,
             ephemeral_secret: felt252,
             encryption_randomness: felt252,
-            job_id: u256
+            job_id: u256,
+            token: ContractAddress
         ) -> u256 {
             self._require_not_paused();
 
@@ -520,6 +529,7 @@ mod StealthRegistry {
             // Validate inputs
             assert!(amount > 0, "Amount must be positive");
             assert!(ephemeral_secret != 0, "Invalid ephemeral secret");
+            assert!(!token.is_zero(), "Invalid token address");
 
             // Derive stealth address
             let (stealth_address, ephemeral_pubkey, view_tag) = derive_stealth_address(
@@ -534,9 +544,9 @@ mod StealthRegistry {
                 encryption_randomness
             );
 
-            // Transfer SAGE from sender to this contract
-            let sage = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            sage.transfer_from(caller, get_contract_address(), amount);
+            // Transfer token from sender to this contract
+            let erc20 = IERC20Dispatcher { contract_address: token };
+            erc20.transfer_from(caller, get_contract_address(), amount);
 
             // Create and store announcement
             let announcement_index = self.announcement_count.read();
@@ -548,10 +558,12 @@ mod StealthRegistry {
                 view_tag,
                 timestamp: now,
                 job_id,
+                token,
             };
 
             self.announcements.write(announcement_index, announcement);
             self.payment_amounts.write(announcement_index, amount);
+            self.payment_tokens.write(announcement_index, token);
             self.stealth_to_announcement.write(stealth_address, announcement_index);
             self.announcement_count.write(announcement_index + 1);
 
@@ -590,6 +602,7 @@ mod StealthRegistry {
                 ephemeral_pubkey_x: ephemeral_pubkey.x,
                 view_tag,
                 job_id,
+                token,
                 timestamp: now,
             });
 
@@ -630,9 +643,17 @@ mod StealthRegistry {
             // Get payment amount
             let amount = self.payment_amounts.read(announcement_index);
 
-            // Transfer SAGE to recipient
-            let sage = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            sage.transfer(recipient, amount);
+            // Resolve token: use per-announcement token, fallback to SAGE for pre-upgrade payments
+            let stored_token = self.payment_tokens.read(announcement_index);
+            let token_address = if stored_token.is_zero() {
+                self.sage_token.read()
+            } else {
+                stored_token
+            };
+
+            // Transfer token to recipient
+            let erc20 = IERC20Dispatcher { contract_address: token_address };
+            erc20.transfer(recipient, amount);
 
             // Update statistics
             let total_claimed = self.total_claimed.read();
