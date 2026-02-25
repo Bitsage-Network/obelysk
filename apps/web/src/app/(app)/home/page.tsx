@@ -114,6 +114,27 @@ export default function HomePage() {
     usdValue: string;
   } | null>(null);
 
+  // Debug: log balance hook state for each token
+  const balanceDebug = useMemo(() => {
+    return TOKENS.map((t) => {
+      const bal = balances[t.symbol as keyof typeof balances];
+      const hasData = bal && typeof bal === "object" && "data" in bal;
+      const hasError = bal && typeof bal === "object" && "error" in bal;
+      return {
+        symbol: t.symbol,
+        data: hasData ? (bal as any).data : "N/A",
+        dataType: hasData ? typeof (bal as any).data : "N/A",
+        error: hasError ? String((bal as any).error?.message || (bal as any).error || "none") : "N/A",
+        isLoading: (bal as any)?.isLoading ?? "N/A",
+      };
+    });
+  }, [balances]);
+
+  // Log to console for debugging
+  if (typeof window !== "undefined" && address) {
+    console.log("[Balance Debug]", JSON.stringify(balanceDebug, (_, v) => typeof v === "bigint" ? v.toString() : v, 2));
+  }
+
   // Compute token data
   const tokenData = useMemo(() => {
     return TOKENS.map((t) => {
@@ -197,6 +218,21 @@ export default function HomePage() {
           ))}
         </div>
       </div>
+
+      {/* DEBUG: Balance hook state — remove after fixing */}
+      {address && (
+        <div className="p-3 rounded-lg bg-red-900/20 border border-red-500/30 text-xs font-mono space-y-1">
+          <p className="text-red-400 font-semibold">Balance Debug (temp)</p>
+          {balanceDebug.map((d) => (
+            <div key={d.symbol} className="flex gap-2">
+              <span className="text-white w-10">{d.symbol}</span>
+              <span className={d.error !== "none" && d.error !== "N/A" ? "text-red-400" : "text-green-400"}>
+                data={String(d.data)} | type={d.dataType} | err={d.error} | loading={String(d.isLoading)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Quick Access Row */}
       <div>
