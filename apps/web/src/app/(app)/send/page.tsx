@@ -105,7 +105,7 @@ function formatBalance(raw: bigint | undefined, decimals: number): string {
 
 function SendPageInner() {
   const searchParams = useSearchParams();
-  const { address } = useAccount();
+  const { address, account } = useAccount();
   const { network } = useNetwork();
   const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "";
   const obelyskWallet = useSafeObelyskWallet();
@@ -247,6 +247,14 @@ function SendPageInner() {
     nullifier: string;
     amount: number;
   } | null>(null);
+
+  // Reset private balance toggle when switching away from SAGE
+  useEffect(() => {
+    if (selectedAsset.id !== "SAGE") {
+      setUsePrivateBalance(false);
+      if (sendMode === "private") setSendMode("public");
+    }
+  }, [selectedAsset.id]);
 
   // Build asset balances from on-chain data
   const assetBalances = useMemo(() => {
@@ -525,8 +533,8 @@ function SendPageInner() {
           setRecipient("");
           resetProvingState();
         }, 2000);
-      } else {
-        // Public send
+      } else if (selectedAsset.id === "SAGE") {
+        // Public SAGE send via Obelysk wallet
         await sendPublic(recipient, amount);
         setSendSuccess(true);
         setTimeout(() => {
@@ -535,6 +543,41 @@ function SendPageInner() {
           setAmount("");
           setRecipient("");
           resetProvingState();
+        }, 2000);
+      } else {
+        // Public ERC20 transfer for non-SAGE tokens
+        if (!account) throw new Error("Wallet not connected");
+        const { CallData } = await import("starknet");
+        const { getTokenAddressForSymbol } = await import("@/lib/contracts/addresses");
+        const tokenAddress = getTokenAddressForSymbol(network, selectedAsset.id);
+
+        if (!tokenAddress || tokenAddress === "0x0") {
+          throw new Error(`Token address not found for ${selectedAsset.symbol} on ${network}`);
+        }
+
+        const decimals = selectedAsset.decimals || 18;
+        const [whole = "0", frac = ""] = amount.split(".");
+        const paddedFrac = frac.padEnd(decimals, "0").slice(0, decimals);
+        const amountBn = BigInt(whole) * BigInt(10 ** decimals) + BigInt(paddedFrac);
+
+        if (amountBn <= 0n) throw new Error("Amount must be greater than zero");
+
+        const U128_MAX = (1n << 128n) - 1n;
+        await account.execute([{
+          contractAddress: tokenAddress,
+          entrypoint: "transfer",
+          calldata: CallData.compile({
+            recipient,
+            amount: { low: amountBn & U128_MAX, high: amountBn >> 128n },
+          }),
+        }]);
+        toast.success(`${amount} ${selectedAsset.symbol} sent!`);
+        setSendSuccess(true);
+        setTimeout(() => {
+          setShowConfirm(false);
+          setSendSuccess(false);
+          setAmount("");
+          setRecipient("");
         }, 2000);
       }
     } catch (error) {
@@ -577,20 +620,24 @@ function SendPageInner() {
                 <Wallet className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-sm text-gray-400">Obelysk Wallet</p>
+                <p className="text-sm text-gray-400">Wallet Balance</p>
                 <div className="flex items-center gap-3">
-                  <span className="text-white font-medium">{balance.public} SAGE</span>
-                  <span className="text-gray-600">|</span>
-                  <span className="text-brand-400 font-mono text-sm">
-                    {isPrivateRevealed ? balance.private : "•••••"} private
-                  </span>
-                  {parseFloat(balance.pending) > 0 && (
+                  <span className="text-white font-medium">{currentAssetBalance.public} {selectedAsset.symbol}</span>
+                  {selectedAsset.id === "SAGE" && (
                     <>
                       <span className="text-gray-600">|</span>
-                      <span className="text-orange-400 text-sm flex items-center gap-1">
-                        <RefreshCw className="w-3 h-3" />
-                        +{balance.pending} pending
+                      <span className="text-brand-400 font-mono text-sm">
+                        {isPrivateRevealed ? balance.private : "•••••"} private
                       </span>
+                      {parseFloat(balance.pending) > 0 && (
+                        <>
+                          <span className="text-gray-600">|</span>
+                          <span className="text-orange-400 text-sm flex items-center gap-1">
+                            <RefreshCw className="w-3 h-3" />
+                            +{balance.pending} pending
+                          </span>
+                        </>
+                      )}
                     </>
                   )}
                 </div>
@@ -618,20 +665,22 @@ function SendPageInner() {
         )}
       </motion.div>
 
-      {/* Balance Card */}
-      <PrivacyBalanceCard
-        publicBalance={balance.public}
-        privateBalance={balance.private}
-        isRevealed={isPrivateRevealed}
-        onReveal={revealPrivateBalance}
-        onHide={hidePrivateBalance}
-        onWrap={handleWrap}
-        onUnwrap={handleUnwrap}
-        decryptionResult={decryptionResult}
-        staleNotesCount={staleNotesCount}
-        localNotesBalance={localNotesBalance}
-        onClearStaleNotes={clearStaleNotes}
-      />
+      {/* Balance Card — SAGE privacy wrap/unwrap only */}
+      {selectedAsset.id === "SAGE" && (
+        <PrivacyBalanceCard
+          publicBalance={balance.public}
+          privateBalance={balance.private}
+          isRevealed={isPrivateRevealed}
+          onReveal={revealPrivateBalance}
+          onHide={hidePrivateBalance}
+          onWrap={handleWrap}
+          onUnwrap={handleUnwrap}
+          decryptionResult={decryptionResult}
+          staleNotesCount={staleNotesCount}
+          localNotesBalance={localNotesBalance}
+          onClearStaleNotes={clearStaleNotes}
+        />
+      )}
 
       {/* ZK Proof Details - Show after successful deposit */}
       {depositState.phase === "confirmed" && depositState.proofData && depositState.txHash && depositState.provingTimeMs && (
@@ -729,28 +778,32 @@ function SendPageInner() {
             <div className="grid grid-cols-3 gap-2 p-1 rounded-xl bg-surface-elevated/50 border border-surface-border">
               {([
                 { id: "public" as SendMode, label: "Public", icon: Eye, desc: "Standard transfer" },
-                { id: "private" as SendMode, label: "Private", icon: EyeOff, desc: "Hidden amount" },
+                { id: "private" as SendMode, label: "Private", icon: EyeOff, desc: "Hidden amount (SAGE)" },
                 { id: "stealth" as SendMode, label: "Stealth", icon: Shield, desc: "Hidden recipient" },
               ]).map((mode) => {
                 const Icon = mode.icon;
                 const isActive = sendMode === mode.id;
+                const isDisabled = mode.id === "private" && selectedAsset.id !== "SAGE";
                 return (
                   <button
                     key={mode.id}
                     type="button"
-                    onClick={() => handleModeChange(mode.id)}
+                    onClick={() => !isDisabled && handleModeChange(mode.id)}
+                    disabled={isDisabled}
                     className={cn(
                       "flex flex-col items-center gap-1 py-3 px-2 rounded-lg transition-all text-center",
-                      isActive
-                        ? mode.id === "stealth"
-                          ? "bg-gradient-to-b from-fuchsia-600/20 to-indigo-600/20 border border-fuchsia-500/30 text-white"
-                          : mode.id === "private"
-                            ? "bg-gradient-to-b from-brand-600/20 to-accent-fuchsia/20 border border-brand-500/30 text-white"
-                            : "bg-white/[0.06] border border-white/[0.1] text-white"
-                        : "text-gray-500 hover:text-gray-300 border border-transparent"
+                      isDisabled
+                        ? "text-gray-600 border border-transparent cursor-not-allowed opacity-50"
+                        : isActive
+                          ? mode.id === "stealth"
+                            ? "bg-gradient-to-b from-fuchsia-600/20 to-indigo-600/20 border border-fuchsia-500/30 text-white"
+                            : mode.id === "private"
+                              ? "bg-gradient-to-b from-brand-600/20 to-accent-fuchsia/20 border border-brand-500/30 text-white"
+                              : "bg-white/[0.06] border border-white/[0.1] text-white"
+                          : "text-gray-500 hover:text-gray-300 border border-transparent"
                     )}
                   >
-                    <Icon className={cn("w-4 h-4", isActive ? (mode.id === "stealth" ? "text-fuchsia-400" : mode.id === "private" ? "text-brand-400" : "text-white") : "")} />
+                    <Icon className={cn("w-4 h-4", isDisabled ? "text-gray-600" : isActive ? (mode.id === "stealth" ? "text-fuchsia-400" : mode.id === "private" ? "text-brand-400" : "text-white") : "")} />
                     <span className="text-xs font-semibold">{mode.label}</span>
                     <span className="text-[10px] text-gray-500">{mode.desc}</span>
                   </button>
@@ -859,8 +912,8 @@ function SendPageInner() {
           {/* Source Balance Toggle */}
           <div className={cn(
             "flex items-center justify-between p-3 rounded-xl border transition-all",
-            usePrivateBalance 
-              ? "bg-brand-600/10 border-brand-500/30" 
+            usePrivateBalance
+              ? "bg-brand-600/10 border-brand-500/30"
               : "bg-surface-elevated/50 border-surface-border"
           )}>
             <div className="flex items-center gap-3">
@@ -877,27 +930,29 @@ function SendPageInner() {
               <div>
                 <p className="text-sm font-medium text-white">Send from</p>
                 <p className="text-xs text-gray-500">
-                  {usePrivateBalance ? "Private balance" : "Public balance"}
+                  {usePrivateBalance ? "Private balance (SAGE)" : "Public balance"}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
               {usePrivateBalance ? (
                 isPrivateRevealed ? (
-                  <span className="text-brand-400 font-medium">{balance.private}</span>
+                  <span className="text-brand-400 font-medium">{currentAssetBalance.private}</span>
                 ) : (
                   <span className="text-brand-400 font-mono">•••••</span>
                 )
               ) : (
-                <span className="text-white font-medium">{balance.public}</span>
+                <span className="text-white font-medium">{currentAssetBalance.public}</span>
               )}
-              <span className="text-sm text-gray-400">SAGE</span>
-              <button
-                onClick={() => setUsePrivateBalance(!usePrivateBalance)}
-                className="text-xs text-brand-400 hover:text-brand-300"
-              >
-                Switch
-              </button>
+              <span className="text-sm text-gray-400">{selectedAsset.symbol}</span>
+              {selectedAsset.id === "SAGE" && (
+                <button
+                  onClick={() => setUsePrivateBalance(!usePrivateBalance)}
+                  className="text-xs text-brand-400 hover:text-brand-300"
+                >
+                  Switch
+                </button>
+              )}
             </div>
           </div>
 
@@ -1304,7 +1359,7 @@ function SendPageInner() {
                       ? "Your stealth payment has been sent. The recipient can scan for it using their viewing key."
                       : privacyMode
                         ? "Your private transfer has been sent. The transaction appears as ? → ? on-chain."
-                        : `${amount} SAGE sent successfully.`
+                        : `${amount} ${selectedAsset.symbol} sent successfully.`
                     }
                   </p>
                 </div>
@@ -1380,7 +1435,7 @@ function SendPageInner() {
                         {privacyMode ? (
                           <span className="text-xs text-brand-400 font-mono mt-1">? → ?</span>
                         ) : (
-                          <span className="text-xs text-gray-400 mt-1">{amount} SAGE</span>
+                          <span className="text-xs text-gray-400 mt-1">{amount} {selectedAsset.symbol}</span>
                         )}
                       </div>
                       <div className="text-center">
@@ -1399,7 +1454,7 @@ function SendPageInner() {
                         {privacyMode ? (
                           <span className="text-brand-400 font-mono">•••••••</span>
                         ) : (
-                          <span className="text-white">{amount} SAGE</span>
+                          <span className="text-white">{amount} {selectedAsset.symbol}</span>
                         )}
                       </div>
                       <div className="flex justify-between text-sm">
