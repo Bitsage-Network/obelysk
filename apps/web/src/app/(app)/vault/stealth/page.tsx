@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Eye,
   EyeOff,
@@ -87,11 +87,38 @@ export default function StealthAddressesPage() {
     refetch,
   } = useStealthOnChain(address);
 
-  const isRegistered = !!metaAddressData;
+  // Direct on-chain check — bypasses react-query entirely to catch already-registered state
+  const [directMetaAddress, setDirectMetaAddress] = useState<{ spending_pub_key: string; viewing_pub_key: string } | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { RpcProvider } = await import("starknet");
+        const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
+        const result = await provider.callContract({
+          contractAddress: "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5",
+          entrypoint: "get_meta_address",
+          calldata: [address],
+        });
+        const data: string[] = Array.isArray(result) ? result : [];
+        if (!cancelled && data.length >= 4 && BigInt(data[0] || "0") !== 0n) {
+          setDirectMetaAddress({ spending_pub_key: data[0], viewing_pub_key: data[2] });
+        }
+      } catch {
+        // Not registered — expected for new users
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address]);
+
+  // Merge: prefer react-query data, fall back to direct RPC data
+  const resolvedMetaAddress = metaAddressData || directMetaAddress;
+  const isRegistered = !!resolvedMetaAddress;
 
   const metaAddress = {
-    spendingPubKey: metaAddressData?.spending_pub_key || (address ? "Not registered" : "Connect wallet to view"),
-    viewingPubKey: metaAddressData?.viewing_pub_key || (address ? "Not registered" : "Connect wallet to view"),
+    spendingPubKey: resolvedMetaAddress?.spending_pub_key || (address ? "Not registered" : "Connect wallet to view"),
+    viewingPubKey: resolvedMetaAddress?.viewing_pub_key || (address ? "Not registered" : "Connect wallet to view"),
   };
 
   const [registerError, setRegisterError] = useState<string | null>(null);
