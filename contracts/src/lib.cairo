@@ -21,5 +21,8 @@ mod privacy_pools;
 mod privacy_router;
 
 // Stealth payments (included at launch)
-mod stealth_payments;
-mod stealth_registry;
+pub mod stealth_payments;
+pub mod stealth_registry;
+
+// Test utilities
+pub mod mock_erc20;

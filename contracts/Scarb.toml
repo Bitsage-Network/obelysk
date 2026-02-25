@@ -9,7 +9,7 @@ openzeppelin = { git = "https://github.com/OpenZeppelin/cairo-contracts", tag = 
 sage_contracts = { git = "https://github.com/Bitsage-Network/BitSage-Cairo-Smart-Contracts.git", branch = "main" }
 
 [dev-dependencies]
-snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v0.56.0" }
+snforge_std = { git = "https://github.com/foundry-rs/starknet-foundry", tag = "v0.54.1" }
 
 [[target.starknet-contract]]
 casm = true
