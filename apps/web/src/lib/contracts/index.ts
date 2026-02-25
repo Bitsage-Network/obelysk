@@ -1,8 +1,7 @@
 // Contract client for BitSage Network
 // Provides hooks and utilities for interacting with deployed contracts
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useContract, useReadContract, useProvider, useSendTransaction } from "@starknet-react/core";
+import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
 import type { Abi, Call } from "starknet";
 import { CONTRACTS } from "./addresses";
 
@@ -77,89 +76,58 @@ export function useSageAllowance(
 
 // ============================================
 // External Token Balance Hooks (ETH, STRK, USDC, wBTC)
-// Uses direct RpcProvider.callContract to bypass ABI parsing issues
+// Reuses SAGE ABI (which has a proper impl→interface→balance_of chain
+// that abi-wan-kanabi can parse) — works for any standard ERC20.
 // ============================================
 
 import { EXTERNAL_TOKENS, TOKEN_METADATA, type TokenSymbol } from "./addresses";
 
-const POLL_INTERVAL_MS = 15_000;
-
-/**
- * Generic hook to fetch any ERC20 balance via direct provider.callContract.
- * Uses the same starknet-react provider (and RPC endpoint) as useReadContract,
- * but bypasses the abi-wan-kanabi ABI parser which is unreliable for external
- * tokens on starknet-react v5 + starknet.js v8.
- */
-export function useErc20Balance(
-  tokenAddress: string | undefined,
-  userAddress: string | undefined,
-  _network: NetworkType = "sepolia",
-) {
-  const { provider } = useProvider();
-  const [data, setData] = useState<bigint | undefined>(undefined);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const enabled = !!tokenAddress && tokenAddress !== "0x0" && !!userAddress && !!provider;
-
-  const fetchBalance = useCallback(async () => {
-    if (!enabled) return;
-    try {
-      const result = await provider.callContract({
-        contractAddress: tokenAddress!,
-        entrypoint: "balance_of",
-        calldata: [userAddress!],
-      });
-      // balance_of returns u256 as two felts: [low, high]
-      const low = BigInt(result[0]);
-      const high = result[1] ? BigInt(result[1]) : 0n;
-      setData(low + (high << 128n));
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error("Failed to fetch balance"));
-    }
-  }, [enabled, provider, tokenAddress, userAddress]);
-
-  const refetch = useCallback(() => {
-    setIsLoading(true);
-    fetchBalance().finally(() => setIsLoading(false));
-  }, [fetchBalance]);
-
-  // Initial fetch + poll
-  useEffect(() => {
-    if (!enabled) {
-      setData(undefined);
-      setError(null);
-      return;
-    }
-
-    setIsLoading(true);
-    fetchBalance().finally(() => setIsLoading(false));
-
-    intervalRef.current = setInterval(fetchBalance, POLL_INTERVAL_MS);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [enabled, fetchBalance]);
-
-  return { data, isLoading, error, refetch };
-}
-
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address, network);
+  const tokenAddress = EXTERNAL_TOKENS[network]?.ETH;
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ABIS.sageToken,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
+    enabled: !!address && !!tokenAddress,
+    watch: true,
+  });
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address, network);
+  const tokenAddress = EXTERNAL_TOKENS[network]?.STRK;
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ABIS.sageToken,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
+    enabled: !!address && !!tokenAddress,
+    watch: true,
+  });
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address, network);
+  const tokenAddress = EXTERNAL_TOKENS[network]?.USDC;
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ABIS.sageToken,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
+    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
+  });
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address, network);
+  const tokenAddress = EXTERNAL_TOKENS[network]?.wBTC;
+  return useReadContract({
+    address: tokenAddress as `0x${string}`,
+    abi: ABIS.sageToken,
+    functionName: "balance_of",
+    args: address ? [address] : undefined,
+    enabled: !!address && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
+  });
 }
 
 /**
@@ -168,9 +136,16 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
 export function useTokenBalance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  network: NetworkType = "sepolia"
+  _network: NetworkType = "sepolia"
 ) {
-  return useErc20Balance(tokenAddress, userAddress, network);
+  return useReadContract({
+    address: (tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined) as `0x${string}`,
+    abi: ABIS.sageToken,
+    functionName: "balance_of",
+    args: userAddress ? [userAddress] : undefined,
+    enabled: !!userAddress && !!tokenAddress && tokenAddress !== "0x0",
+    watch: true,
+  });
 }
 
 /**
@@ -218,10 +193,10 @@ export function useAllTokenBalances(address: string | undefined, network: Networ
     isLoading: sage.isLoading || eth.isLoading || strk.isLoading || usdc.isLoading || wbtc.isLoading,
     refetchAll: () => {
       sage.refetch?.();
-      eth.refetch();
-      strk.refetch();
-      usdc.refetch();
-      wbtc.refetch();
+      eth.refetch?.();
+      strk.refetch?.();
+      usdc.refetch?.();
+      wbtc.refetch?.();
     },
   };
 }
