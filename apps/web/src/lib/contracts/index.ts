@@ -152,20 +152,28 @@ function useErc20Balance(
   return { data, isLoading, error, refetch: fetchBalance };
 }
 
+// Safe lookup with fallback — network from context may not match EXTERNAL_TOKENS keys
+function getExternalTokens(network: string) {
+  const tokens = EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS];
+  if (tokens) return tokens;
+  console.warn(`[ERC20] Unknown network "${network}", falling back to sepolia`);
+  return EXTERNAL_TOKENS.sepolia;
+}
+
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.ETH, address);
+  return useErc20Balance(getExternalTokens(network).ETH, address);
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.STRK, address);
+  return useErc20Balance(getExternalTokens(network).STRK, address);
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.USDC, address);
+  return useErc20Balance(getExternalTokens(network).USDC, address);
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(EXTERNAL_TOKENS[network]?.wBTC, address);
+  return useErc20Balance(getExternalTokens(network).wBTC, address);
 }
 
 /**
@@ -187,6 +195,9 @@ export function useTokenBalance(
  * Returns balances for SAGE, ETH, STRK, USDC, wBTC
  */
 export function useAllTokenBalances(address: string | undefined, network: NetworkType = "sepolia") {
+  if (typeof window !== "undefined") {
+    console.log(`[ALL_BALANCES] network="${network}" keys=${Object.keys(EXTERNAL_TOKENS)} match=${!!EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS]}`);
+  }
   const sage = useSageBalance(address, network);
   const eth = useEthBalance(address, network);
   const strk = useStrkBalance(address, network);
