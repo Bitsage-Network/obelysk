@@ -45,7 +45,7 @@ export function useSendStealthPayment() {
 
   const contracts = CONTRACTS[network];
   const SEPOLIA_STEALTH_REGISTRY =
-    "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5";
+    "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59";
   const registryAddress = contracts?.STEALTH_REGISTRY || SEPOLIA_STEALTH_REGISTRY;
 
   const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl || "";

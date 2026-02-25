@@ -11,7 +11,7 @@
  */
 
 import { hash, num } from "starknet";
-import { CONTRACTS, NETWORK_CONFIG, type NetworkType } from "../contracts/addresses";
+import { CONTRACTS, NETWORK_CONFIG, EXTERNAL_TOKENS, type NetworkType } from "../contracts/addresses";
 
 // ============================================================================
 // Event Selectors
@@ -109,12 +109,13 @@ function parseStealthEventData(
       if (keys[1]) parsed.announcement_index_low = keys[1];
       if (keys[2]) parsed.announcement_index_high = keys[2];
       if (keys[3]) parsed.stealth_address = keys[3];
-      // data: ephemeral_pubkey_x, view_tag, job_id(u256), timestamp
+      // data: ephemeral_pubkey_x, view_tag, job_id(u256), token, timestamp
       if (data[0]) parsed.ephemeral_pubkey_x = data[0];
       if (data[1]) parsed.view_tag = data[1];
       if (data[2]) parsed.job_id_low = data[2];
       if (data[3]) parsed.job_id_high = data[3];
-      if (data[4]) parsed.timestamp = data[4];
+      if (data[4]) parsed.token = data[4];
+      if (data[5]) parsed.timestamp = data[5];
       break;
 
     case "payment_claimed":
@@ -280,6 +281,10 @@ export async function scanStealthPayments(options: {
         ? Number(num.toBigInt(event.data.timestamp))
         : 0;
 
+      // Resolve token symbol from on-chain token address
+      const tokenAddr = event.data.token || "0x0";
+      const tokenSymbol = resolveTokenSymbol(tokenAddr, network);
+
       return {
         id: announcementIdx,
         announcement_index: announcementIdx,
@@ -291,13 +296,37 @@ export async function scanStealthPayments(options: {
         job_id: event.data.job_id_low || "0",
         timestamp,
         amount_formatted: "encrypted", // Amount is encrypted on-chain
-        token_symbol: "STRK",
+        token_symbol: tokenSymbol,
         claimed: isClaimed,
         transactionHash: event.transactionHash,
       };
     });
 
   return payments;
+}
+
+// ============================================================================
+// Token Address → Symbol Resolution
+// ============================================================================
+
+function resolveTokenSymbol(tokenAddress: string, network: NetworkType): string {
+  if (!tokenAddress || tokenAddress === "0x0") return "SAGE";
+  const normalized = num.toHex(num.toBigInt(tokenAddress)).toLowerCase();
+
+  // Check SAGE
+  const sageAddr = CONTRACTS[network]?.SAGE_TOKEN;
+  if (sageAddr && num.toHex(num.toBigInt(sageAddr)).toLowerCase() === normalized) return "SAGE";
+
+  // Check external tokens
+  const externals = EXTERNAL_TOKENS[network];
+  if (externals) {
+    for (const [symbol, addr] of Object.entries(externals)) {
+      if (addr && num.toHex(num.toBigInt(addr)).toLowerCase() === normalized) return symbol;
+    }
+  }
+
+  // Fallback: truncated address
+  return `${tokenAddress.slice(0, 8)}...`;
 }
 
 // ============================================================================

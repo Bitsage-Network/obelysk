@@ -180,9 +180,9 @@ export const CONTRACTS = {
     // Deployed: 2026-02-08 via sncast — class hash 0x6c5e6e4371fec929933dca5473b7f9675d41e52e521b4d4166ad6fc62736ab5
     USDC_PRIVACY_POOL: "0x02bcb455a7e356ef3ff1422d33d0742e633e4b8b4eb9fa6c15e62e8fd16b7e50",
 
-    // Stealth Registry (stealth meta-addresses + payment announcements)
-    // Deployed: 2026-02-21 via sncast — class hash 0x13e7dc7fe0527efee756f68fa7169fad90df80f27676ec7f2c0d1a2d27cfc88
-    STEALTH_REGISTRY: "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5",
+    // Stealth Registry (stealth meta-addresses + payment announcements, multi-token)
+    // Redeployed: 2026-02-24 via sncast — class hash 0x00c56bc123430b5ffe10da0893eacc84e59ad62b5acc706a9b01a6bfb7904fbb
+    STEALTH_REGISTRY: "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59",
 
     // Dark Pool (Commit-Reveal Batch Auction) v3
     // Redeployed: 2026-02-08 — class hash 0x38cebbcf4485a369113d4b75c61683a9d9ffad8ab43e0a272eb3073737acbca

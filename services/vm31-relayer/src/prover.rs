@@ -7,7 +7,7 @@ use stwo_ml::privacy::relayer::{
     hash_batch_public_inputs_for_cairo, run_vm31_relayer_flow, RelayOutcome, SncastVm31Backend,
     Vm31RelayerConfig, WithdrawalRecipients,
 };
-use stwo_ml::privacy::tx_builder::{PendingTx, TxBuilder};
+use stwo_ml::privacy::tx_builder::{PendingTx, ProvenTransaction, TxBuilder};
 
 use crate::batch_queue::ReadyBatch;
 use crate::bridge::BridgeService;
@@ -135,6 +135,18 @@ impl ProverService {
         // ── Step 2: Extract withdrawal recipients + deposit note info before proving ──
         let withdrawal_recipients = Self::extract_withdrawal_recipients(&txs);
         let deposit_notes = Self::extract_deposit_notes(&txs);
+
+        // Capture tx kinds before the proving closure moves txs.
+        // Used in Step 7 to map ProvenTransaction.new_commitments → deposit digests.
+        // 0=Deposit (1 commitment), 1=Withdraw (0), 2=Transfer (2)
+        let tx_kinds: Vec<u8> = txs
+            .iter()
+            .map(|tx| match tx {
+                PendingTx::Deposit { .. } => 0u8,
+                PendingTx::Withdraw { .. } => 1,
+                PendingTx::Transfer { .. } => 2,
+            })
+            .collect();
 
         // Update status to Proving
         self.store
@@ -290,13 +302,26 @@ impl ProverService {
             .map_err(|e| ProverError::Store(e.to_string()))?;
 
         // ── Step 7: Store note records for deposit notes ──────────────────
-        // Non-fatal: batch is already finalized, so log and continue on failure.
+        // Extract Poseidon2-M31 commitment digests from the proven transaction.
+        // new_commitments contains (NoteCommitment, Note) for every output note
+        // in the batch. We map them to deposits using the tx_kinds ordering.
+        let deposit_digests = Self::extract_deposit_digests(&tx_kinds, &proven);
+
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        for note_info in &deposit_notes {
+        for (idx, note_info) in deposit_notes.iter().enumerate() {
             let commitment = note_info.commitment_key();
+            let digest = deposit_digests.get(idx).copied();
+            if digest.is_some() {
+                info!(
+                    batch_id = %batch_id,
+                    commitment = %commitment,
+                    idx = idx,
+                    "deposit note commitment digest extracted from proof"
+                );
+            }
             let record = NoteRecord {
                 commitment: commitment.clone(),
                 merkle_path: MerklePathRecord {
@@ -306,7 +331,8 @@ impl ProverService {
                 merkle_root: [0; 8], // Populated by TreeSyncService backfill
                 batch_id: batch_id.to_string(),
                 created_at: now,
-                commitment_digest: None, // Set by TreeSyncService when matched to on-chain event
+                commitment_digest: digest,
+                note_index_in_batch: idx,
             };
             if let Err(e) = self.store.save_note(&commitment, &record).await {
                 warn!(
@@ -380,6 +406,40 @@ impl ProverService {
             }
         }
         Ok(())
+    }
+
+    /// Maps ProvenTransaction.new_commitments to deposit-only digests using tx ordering.
+    ///
+    /// Each tx type produces a known number of output commitments:
+    /// - Deposit: 1 (the shielded note)
+    /// - Withdraw: 0
+    /// - Transfer: 2 (recipient + change)
+    ///
+    /// By replaying the tx_kinds, we can extract exactly the deposit commitments.
+    fn extract_deposit_digests(tx_kinds: &[u8], proven: &ProvenTransaction) -> Vec<[u32; 8]> {
+        let mut digests = Vec::new();
+        let mut ci = 0usize; // commitment index into proven.new_commitments
+        for &kind in tx_kinds {
+            match kind {
+                0 => {
+                    // Deposit: 1 new commitment
+                    if ci < proven.new_commitments.len() {
+                        let (ref c, _) = proven.new_commitments[ci];
+                        digests.push([
+                            c[0].0, c[1].0, c[2].0, c[3].0,
+                            c[4].0, c[5].0, c[6].0, c[7].0,
+                        ]);
+                    }
+                    ci += 1;
+                }
+                1 => {} // Withdraw: 0 new commitments
+                2 => {
+                    ci += 2; // Transfer: 2 new commitments (recipient + change)
+                }
+                _ => {}
+            }
+        }
+        digests
     }
 
     /// Extracts deposit note info before the proving step (which moves txs).

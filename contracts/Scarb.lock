@@ -133,13 +133,13 @@ dependencies = [
 
 [[package]]
 name = "snforge_scarb_plugin"
-version = "0.56.0"
-source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.56.0#f530c15269018e08a458d807ba2da2ea2a2b60e6"
+version = "0.54.1"
+source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.54.1#3128a7b74129172b26caa3c7ff3851cda4869985"
 
 [[package]]
 name = "snforge_std"
-version = "0.56.0"
-source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.56.0#f530c15269018e08a458d807ba2da2ea2a2b60e6"
+version = "0.54.1"
+source = "git+https://github.com/foundry-rs/starknet-foundry?tag=v0.54.1#3128a7b74129172b26caa3c7ff3851cda4869985"
 dependencies = [
  "snforge_scarb_plugin",
 ]

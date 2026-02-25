@@ -110,6 +110,10 @@ pub struct NoteRecord {
     /// `None` until we can match this note to an on-chain `NoteInserted` event.
     #[serde(default)]
     pub commitment_digest: Option<[u32; 8]>,
+    /// Position of this deposit within its batch (0-indexed).
+    /// Used for ordering when multiple deposits are in the same batch.
+    #[serde(default)]
+    pub note_index_in_batch: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -662,6 +666,7 @@ mod tests {
             batch_id: "batch-1".into(),
             created_at: 1700000000,
             commitment_digest: None,
+            note_index_in_batch: 0,
         };
         store.save_note("abc123", &record).await.unwrap();
 
@@ -686,6 +691,7 @@ mod tests {
             batch_id: "batch-1".into(),
             created_at: 1700000000,
             commitment_digest: None,
+            note_index_in_batch: 0,
         };
         store.save_note("pending1", &pending).await.unwrap();
 
@@ -700,6 +706,7 @@ mod tests {
             batch_id: "batch-1".into(),
             created_at: 1700000000,
             commitment_digest: Some([1, 2, 3, 4, 5, 6, 7, 8]),
+            note_index_in_batch: 0,
         };
         store.save_note("done1", &finalized).await.unwrap();
 

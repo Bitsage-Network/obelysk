@@ -300,7 +300,7 @@ export function useStealthOnChain(address: string | undefined) {
   const contracts = CONTRACTS[network];
   // Hardcoded fallback — StealthRegistry is deployed on Sepolia at this address.
   // The CONTRACTS lookup can fail if network type doesn't match keys exactly.
-  const SEPOLIA_STEALTH_REGISTRY = "0x0515da02daf6debb3807f1706d1f3675000bb06b14fe0e2a07627d15594920d5";
+  const SEPOLIA_STEALTH_REGISTRY = "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59";
   const registryAddress = contracts?.STEALTH_REGISTRY || SEPOLIA_STEALTH_REGISTRY;
   const registryDeployed = registryAddress !== "0x0";
 
