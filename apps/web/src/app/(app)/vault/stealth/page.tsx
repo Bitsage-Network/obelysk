@@ -25,14 +25,20 @@ import {
   Scan,
   Fingerprint,
   Shield,
+  Coins,
+  ExternalLink,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { QRCodeSVG } from "qrcode.react";
 import { useAccount } from "@starknet-react/core";
+import { RpcProvider } from "starknet";
 import { useStealthOnChain, type ClaimParams } from "@/lib/hooks/useStealthOnChain";
 import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
+import { useSendStealthPayment } from "@/lib/hooks/useSendStealthPayment";
+import { CONTRACTS, NETWORK_CONFIG } from "@/lib/contracts/addresses";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -71,6 +77,8 @@ export default function StealthAddressesPage() {
   const [filterStatus, setFilterStatus] = useState<"all" | "unclaimed" | "claimed">("all");
   const [claimError, setClaimError] = useState<string | null>(null);
 
+  const { network } = useNetwork();
+
   const {
     metaAddress: metaAddressData,
     payments,
@@ -86,6 +94,21 @@ export default function StealthAddressesPage() {
     registryDeployed,
     refetch,
   } = useStealthOnChain(address);
+
+  // Send stealth payment
+  const {
+    status: sendStatus,
+    error: sendError,
+    txHash: sendTxHash,
+    recipientRegistered,
+    lookupRecipient,
+    sendStealthPayment,
+    reset: resetSend,
+  } = useSendStealthPayment();
+
+  const [sendRecipient, setSendRecipient] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sageBalance, setSageBalance] = useState<string | null>(null);
 
   // Direct on-chain check — bypasses react-query entirely to catch already-registered state
   const [directMetaAddress, setDirectMetaAddress] = useState<{ spending_pub_key: string; viewing_pub_key: string } | null>(null);
@@ -111,6 +134,37 @@ export default function StealthAddressesPage() {
     })();
     return () => { cancelled = true; };
   }, [address]);
+
+  // Fetch SAGE token balance
+  useEffect(() => {
+    if (!address) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl;
+        if (!rpcUrl) return;
+        const provider = new RpcProvider({ nodeUrl: rpcUrl });
+        const sageAddr = CONTRACTS[network]?.SAGE_TOKEN;
+        if (!sageAddr || sageAddr === "0x0") return;
+        const result = await provider.callContract({
+          contractAddress: sageAddr,
+          entrypoint: "balance_of",
+          calldata: [address],
+        });
+        const data: string[] = Array.isArray(result) ? result : [];
+        if (!cancelled && data.length >= 1) {
+          const low = BigInt(data[0] || "0");
+          const high = BigInt(data[1] || "0");
+          const total = low + (high << 128n);
+          const formatted = (Number(total) / 1e18).toFixed(4);
+          setSageBalance(formatted);
+        }
+      } catch {
+        // Non-critical — leave balance null
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [address, network]);
 
   // Merge: prefer react-query data, fall back to direct RPC data
   const resolvedMetaAddress = metaAddressData || directMetaAddress;
@@ -532,6 +586,183 @@ export default function StealthAddressesPage() {
                 </motion.div>
               )}
             </AnimatePresence>
+          </motion.div>
+
+          {/* ── Send Stealth Payment ── */}
+          <motion.div
+            variants={stagger.item}
+            className="relative overflow-hidden rounded-2xl border border-white/[0.05] bg-gradient-to-br from-surface-card via-surface-card to-fuchsia-950/10 p-6 space-y-5"
+          >
+            <div className="absolute -top-24 -left-24 w-48 h-48 bg-fuchsia-500/[0.04] rounded-full blur-3xl pointer-events-none" />
+
+            <div className="relative flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-fuchsia-500/10 flex items-center justify-center">
+                <Shield className="w-4 h-4 text-fuchsia-400" />
+              </div>
+              <h3 className="text-lg font-bold text-white tracking-tight">Send Stealth Payment</h3>
+            </div>
+
+            <p className="text-[13px] text-gray-500 leading-relaxed">
+              Send SAGE tokens privately. The recipient must have registered their stealth meta-address.
+            </p>
+
+            {/* Recipient input */}
+            <div className="space-y-2">
+              <label className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">
+                Recipient Address
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={sendRecipient}
+                  onChange={(e) => {
+                    setSendRecipient(e.target.value);
+                    if (sendStatus !== "idle") resetSend();
+                  }}
+                  placeholder="0x..."
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-black/30 border border-white/[0.06] text-sm text-white font-mono placeholder:text-gray-700 focus:outline-none focus:border-fuchsia-500/30 transition-all"
+                />
+                <button
+                  onClick={() => lookupRecipient(sendRecipient)}
+                  disabled={!sendRecipient || sendStatus === "looking_up"}
+                  className={cn(
+                    "px-4 py-2.5 rounded-xl text-xs font-semibold transition-all shrink-0",
+                    !sendRecipient || sendStatus === "looking_up"
+                      ? "bg-white/[0.03] text-gray-600 cursor-not-allowed border border-white/[0.04]"
+                      : "bg-fuchsia-500/15 text-fuchsia-400 hover:bg-fuchsia-500/25 border border-fuchsia-500/20"
+                  )}
+                >
+                  {sendStatus === "looking_up" ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    "Lookup"
+                  )}
+                </button>
+              </div>
+
+              {/* Registration status indicator */}
+              {recipientRegistered === true && (
+                <div className="flex items-center gap-2 text-xs text-emerald-400">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Recipient has a registered stealth meta-address
+                </div>
+              )}
+              {recipientRegistered === false && sendStatus !== "idle" && sendStatus !== "looking_up" && (
+                <div className="flex items-center gap-2 text-xs text-amber-400">
+                  <AlertCircle className="w-3.5 h-3.5" />
+                  Recipient has not registered a stealth meta-address
+                </div>
+              )}
+            </div>
+
+            {/* Amount input */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] text-gray-500 uppercase tracking-[0.15em] font-medium">
+                  Amount (SAGE)
+                </label>
+                {sageBalance !== null && (
+                  <button
+                    onClick={() => setSendAmount(sageBalance)}
+                    className="text-[10px] text-fuchsia-400/80 hover:text-fuchsia-400 transition-colors flex items-center gap-1"
+                  >
+                    <Coins className="w-3 h-3" />
+                    Balance: {sageBalance}
+                  </button>
+                )}
+              </div>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={sendAmount}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (/^\d*\.?\d*$/.test(val)) setSendAmount(val);
+                }}
+                placeholder="0.0"
+                className="w-full px-3.5 py-2.5 rounded-xl bg-black/30 border border-white/[0.06] text-sm text-white font-mono placeholder:text-gray-700 focus:outline-none focus:border-fuchsia-500/30 transition-all"
+              />
+            </div>
+
+            {/* Send button */}
+            <button
+              onClick={() => sendStealthPayment(sendRecipient, sendAmount)}
+              disabled={
+                !address ||
+                !recipientRegistered ||
+                !sendAmount ||
+                parseFloat(sendAmount) <= 0 ||
+                sendStatus === "sending"
+              }
+              className={cn(
+                "w-full py-3 rounded-xl text-sm font-semibold transition-all flex items-center justify-center gap-2",
+                !address || !recipientRegistered || !sendAmount || parseFloat(sendAmount || "0") <= 0 || sendStatus === "sending"
+                  ? "bg-white/[0.03] text-gray-600 cursor-not-allowed border border-white/[0.04]"
+                  : "bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white active:scale-[0.98]"
+              )}
+            >
+              {sendStatus === "sending" ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Send Privately
+                </>
+              )}
+            </button>
+
+            {/* Error state */}
+            {sendError && (
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-500/[0.05] border border-red-500/15">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-red-400/80">{sendError}</p>
+              </div>
+            )}
+
+            {/* Success state */}
+            {sendStatus === "confirmed" && sendTxHash && (
+              <div className="p-4 rounded-xl bg-emerald-500/[0.05] border border-emerald-500/15 space-y-2">
+                <div className="flex items-center gap-2 text-sm text-emerald-400 font-medium">
+                  <CheckCircle2 className="w-4 h-4" />
+                  Stealth payment sent
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="text-[11px] text-gray-400 font-mono truncate flex-1">{sendTxHash}</code>
+                  <button
+                    onClick={() => handleCopy(sendTxHash)}
+                    className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors shrink-0"
+                  >
+                    {copiedValue === sendTxHash ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3 text-gray-500" />
+                    )}
+                  </button>
+                  <a
+                    href={`https://sepolia.voyager.online/tx/${sendTxHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg hover:bg-white/[0.05] transition-colors shrink-0"
+                  >
+                    <ExternalLink className="w-3 h-3 text-gray-500" />
+                  </a>
+                </div>
+                <p className="text-[10px] text-gray-600">
+                  The recipient can scan for this payment on their stealth page.
+                </p>
+              </div>
+            )}
+
+            {/* Info note */}
+            <div className="flex items-start gap-2.5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+              <Info className="w-3.5 h-3.5 text-gray-600 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+                Stealth payments use one-time addresses derived from the recipient&apos;s meta-address. Only the recipient can detect and claim the payment.
+              </p>
+            </div>
           </motion.div>
 
           {/* ── Payment Scanner ── */}
