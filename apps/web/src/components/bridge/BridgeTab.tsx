@@ -29,10 +29,12 @@ import {
 } from "@/lib/contracts/addresses";
 import {
   type BridgeDirection,
+  type EthereumProvider,
+  type EIP6963ProviderDetail,
   isValidEthereumAddress,
   getBridgeTimingEstimate,
   getMessagingFeeDisplay,
-  detectEthProviders,
+  discoverEIP6963Providers,
   setPreferredEthProvider,
 } from "@/lib/bridge/starkgateBridge";
 
@@ -50,7 +52,7 @@ const TOKEN_ICONS: Record<BridgeTokenSymbol, string> = {
 };
 
 // ============================================================================
-// ETHEREUM WALLET SELECTOR (handles MetaMask vs HOT Wallet etc.)
+// EIP-6963 WALLET SELECTOR (MetaMask, HOT Wallet, Rabby, etc.)
 // ============================================================================
 
 function EthWalletSelector({
@@ -65,20 +67,25 @@ function EthWalletSelector({
   };
   isProcessing: boolean;
 }) {
-  const [providers, setProviders] = useState<{ name: string; provider: unknown }[]>([]);
-  const [showPicker, setShowPicker] = useState(false);
+  const [wallets, setWallets] = useState<EIP6963ProviderDetail[]>([]);
+  const [selectedWalletName, setSelectedWalletName] = useState<string | null>(null);
+  const [discovering, setDiscovering] = useState(false);
 
+  // Discover EIP-6963 wallets on mount
   useEffect(() => {
-    // Detect available wallets on mount
-    const detected = detectEthProviders();
-    setProviders(detected);
+    setDiscovering(true);
+    discoverEIP6963Providers().then((found) => {
+      setWallets(found);
+      setDiscovering(false);
+    });
   }, []);
 
-  const handleSelectProvider = useCallback(
-    async (provider: unknown) => {
-      // Set this as the preferred provider before connecting
-      setPreferredEthProvider(provider as Parameters<typeof setPreferredEthProvider>[0]);
-      setShowPicker(false);
+  const handleSelectWallet = useCallback(
+    async (wallet: EIP6963ProviderDetail) => {
+      // Set this specific provider for ALL subsequent bridge calls
+      setPreferredEthProvider(wallet.provider);
+      setSelectedWalletName(wallet.info.name);
+      // Now connect using that provider
       await ethWallet.connect();
     },
     [ethWallet]
@@ -86,22 +93,29 @@ function EthWalletSelector({
 
   const handleDisconnect = useCallback(() => {
     setPreferredEthProvider(null);
+    setSelectedWalletName(null);
     ethWallet.disconnect();
   }, [ethWallet]);
 
-  return (
-    <div className="mb-4">
-      <label className="text-xs text-gray-500 mb-2 block">
-        Ethereum Wallet (L1)
-      </label>
-      {ethWallet.address ? (
+  // Connected state
+  if (ethWallet.address) {
+    return (
+      <div className="mb-4">
+        <label className="text-xs text-gray-500 mb-2 block">
+          Ethereum Wallet (L1)
+        </label>
         <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface-elevated border border-surface-border">
           <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center">
             <Wallet className="w-3.5 h-3.5 text-orange-400" />
           </div>
-          <span className="text-sm text-white font-mono">
-            {ethWallet.address.slice(0, 6)}...{ethWallet.address.slice(-4)}
-          </span>
+          <div className="flex flex-col">
+            <span className="text-sm text-white font-mono">
+              {ethWallet.address.slice(0, 6)}...{ethWallet.address.slice(-4)}
+            </span>
+            {selectedWalletName && (
+              <span className="text-[10px] text-gray-500">{selectedWalletName}</span>
+            )}
+          </div>
           <span className="text-[10px] text-emerald-400 ml-auto mr-2">Connected</span>
           <button
             onClick={handleDisconnect}
@@ -111,47 +125,69 @@ function EthWalletSelector({
             Switch
           </button>
         </div>
-      ) : showPicker && providers.length > 1 ? (
+      </div>
+    );
+  }
+
+  // Wallet picker: show all discovered EIP-6963 wallets
+  if (wallets.length > 0) {
+    return (
+      <div className="mb-4">
+        <label className="text-xs text-gray-500 mb-2 block">
+          Select Ethereum Wallet (L1)
+        </label>
         <div className="space-y-2">
-          <p className="text-xs text-gray-400">Select your Ethereum wallet:</p>
-          {providers.map((p, i) => (
+          {wallets.map((w) => (
             <button
-              key={i}
-              onClick={() => handleSelectProvider(p.provider)}
+              key={w.info.uuid}
+              onClick={() => handleSelectWallet(w)}
               disabled={ethWallet.isConnecting}
               className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-elevated border border-surface-border text-white hover:border-orange-500/30 hover:bg-orange-500/5 transition-all text-sm font-medium"
             >
-              <Wallet className="w-4 h-4 text-orange-400" />
-              {p.name}
+              {w.info.icon ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={w.info.icon}
+                  alt={w.info.name}
+                  className="w-6 h-6 rounded-md"
+                />
+              ) : (
+                <Wallet className="w-5 h-5 text-orange-400" />
+              )}
+              <span>{w.info.name}</span>
+              {w.info.rdns?.includes("metamask") && (
+                <span className="ml-auto text-[10px] text-orange-400/70 bg-orange-500/10 px-2 py-0.5 rounded-full">
+                  Recommended
+                </span>
+              )}
+              {ethWallet.isConnecting && (
+                <Loader2 className="w-4 h-4 animate-spin ml-auto text-gray-400" />
+              )}
             </button>
           ))}
-          <button
-            onClick={() => setShowPicker(false)}
-            className="w-full text-xs text-gray-500 hover:text-gray-300 py-1"
-          >
-            Cancel
-          </button>
         </div>
-      ) : (
-        <button
-          onClick={() => {
-            if (providers.length > 1) {
-              setShowPicker(true);
-            } else {
-              ethWallet.connect();
-            }
-          }}
-          disabled={ethWallet.isConnecting}
-          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all text-sm font-medium"
-        >
-          {ethWallet.isConnecting ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Wallet className="w-4 h-4" />
-          )}
-          {providers.length > 1 ? "Select Ethereum Wallet" : "Connect Ethereum Wallet"}
-        </button>
-      )}
+      </div>
+    );
+  }
+
+  // Fallback: no EIP-6963 wallets found, try legacy window.ethereum
+  return (
+    <div className="mb-4">
+      <label className="text-xs text-gray-500 mb-2 block">
+        Ethereum Wallet (L1)
+      </label>
+      <button
+        onClick={ethWallet.connect}
+        disabled={ethWallet.isConnecting || discovering}
+        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all text-sm font-medium"
+      >
+        {ethWallet.isConnecting || discovering ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <Wallet className="w-4 h-4" />
+        )}
+        Connect Ethereum Wallet
+      </button>
     </div>
   );
 }
