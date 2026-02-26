@@ -291,15 +291,27 @@ export async function approveL1Token(
     padHex32(bridge.l1Bridge.replace(/^0x/i, "")) +
     encodeUint256(amount);
 
+  const txParams: Record<string, string> = {
+    from: accounts[0],
+    to: l1Token,
+    data,
+  };
+
+  try {
+    const estimatedGas = (await provider.request({
+      method: "eth_estimateGas",
+      params: [txParams],
+    })) as string;
+    const gasWithBuffer = (BigInt(estimatedGas) * 120n) / 100n;
+    txParams.gas = "0x" + gasWithBuffer.toString(16);
+  } catch {
+    // Safe default for ERC20 approve (~65k gas)
+    txParams.gas = "0x186A0"; // 100,000
+  }
+
   const txHash = await provider.request({
     method: "eth_sendTransaction",
-    params: [
-      {
-        from: accounts[0],
-        to: l1Token,
-        data,
-      },
-    ],
+    params: [txParams],
   });
 
   return txHash as string;
@@ -336,16 +348,32 @@ export async function depositToL2(
       ? rawAmount + L1_TO_L2_MESSAGE_FEE
       : L1_TO_L2_MESSAGE_FEE;
 
+  // Try to estimate gas; fall back to a safe limit if estimation fails
+  // (e.g. insufficient balance causes MetaMask to default to 21M which
+  // exceeds the Sepolia block gas cap of 16.7M)
+  const txParams: Record<string, string> = {
+    from: accounts[0],
+    to: bridge.l1Bridge,
+    data,
+    value: "0x" + msgValue.toString(16),
+  };
+
+  try {
+    const estimatedGas = (await provider.request({
+      method: "eth_estimateGas",
+      params: [txParams],
+    })) as string;
+    // Add 20% buffer to estimated gas
+    const gasWithBuffer = (BigInt(estimatedGas) * 120n) / 100n;
+    txParams.gas = "0x" + gasWithBuffer.toString(16);
+  } catch {
+    // Estimation failed — use a safe default (300k gas is plenty for StarkGate deposit)
+    txParams.gas = "0x493E0"; // 300,000
+  }
+
   const txHash = await provider.request({
     method: "eth_sendTransaction",
-    params: [
-      {
-        from: accounts[0],
-        to: bridge.l1Bridge,
-        data,
-        value: "0x" + msgValue.toString(16),
-      },
-    ],
+    params: [txParams],
   });
 
   return txHash as string;
