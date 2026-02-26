@@ -7,6 +7,17 @@ const MAX_BRIDGE_RETRIES: u32 = 3;
 /// Base backoff between retries.
 const RETRY_BACKOFF_MS: u64 = 2000;
 
+/// Produce a short opaque reference for log entries.
+/// FNV-1a hash folded to 32 bits — non-reversible, sufficient for log correlation.
+fn opaque_ref(input: &str) -> String {
+    let mut state: u64 = 0xcbf29ce484222325;
+    for b in input.as_bytes() {
+        state ^= *b as u64;
+        state = state.wrapping_mul(0x100000001b3);
+    }
+    format!("{:08x}", (state >> 32) ^ (state & 0xFFFFFFFF))
+}
+
 /// Handles withdrawal -> ConfidentialTransfer bridging via sncast invoke.
 ///
 /// The bridge contract's `bridge_withdrawal_to_confidential` is relayer-only
@@ -51,7 +62,7 @@ impl BridgeService {
                     let backoff = RETRY_BACKOFF_MS * 2u64.pow(attempt);
                     warn!(
                         batch_id = %batch_id,
-                        withdrawal_idx = withdrawal_idx,
+                        wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
                         attempt = attempt + 1,
                         backoff_ms = backoff,
                         error = %e,
@@ -62,7 +73,7 @@ impl BridgeService {
                 Err(e) => {
                     error!(
                         batch_id = %batch_id,
-                        withdrawal_idx = withdrawal_idx,
+                        wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
                         attempts = MAX_BRIDGE_RETRIES,
                         "bridge call failed after all retries"
                     );
@@ -80,7 +91,7 @@ impl BridgeService {
     ) -> Result<String, BridgeError> {
         info!(
             batch_id = %batch_id,
-            withdrawal_idx = withdrawal_idx,
+            wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
             "invoking bridge_withdrawal_to_confidential"
         );
 
@@ -110,7 +121,7 @@ impl BridgeService {
             if stderr.contains("already bridged") || stderr.contains("bridge_key exists") {
                 debug!(
                     batch_id = %batch_id,
-                    withdrawal_idx = withdrawal_idx,
+                    wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
                     "withdrawal already bridged (idempotent)"
                 );
                 return Err(BridgeError::AlreadyBridged);
@@ -120,7 +131,7 @@ impl BridgeService {
             // Never expose RPC errors, nonce details, or contract state to callers.
             error!(
                 batch_id = %batch_id,
-                withdrawal_idx = withdrawal_idx,
+                wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
                 exit_code = ?output.status.code(),
                 "bridge sncast failed (details in server logs)"
             );
@@ -153,8 +164,8 @@ impl BridgeService {
 
         info!(
             batch_id = %batch_id,
-            withdrawal_idx = withdrawal_idx,
-            tx_hash = %tx_hash,
+            wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
+            tx_ref = %opaque_ref(&tx_hash),
             "bridge call submitted"
         );
 

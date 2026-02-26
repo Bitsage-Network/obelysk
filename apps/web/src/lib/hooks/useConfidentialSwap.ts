@@ -34,6 +34,11 @@ import {
 import { getContractAddress, type NetworkType, getRpcUrl } from "../contracts/addresses";
 import { poseidonHash } from "../crypto/nullifier";
 import { useNetwork } from "../contexts/NetworkContext";
+import {
+  generateRangeProof as realGenerateRangeProof,
+  generateRateProof as realGenerateRateProof,
+  generateBalanceProof as realGenerateBalanceProof,
+} from "../crypto/rangeProof";
 
 // Asset IDs matching Cairo contract
 export type AssetId = "SAGE" | "USDC" | "STRK" | "ETH" | "BTC" | string;
@@ -281,111 +286,40 @@ const CONFIDENTIAL_SWAP_ABI = [
 ];
 
 /**
- * Generate a simplified range proof for an encrypted amount.
- *
- * WARNING: TESTNET ONLY — These proofs use Poseidon hashes as fake EC points,
- * NOT real elliptic curve commitments. They are trivially forgeable.
- * For mainnet, replace with proper Bulletproofs or IPA-based range proofs.
+ * Generate a real EC-based Sigma protocol range proof.
+ * Uses proper Pedersen commitments on the Stark curve with Schnorr responses.
+ * Cairo verifiers have real Schnorr equations — proofs are sound.
  */
 function generateRangeProof(
   amount: bigint,
   randomness: bigint,
   numBits: number = 64
 ): RangeProof {
-  const bitCommitments: ECPoint[] = [];
-  const responses: bigint[] = [];
-
-  // Decompose amount into bits and create commitments
-  for (let i = 0; i < numBits; i++) {
-    const bit = (amount >> BigInt(i)) & 1n;
-    const bitRand = poseidonHash([randomness, BigInt(i)]);
-
-    // Commitment to bit: C_i = bit * G + r_i * H
-    // Simplified: just store the randomness as the commitment
-    bitCommitments.push({
-      x: poseidonHash([bit, bitRand]),
-      y: poseidonHash([bitRand, bit]),
-    });
-
-    // Response for this bit
-    responses.push(poseidonHash([bit, bitRand, randomness]));
-  }
-
-  // Compute Fiat-Shamir challenge
-  const challengeInput = bitCommitments.flatMap((c) => [c.x, c.y]);
-  const challenge = poseidonHash(challengeInput);
-
-  return {
-    bitCommitments,
-    challenge,
-    responses,
-    numBits,
-  };
+  return realGenerateRangeProof(amount, randomness, numBits);
 }
 
 /**
- * Generate a rate proof showing give * rate = want.
- *
- * WARNING: TESTNET ONLY — Uses Poseidon hashes as fake EC points.
- * Replace with real Schnorr/Sigma protocol for mainnet.
+ * Generate a real Schnorr-style rate proof: prove want = rate * give.
+ * Uses EC point commitments and Fiat-Shamir challenge via Poseidon.
  */
 function generateRateProof(
   giveAmount: bigint,
   wantAmount: bigint,
   randomness: bigint
 ): RateProof {
-  // Rate = want / give (scaled to avoid fractions)
-  const rate = giveAmount > 0n ? (wantAmount * 1000000n) / giveAmount : 0n;
-  const blinding = poseidonHash([randomness, rate]);
-
-  // Rate commitment point
-  const rateCommitment: ECPoint = {
-    x: poseidonHash([rate, blinding]),
-    y: poseidonHash([blinding, rate]),
-  };
-
-  // Fiat-Shamir challenge
-  const challenge = poseidonHash([giveAmount, wantAmount, rate, blinding, randomness]);
-
-  // Responses
-  const responseGive = giveAmount + challenge * randomness;
-  const responseRate = rate + challenge * randomness;
-  const responseBlinding = blinding + challenge * randomness;
-
-  return {
-    rateCommitment,
-    challenge,
-    responseGive,
-    responseRate,
-    responseBlinding,
-  };
+  return realGenerateRateProof(giveAmount, wantAmount, randomness);
 }
 
 /**
- * Generate a balance proof showing balance >= amount
+ * Generate a real balance sufficiency proof: prove balance >= amount.
+ * Pedersen commitment to (balance - amount) with Schnorr opening proof.
  */
 function generateBalanceProof(
   balance: bigint,
   amount: bigint,
   randomness: bigint
 ): BalanceProof {
-  // Prove balance - amount >= 0
-  const difference = balance - amount;
-  const blinding = poseidonHash([randomness, difference]);
-
-  const balanceCommitment: ECPoint = {
-    x: poseidonHash([difference, blinding]),
-    y: poseidonHash([blinding, difference]),
-  };
-
-  const challenge = poseidonHash([balance, amount, difference, blinding]);
-  const response = difference + challenge * randomness;
-
-  return {
-    balanceCommitment,
-    challenge,
-    response,
-  };
+  return realGenerateBalanceProof(balance, amount, randomness);
 }
 
 /**
@@ -1016,7 +950,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
 
         return decrypted;
       } catch (error) {
-        console.error("[ConfidentialSwap] Failed to get balance:", error instanceof Error ? error.message : "unknown error");
+        // Balance decryption failed
         return 0n;
       }
     },
@@ -1051,7 +985,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         isLoading: false,
       }));
     } catch (error) {
-      console.error("[ConfidentialSwap] Failed to refresh:", error instanceof Error ? error.message : "unknown error");
+      // Order refresh failed
       setState((s) => ({ ...s, isLoading: false }));
     }
   }, [address, contract, getUserOrders]);
@@ -1088,7 +1022,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
           decryptedWantAmount: decryptedWant,
         };
       } catch (error) {
-        console.error("[ConfidentialSwap] Failed to decrypt order:", error instanceof Error ? error.message : "unknown error");
+        // Order decryption failed
         return order;
       }
     },

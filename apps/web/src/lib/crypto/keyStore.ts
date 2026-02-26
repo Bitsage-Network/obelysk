@@ -21,6 +21,63 @@ import {
 } from "./constants";
 import { generateKeyPair } from "./elgamal";
 
+// Module-level note encryption key (set when privacy keys are unlocked)
+let noteEncryptionKey: CryptoKey | null = null;
+
+/**
+ * Set the note encryption key (derived from KEK) for at-rest note encryption.
+ * Called when privacy keys are unlocked.
+ */
+export async function setNoteEncryptionKey(kek: CryptoKey): Promise<void> {
+  // Use the KEK directly for note encryption — it's already AES-GCM 256
+  noteEncryptionKey = kek;
+}
+
+/**
+ * Clear the note encryption key (called on lock/disconnect).
+ */
+export function clearNoteEncryptionKey(): void {
+  noteEncryptionKey = null;
+}
+
+/** Encrypt a JSON payload with the note encryption key. */
+async function encryptNotePayload(
+  data: object,
+): Promise<{ ciphertext: string; iv: string }> {
+  if (!noteEncryptionKey) throw new Error("Note encryption key not set");
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = new TextEncoder().encode(JSON.stringify(data));
+  const ivBuffer = new Uint8Array(iv).buffer as ArrayBuffer;
+  const plaintextBuffer = new Uint8Array(plaintext).buffer as ArrayBuffer;
+  const encrypted = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: ivBuffer },
+    noteEncryptionKey,
+    plaintextBuffer,
+  );
+  return {
+    ciphertext: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+    iv: btoa(String.fromCharCode(...iv)),
+  };
+}
+
+/** Decrypt a note payload encrypted with the note encryption key. */
+async function decryptNotePayload<T>(
+  ciphertext: string,
+  iv: string,
+): Promise<T> {
+  if (!noteEncryptionKey) throw new Error("Note encryption key not set");
+  const ctBytes = Uint8Array.from(atob(ciphertext), (c) => c.charCodeAt(0));
+  const ivBytes = Uint8Array.from(atob(iv), (c) => c.charCodeAt(0));
+  const ivBuffer = new Uint8Array(ivBytes).buffer as ArrayBuffer;
+  const ctBuffer = new Uint8Array(ctBytes).buffer as ArrayBuffer;
+  const decrypted = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: ivBuffer },
+    noteEncryptionKey,
+    ctBuffer,
+  );
+  return JSON.parse(new TextDecoder().decode(decrypted)) as T;
+}
+
 // IndexedDB wrapper
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -304,7 +361,7 @@ interface StoredNote extends PrivacyNote {
   address: string;
 }
 
-// Save a privacy note (encrypted)
+// Save a privacy note (encrypted at rest when KEK is available)
 export async function saveNote(
   address: string,
   note: PrivacyNote
@@ -313,27 +370,65 @@ export async function saveNote(
   const tx = db.transaction(NOTE_STORE_NAME, "readwrite");
   const store = tx.objectStore(NOTE_STORE_NAME);
 
-  const storedNote: StoredNote = { ...note, address };
+  let record: object;
+  if (noteEncryptionKey) {
+    // Encrypt sensitive note data; keep index fields plaintext for queries
+    const { ciphertext, iv } = await encryptNotePayload(note);
+    record = {
+      commitment: note.commitment,
+      address,
+      spent: note.spent,
+      encryptedPayload: ciphertext,
+      payloadIv: iv,
+      encrypted: true,
+    };
+  } else {
+    // Fallback: store plaintext (backward compat / pre-unlock)
+    record = { ...note, address } as StoredNote;
+  }
 
   await new Promise<void>((resolve, reject) => {
-    const request = store.put(storedNote);
+    const request = store.put(record);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
   });
 }
 
-// Get all notes for address
+// Get all notes for address (decrypts at-rest encrypted notes)
 export async function getNotes(address: string): Promise<PrivacyNote[]> {
   const db = await openDB();
   const tx = db.transaction(NOTE_STORE_NAME, "readonly");
   const store = tx.objectStore(NOTE_STORE_NAME);
   const index = store.index("address");
 
-  return new Promise((resolve, reject) => {
+  const rawRecords = await new Promise<any[]>((resolve, reject) => {
     const request = index.getAll(address);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+
+  const notes: PrivacyNote[] = [];
+  for (const rec of rawRecords) {
+    if (rec.encrypted && rec.encryptedPayload && rec.payloadIv) {
+      // Encrypted record — decrypt if key available
+      if (!noteEncryptionKey) continue; // Skip encrypted notes when locked
+      try {
+        const decrypted = await decryptNotePayload<PrivacyNote>(
+          rec.encryptedPayload,
+          rec.payloadIv,
+        );
+        notes.push(decrypted);
+      } catch {
+        // Decryption failed — skip silently (wrong key or corrupted)
+        continue;
+      }
+    } else {
+      // Plaintext record (legacy or pre-encryption)
+      const { address: _, ...note } = rec;
+      notes.push(note as PrivacyNote);
+    }
+  }
+  return notes;
 }
 
 // Get unspent notes for address
@@ -342,7 +437,7 @@ export async function getUnspentNotes(address: string): Promise<PrivacyNote[]> {
   return notes.filter((note) => !note.spent);
 }
 
-// Mark note as spent
+// Mark note as spent (handles both encrypted and plaintext records)
 export async function markNoteSpent(
   commitment: string,
   spentTxHash: string
@@ -351,22 +446,37 @@ export async function markNoteSpent(
   const tx = db.transaction(NOTE_STORE_NAME, "readwrite");
   const store = tx.objectStore(NOTE_STORE_NAME);
 
-  const note = await new Promise<StoredNote | undefined>((resolve, reject) => {
+  const rec = await new Promise<any | undefined>((resolve, reject) => {
     const request = store.get(commitment);
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 
-  if (note) {
-    note.spent = true;
-    note.spentTxHash = spentTxHash;
+  if (!rec) return;
 
-    await new Promise<void>((resolve, reject) => {
-      const request = store.put(note);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+  if (rec.encrypted && rec.encryptedPayload && rec.payloadIv && noteEncryptionKey) {
+    // Decrypt, modify, re-encrypt
+    try {
+      const note = await decryptNotePayload<PrivacyNote>(rec.encryptedPayload, rec.payloadIv);
+      note.spent = true;
+      note.spentTxHash = spentTxHash;
+      const { ciphertext, iv } = await encryptNotePayload(note);
+      rec.encryptedPayload = ciphertext;
+      rec.payloadIv = iv;
+      rec.spent = true; // Update plaintext index too
+    } catch {
+      return; // Can't decrypt — skip
+    }
+  } else {
+    rec.spent = true;
+    rec.spentTxHash = spentTxHash;
   }
+
+  await new Promise<void>((resolve, reject) => {
+    const request = store.put(rec);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
 // Update note's leafIndex after deposit confirmation

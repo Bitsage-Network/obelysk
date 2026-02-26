@@ -23,9 +23,41 @@ import {
   type GardenQuoteResponse,
 } from "../btc/gardenApi";
 import type { GardenBridgeResult, GardenOrderProgress } from "../btc/types";
+import {
+  deriveStealthAddressForBridge,
+  type StealthAddressResult,
+} from "../crypto/stealthBridge";
+import type { ECPoint } from "../crypto/constants";
 
 const POLL_INTERVAL_MS = 5_000;
 const QUOTE_DEBOUNCE_MS = 600;
+
+/** BTC denomination amounts (satoshis) for privacy-mode splitting */
+export const BTC_DENOMINATIONS_SATS: bigint[] = [
+  10_000_000n, // 0.1 BTC
+  5_000_000n,  // 0.05 BTC
+  1_000_000n,  // 0.01 BTC
+  500_000n,    // 0.005 BTC
+  100_000n,    // 0.001 BTC
+  50_000n,     // 0.0005 BTC
+];
+
+/** Split an arbitrary satoshi amount into standard denominations (greedy, descending).
+ * Returns array of denomination amounts with remainder. */
+export function splitIntoDenominations(satoshis: bigint): {
+  denominations: bigint[];
+  remainder: bigint;
+} {
+  const denominations: bigint[] = [];
+  let remaining = satoshis;
+  for (const denom of BTC_DENOMINATIONS_SATS) {
+    while (remaining >= denom) {
+      denominations.push(denom);
+      remaining -= denom;
+    }
+  }
+  return { denominations, remainder: remaining };
+}
 
 export function useGardenBridge(network: GardenNetwork) {
   const [quote, setQuote] = useState<GardenQuoteResponse | null>(null);
@@ -86,16 +118,35 @@ export function useGardenBridge(network: GardenNetwork) {
   // Create order → returns BTC deposit address
   // ========================================================================
 
+  /**
+   * Create a bridge order. When `spendPK` and `viewPK` are provided,
+   * derives a fresh stealth address per order so Garden cannot link
+   * the bridge destination to the user's main wallet (privacy gap #3).
+   */
   const createBridgeOrder = useCallback(
     async (
       btcAddress: string,
       starknetAddress: string,
       amount: bigint,
       receiveAmount: string,
+      /** Optional: receiver's spend public key for stealth address derivation */
+      spendPK?: ECPoint,
+      /** Optional: receiver's view public key for stealth address derivation */
+      viewPK?: ECPoint,
     ): Promise<GardenBridgeResult | null> => {
       setError(null);
 
       try {
+        // Derive stealth destination if keys are provided
+        let destinationOwner = starknetAddress;
+        let stealthData: StealthAddressResult | undefined;
+        if (spendPK && viewPK) {
+          stealthData = deriveStealthAddressForBridge(spendPK, viewPK);
+          // Use stealth address as the bridge destination
+          // Encode as hex felt for Starknet address format
+          destinationOwner = `0x${stealthData.stealthPublicKey.x.toString(16)}`;
+        }
+
         const gardenOrder = await createBtcToStarknetOrder(
           {
             asset: assets.btc,
@@ -104,7 +155,7 @@ export function useGardenBridge(network: GardenNetwork) {
           },
           {
             asset: assets.wbtc,
-            owner: starknetAddress,
+            owner: destinationOwner,
             amount: receiveAmount,
           },
           network,
@@ -124,6 +175,32 @@ export function useGardenBridge(network: GardenNetwork) {
           confirmations: 0,
           requiredConfirmations: 0,
         });
+
+        // Store stealth key data in IndexedDB for later claiming
+        if (stealthData) {
+          try {
+            const stealthRecord = {
+              orderId: gardenOrder.order_id,
+              ephemeralPK: {
+                x: stealthData.ephemeralPublicKey.x.toString(),
+                y: stealthData.ephemeralPublicKey.y.toString(),
+              },
+              sharedSecretHash: stealthData.sharedSecretHash.toString(),
+              stealthPK: {
+                x: stealthData.stealthPublicKey.x.toString(),
+                y: stealthData.stealthPublicKey.y.toString(),
+              },
+              createdAt: Date.now(),
+            };
+            // Store in localStorage as IndexedDB may not be available in all contexts
+            const existing = JSON.parse(localStorage.getItem("obelysk_stealth_keys") || "[]");
+            existing.push(stealthRecord);
+            localStorage.setItem("obelysk_stealth_keys", JSON.stringify(existing));
+          } catch {
+            // Non-fatal — stealth data storage failure doesn't block the bridge
+            // Stealth key persistence failed — non-fatal
+          }
+        }
 
         return result;
       } catch (err) {

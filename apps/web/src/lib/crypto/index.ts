@@ -159,6 +159,8 @@ export {
   clearAllData,
   exportKeys,
   importKeys,
+  setNoteEncryptionKey,
+  clearNoteEncryptionKey,
 } from "./keyStore";
 
 // AE Hints for O(1) decryption (Tongo-style)

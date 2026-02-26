@@ -26,6 +26,10 @@ import {
   type GardenQuoteResponse,
 } from "../btc/gardenApi";
 import type { GardenOrderProgress } from "../btc/types";
+import {
+  deriveStealthAddressForBridge,
+} from "../crypto/stealthBridge";
+import type { ECPoint } from "../crypto/constants";
 
 const POLL_INTERVAL_MS = 5_000;
 const QUOTE_DEBOUNCE_MS = 600;
@@ -92,6 +96,12 @@ export function useGardenWithdraw(network: GardenNetwork) {
   // Execute withdrawal: create order → approve → initiate (or gasless)
   // ========================================================================
 
+  /**
+   * Execute withdrawal. When `spendPK` and `viewPK` are provided,
+   * derives a fresh stealth address as the source owner for the
+   * Garden order, making the withdrawal unlinkable to the user's
+   * main wallet (privacy gap #3).
+   */
   const executeWithdraw = useCallback(
     async (
       starknetAddress: string,
@@ -99,6 +109,8 @@ export function useGardenWithdraw(network: GardenNetwork) {
       amount: bigint,
       receiveAmount: string,
       useGaslessMode: boolean,
+      spendPK?: ECPoint,
+      viewPK?: ECPoint,
     ): Promise<string | null> => {
       if (!account) {
         setError("Wallet not connected");
@@ -109,10 +121,17 @@ export function useGardenWithdraw(network: GardenNetwork) {
       setError(null);
 
       try {
+        // Derive stealth source address if keys are provided (privacy gap #3)
+        let sourceOwner = starknetAddress;
+        if (spendPK && viewPK) {
+          const stealthData = deriveStealthAddressForBridge(spendPK, viewPK);
+          sourceOwner = `0x${stealthData.stealthPublicKey.x.toString(16)}`;
+        }
+
         const order = await createStarknetToBtcOrder(
           {
             asset: assets.wbtc,
-            owner: starknetAddress,
+            owner: sourceOwner,
             amount: amount.toString(),
           },
           {

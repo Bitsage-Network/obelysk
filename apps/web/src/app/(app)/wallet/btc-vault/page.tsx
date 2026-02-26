@@ -74,9 +74,11 @@ interface BtcAssetOption {
   available: boolean;
 }
 
-const BTC_DENOMINATIONS = [0.0005, 0.001, 0.005, 0.01] as const;
+/** Standard BTC denomination tiers for privacy-preserving deposits.
+ * Using fixed denominations prevents exact-amount correlation (privacy gap #7). */
+const BTC_DENOMINATIONS = [0.0005, 0.001, 0.005, 0.01, 0.05, 0.1] as const;
 const GARDEN_MIN_SATS = 50_000n;
-const GARDEN_MAX_SATS = 1_000_000n;
+const GARDEN_MAX_SATS = 10_000_000n; // Raised to support 0.1 BTC denomination
 
 const DEPOSIT_STAGES: { phase: VaultPhase; label: string; icon: typeof Key }[] = [
   { phase: "preparing", label: "Preparing", icon: Loader2 },

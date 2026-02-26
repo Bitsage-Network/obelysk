@@ -204,18 +204,20 @@ pub mod VM31ConfidentialBridge {
         pub cancelled_class_hash: ClassHash,
     }
 
+    /// Opaque bridge event — emits only batch-level identifiers and timing.
+    /// Recipient, token, and amount fields are intentionally omitted to prevent
+    /// on-chain metadata leaking (privacy gap #2). The contract still validates
+    /// all fields internally; only the event is redacted.
     #[derive(Drop, starknet::Event)]
     pub struct BridgeExecuted {
         #[key]
         pub bridge_key: felt252,
-        pub batch_id: felt252,
-        pub withdrawal_idx: u32,
-        pub payout_recipient: ContractAddress,
-        pub credit_recipient: ContractAddress,
-        pub token: ContractAddress,
-        pub amount: u256,
-        pub vm31_asset_id: felt252,
-        pub confidential_asset_id: felt252,
+        /// Poseidon hash of the VM31 batch ID (opaque identifier)
+        pub batch_id_hash: felt252,
+        /// The withdrawal binding digest (already opaque)
+        pub withdrawal_binding: felt252,
+        /// Block timestamp for ordering only
+        pub timestamp: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -369,16 +371,13 @@ pub mod VM31ConfidentialBridge {
 
             self.processed_bridge_key.write(bridge_key, true);
 
+            // Emit opaque event — no recipient, token, or amount leaked on-chain.
+            // Only the batch-level hash, withdrawal binding, and timestamp are visible.
             self.emit(BridgeExecuted {
                 bridge_key,
-                batch_id,
-                withdrawal_idx,
-                payout_recipient,
-                credit_recipient,
-                token,
-                amount,
-                vm31_asset_id,
-                confidential_asset_id,
+                batch_id_hash: poseidon_hash_span(array![batch_id].span()),
+                withdrawal_binding: bound_felt,
+                timestamp: get_block_timestamp(),
             });
 
             bridge_key
