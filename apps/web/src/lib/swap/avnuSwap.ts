@@ -185,7 +185,7 @@ export interface AvnuTokenOption {
 
 export function getAvnuSupportedTokens(network: NetworkType): AvnuTokenOption[] {
   const externalTokens = EXTERNAL_TOKENS[network] || EXTERNAL_TOKENS.sepolia;
-  const sageAddress = CONTRACTS[network]?.SAGE_TOKEN || "0x0";
+  const sageAddress: string = CONTRACTS[network]?.SAGE_TOKEN || "0x0";
 
   const tokens: AvnuTokenOption[] = [];
 

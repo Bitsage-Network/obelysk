@@ -515,7 +515,7 @@ export function getSupportedSwapTokens(
   const result: { symbol: string; address: string; hasPool: boolean }[] = [];
 
   // Add SAGE first
-  const sageAddr = CONTRACTS[network]?.SAGE_TOKEN;
+  const sageAddr: string = CONTRACTS[network]?.SAGE_TOKEN;
   if (sageAddr && sageAddr !== "0x0") {
     result.push({
       symbol: "SAGE",
