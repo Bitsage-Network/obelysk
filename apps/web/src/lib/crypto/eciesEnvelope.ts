@@ -76,9 +76,11 @@ export async function encryptForRelayer(
   ) as CryptoKeyPair;
 
   // 2. Import relayer's public key
+  // Copy to fresh ArrayBuffer to satisfy SubtleCrypto's BufferSource requirement
+  const pubkeyBuffer = new Uint8Array(relayerPubkeyBytes).buffer as ArrayBuffer;
   const relayerPubkey = await subtle.importKey(
     "raw",
-    relayerPubkeyBytes,
+    pubkeyBuffer,
     { name: "X25519" },
     false,
     []
@@ -100,12 +102,15 @@ export async function encryptForRelayer(
     ["deriveKey"]
   );
 
+  const hkdfSalt = new Uint8Array(0).buffer as ArrayBuffer;
+  const hkdfInfo = new TextEncoder().encode("obelysk-ecies-v1");
+  const hkdfInfoBuffer = new Uint8Array(hkdfInfo).buffer as ArrayBuffer;
   const aesKey = await subtle.deriveKey(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: new Uint8Array(0),
-      info: new TextEncoder().encode("obelysk-ecies-v1"),
+      salt: hkdfSalt,
+      info: hkdfInfoBuffer,
     },
     sharedKey,
     { name: "AES-GCM", length: 256 },
@@ -118,10 +123,12 @@ export async function encryptForRelayer(
 
   // 6. AES-256-GCM encrypt the JSON payload
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
+  const nonceBuffer = new Uint8Array(nonce).buffer as ArrayBuffer;
+  const plaintextBuffer = new Uint8Array(plaintext).buffer as ArrayBuffer;
   const ciphertext = await subtle.encrypt(
-    { name: "AES-GCM", iv: nonce },
+    { name: "AES-GCM", iv: nonceBuffer },
     aesKey,
-    plaintext
+    plaintextBuffer
   );
 
   // 7. Export ephemeral public key
