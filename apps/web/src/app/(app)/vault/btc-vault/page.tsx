@@ -925,7 +925,7 @@ export default function BtcVaultPage() {
               "font-mono",
               vault.relayerOnline ? "text-emerald-400/80" : "text-orange-400/80"
             )}>
-              {vault.relayerOnline ? "Online" : vault.isRelayerLoading ? "..." : "Sepolia Testnet"}
+              {vault.relayerOnline ? "Online" : vault.isRelayerLoading ? "..." : network === "mainnet" ? "Mainnet" : "Sepolia Testnet"}
             </span>
             {vault.relayerHealth && (
               <span className="text-gray-700 font-mono text-[10px]">v{vault.relayerHealth.version}</span>
