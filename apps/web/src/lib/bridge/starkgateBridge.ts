@@ -236,6 +236,37 @@ export async function getL1Accounts(): Promise<string[]> {
   return accounts as string[];
 }
 
+/** Get L1 ETH balance for connected account */
+export async function getL1EthBalance(account: string): Promise<string> {
+  const provider = getEthereumProvider();
+  const balHex = (await provider.request({
+    method: "eth_getBalance",
+    params: [account, "latest"],
+  })) as string;
+  const wei = BigInt(balHex);
+  return (Number(wei) / 1e18).toFixed(6);
+}
+
+/** Get L1 ERC20 token balance for connected account */
+export async function getL1TokenBalance(
+  account: string,
+  tokenAddress: string,
+  decimals: number
+): Promise<string> {
+  const provider = getEthereumProvider();
+  // balanceOf(address) selector = 0x70a08231
+  const data = "0x70a08231" + padHex32(account.replace(/^0x/i, ""));
+  const result = (await provider.request({
+    method: "eth_call",
+    params: [{ to: tokenAddress, data }, "latest"],
+  })) as string;
+  const raw = BigInt(result);
+  const divisor = 10n ** BigInt(decimals);
+  const whole = raw / divisor;
+  const frac = raw % divisor;
+  return `${whole}.${frac.toString().padStart(decimals, "0")}`;
+}
+
 /** Ensure MetaMask is on the correct Ethereum chain */
 export async function ensureCorrectChain(
   network: "sepolia" | "mainnet"

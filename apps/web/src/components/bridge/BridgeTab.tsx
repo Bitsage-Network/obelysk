@@ -25,6 +25,7 @@ import {
   TOKEN_METADATA,
   ETHEREUM_CHAIN_CONFIG,
   NETWORK_CONFIG,
+  L1_TOKEN_ADDRESSES,
   type BridgeTokenSymbol,
 } from "@/lib/contracts/addresses";
 import {
@@ -36,6 +37,8 @@ import {
   getMessagingFeeDisplay,
   discoverEIP6963Providers,
   setPreferredEthProvider,
+  getL1EthBalance,
+  getL1TokenBalance,
 } from "@/lib/bridge/starkgateBridge";
 
 // ============================================================================
@@ -218,6 +221,40 @@ export function BridgeTab({ initialToken }: { initialToken?: string }) {
   const isDeposit = direction === "deposit";
   const isProcessing = state.stage !== "idle" && state.stage !== "confirmed" && state.stage !== "error";
 
+  // Fetch L1 balance for selected token when wallet is connected
+  const [l1Balance, setL1Balance] = useState<string | null>(null);
+  const [l1BalanceLoading, setL1BalanceLoading] = useState(false);
+
+  useEffect(() => {
+    if (!ethWallet.address || !isDeposit) {
+      setL1Balance(null);
+      return;
+    }
+    let cancelled = false;
+    setL1BalanceLoading(true);
+
+    const fetchBalance = async () => {
+      try {
+        const l1Token = L1_TOKEN_ADDRESSES[bridgeNetwork]?.[selectedToken];
+        let bal: string;
+        if (!l1Token) {
+          // Native ETH
+          bal = await getL1EthBalance(ethWallet.address!);
+        } else {
+          const decimals = TOKEN_METADATA[selectedToken]?.decimals ?? 18;
+          bal = await getL1TokenBalance(ethWallet.address!, l1Token, decimals);
+        }
+        if (!cancelled) setL1Balance(bal);
+      } catch {
+        if (!cancelled) setL1Balance(null);
+      } finally {
+        if (!cancelled) setL1BalanceLoading(false);
+      }
+    };
+    fetchBalance();
+    return () => { cancelled = true; };
+  }, [ethWallet.address, selectedToken, bridgeNetwork, isDeposit]);
+
   // Validation
   const amountValid = useMemo(() => {
     if (!amount) return false;
@@ -351,9 +388,53 @@ export function BridgeTab({ initialToken }: { initialToken?: string }) {
           />
         )}
 
+        {/* L1 Balance Display */}
+        {isDeposit && ethWallet.address && (
+          <div className="mb-4 p-3 rounded-xl bg-surface-elevated/50 border border-surface-border">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-gray-500">
+                Your L1 {selectedToken} Balance (Sepolia)
+              </span>
+              {l1BalanceLoading ? (
+                <Loader2 className="w-3 h-3 text-gray-500 animate-spin" />
+              ) : (
+                <span className={cn(
+                  "text-sm font-mono",
+                  l1Balance && parseFloat(l1Balance) > 0 ? "text-emerald-400" : "text-red-400"
+                )}>
+                  {l1Balance !== null ? `${l1Balance} ${selectedToken}` : "—"}
+                </span>
+              )}
+            </div>
+            {l1Balance !== null && parseFloat(l1Balance) === 0 && (
+              <p className="text-[10px] text-red-400/80 mt-1.5">
+                You have no {selectedToken} on Ethereum Sepolia in this wallet. Make sure you&apos;re on the Sepolia network and have testnet {selectedToken}.
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Amount Input */}
         <div className="mb-4">
-          <label className="text-xs text-gray-500 mb-2 block">Amount</label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="text-xs text-gray-500">Amount</label>
+            {isDeposit && l1Balance && parseFloat(l1Balance) > 0 && (
+              <button
+                onClick={() => {
+                  // For ETH, leave some for gas + messaging fee
+                  if (selectedToken === "ETH") {
+                    const max = Math.max(0, parseFloat(l1Balance) - 0.001);
+                    setAmount(max > 0 ? max.toString() : "");
+                  } else {
+                    setAmount(l1Balance.replace(/\.?0+$/, ""));
+                  }
+                }}
+                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-medium"
+              >
+                MAX
+              </button>
+            )}
+          </div>
           <div className="relative">
             <input
               type="text"
