@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
-import { useAllTokenBalances, getContractAddresses } from "@/lib/contracts";
+import { useAllTokenBalances } from "@/lib/contracts";
 import { useTransactionHistory } from "@/lib/hooks/useTransactionHistory";
 import { usePragmaPrice } from "@/lib/hooks/usePragmaOracle";
 import { useCoinGeckoPrices } from "@/lib/hooks/useCoinGeckoPrices";
@@ -93,34 +93,37 @@ export default function HomePage() {
   const balances = useAllTokenBalances(address, network as NetworkType);
   const { transactions, isLoading: txLoading } = useTransactionHistory(address, network as NetworkType);
 
-  // Check if ORACLE_WRAPPER is deployed on this network
-  const oracleAvailable = useMemo(() => {
-    const addrs = getContractAddresses(network as NetworkType);
-    return addrs?.ORACLE_WRAPPER && addrs.ORACLE_WRAPPER !== "0x0";
-  }, [network]);
-
-  // Pragma oracle prices (only used when oracle contract is deployed)
+  // Pragma oracle prices (used when oracle contract is deployed)
   const ethPrice = usePragmaPrice("ETH_USD", network as NetworkType);
   const strkPrice = usePragmaPrice("STRK_USD", network as NetworkType);
   const btcPrice = usePragmaPrice("BTC_USD", network as NetworkType);
   const sagePrice = usePragmaPrice("SAGE_USD", network as NetworkType);
 
-  // CoinGecko fallback (used when oracle is not deployed)
+  // CoinGecko fallback (always fetched, used when Pragma returns no data)
   const geckoData = useCoinGeckoPrices();
 
+  // Use Pragma if it returned real data, otherwise fall back to CoinGecko
   const prices: Record<string, number> = useMemo(() => {
-    if (oracleAvailable) {
+    const pragmaETH = ethPrice.data?.price ?? 0;
+    const pragmaSTRK = strkPrice.data?.price ?? 0;
+    const pragmaBTC = btcPrice.data?.price ?? 0;
+    const pragmaSAGE = sagePrice.data?.price ?? 0;
+
+    const hasPragmaData = pragmaETH > 0 || pragmaSTRK > 0 || pragmaBTC > 0;
+
+    if (hasPragmaData) {
       return {
-        ETH: ethPrice.data?.price ?? 0,
-        STRK: strkPrice.data?.price ?? 0,
+        ETH: pragmaETH,
+        STRK: pragmaSTRK,
         USDC: 1,
-        wBTC: btcPrice.data?.price ?? 0,
-        SAGE: sagePrice.data?.price ?? 0,
+        wBTC: pragmaBTC,
+        SAGE: pragmaSAGE,
       };
     }
+
     // Fallback to CoinGecko
     return geckoData.prices;
-  }, [oracleAvailable, ethPrice.data?.price, strkPrice.data?.price, btcPrice.data?.price, sagePrice.data?.price, geckoData.prices]);
+  }, [ethPrice.data?.price, strkPrice.data?.price, btcPrice.data?.price, sagePrice.data?.price, geckoData.prices]);
 
   // Asset action panel state
   const [selectedAsset, setSelectedAsset] = useState<{
