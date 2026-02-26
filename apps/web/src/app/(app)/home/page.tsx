@@ -17,9 +17,10 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNetwork } from "@/lib/contexts/NetworkContext";
-import { useAllTokenBalances } from "@/lib/contracts";
+import { useAllTokenBalances, getContractAddresses } from "@/lib/contracts";
 import { useTransactionHistory } from "@/lib/hooks/useTransactionHistory";
 import { usePragmaPrice } from "@/lib/hooks/usePragmaOracle";
+import { useCoinGeckoPrices } from "@/lib/hooks/useCoinGeckoPrices";
 import { TokenCard } from "@/components/portfolio/TokenCard";
 import { AssetActionPanel } from "@/components/portfolio/AssetActionPanel";
 import { PrivacySessionCard } from "@/components/privacy/PrivacySessionCard";
@@ -92,19 +93,34 @@ export default function HomePage() {
   const balances = useAllTokenBalances(address, network as NetworkType);
   const { transactions, isLoading: txLoading } = useTransactionHistory(address, network as NetworkType);
 
-  // Pragma oracle prices
+  // Check if ORACLE_WRAPPER is deployed on this network
+  const oracleAvailable = useMemo(() => {
+    const addrs = getContractAddresses(network as NetworkType);
+    return addrs?.ORACLE_WRAPPER && addrs.ORACLE_WRAPPER !== "0x0";
+  }, [network]);
+
+  // Pragma oracle prices (only used when oracle contract is deployed)
   const ethPrice = usePragmaPrice("ETH_USD", network as NetworkType);
   const strkPrice = usePragmaPrice("STRK_USD", network as NetworkType);
   const btcPrice = usePragmaPrice("BTC_USD", network as NetworkType);
   const sagePrice = usePragmaPrice("SAGE_USD", network as NetworkType);
 
-  const prices: Record<string, number> = useMemo(() => ({
-    ETH: ethPrice.data?.price ?? 0,
-    STRK: strkPrice.data?.price ?? 0,
-    USDC: 1,
-    wBTC: btcPrice.data?.price ?? 0,
-    SAGE: sagePrice.data?.price ?? 0,
-  }), [ethPrice.data?.price, strkPrice.data?.price, btcPrice.data?.price, sagePrice.data?.price]);
+  // CoinGecko fallback (used when oracle is not deployed)
+  const geckoData = useCoinGeckoPrices();
+
+  const prices: Record<string, number> = useMemo(() => {
+    if (oracleAvailable) {
+      return {
+        ETH: ethPrice.data?.price ?? 0,
+        STRK: strkPrice.data?.price ?? 0,
+        USDC: 1,
+        wBTC: btcPrice.data?.price ?? 0,
+        SAGE: sagePrice.data?.price ?? 0,
+      };
+    }
+    // Fallback to CoinGecko
+    return geckoData.prices;
+  }, [oracleAvailable, ethPrice.data?.price, strkPrice.data?.price, btcPrice.data?.price, sagePrice.data?.price, geckoData.prices]);
 
   // Asset action panel state
   const [selectedAsset, setSelectedAsset] = useState<{
@@ -158,14 +174,20 @@ export default function HomePage() {
             ${totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </h1>
         )}
-        {network !== "mainnet" && (
-          <div className="flex items-center justify-center mt-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider bg-orange-500/15 text-orange-400 border border-orange-500/25">
-              <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
-              {network}
-            </span>
-          </div>
-        )}
+        <div className="flex items-center justify-center mt-2">
+          <span className={cn(
+            "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider border",
+            network === "mainnet"
+              ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/25"
+              : "bg-orange-500/15 text-orange-400 border-orange-500/25"
+          )}>
+            <span className={cn(
+              "w-1.5 h-1.5 rounded-full",
+              network === "mainnet" ? "bg-emerald-400" : "bg-orange-400 animate-pulse"
+            )} />
+            {network}
+          </span>
+        </div>
         {!address && (
           <p className="text-xs text-gray-500 mt-2">Connect wallet to view balances</p>
         )}
