@@ -533,6 +533,13 @@ export const APP_URLS = {
 // ============================================
 
 export const PRIVACY_POOL_FOR_TOKEN: Record<string, Record<string, string>> = {
+  devnet: {
+    SAGE: CONTRACTS.devnet.SAGE_PRIVACY_POOL,
+    ETH: CONTRACTS.devnet.ETH_PRIVACY_POOL,
+    STRK: CONTRACTS.devnet.STRK_PRIVACY_POOL,
+    wBTC: CONTRACTS.devnet.WBTC_PRIVACY_POOL,
+    USDC: CONTRACTS.devnet.USDC_PRIVACY_POOL,
+  },
   sepolia: {
     SAGE: CONTRACTS.sepolia.SAGE_PRIVACY_POOL,
     ETH: CONTRACTS.sepolia.ETH_PRIVACY_POOL,
@@ -569,12 +576,20 @@ export const VM31_ASSET_ID_FOR_TOKEN: Record<string, number> = {
 
 /**
  * Get the privacy pool address for a given token on a network.
+ * Falls back from devnet → sepolia since devnet shares sepolia's chain ID
+ * and privacy pools are only deployed on sepolia.
  */
 export function getPrivacyPoolAddress(
   network: NetworkType,
   tokenSymbol: string,
 ): string {
-  return PRIVACY_POOL_FOR_TOKEN[network]?.[tokenSymbol] || "0x0";
+  const addr = PRIVACY_POOL_FOR_TOKEN[network]?.[tokenSymbol];
+  if (addr && addr !== "0x0") return addr;
+  // Devnet fallback: use sepolia pools (same chain ID)
+  if (network === "devnet") {
+    return PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || "0x0";
+  }
+  return "0x0";
 }
 
 /**
@@ -589,13 +604,24 @@ export function getExplorerTxUrl(txHash: string, network: NetworkType): string {
 
 /**
  * Get the token address for a symbol (including SAGE).
+ * Falls back from devnet → sepolia since devnet shares sepolia's chain ID.
  */
 export function getTokenAddressForSymbol(
   network: NetworkType,
   tokenSymbol: string,
 ): string {
-  if (tokenSymbol === "SAGE") return CONTRACTS[network]?.SAGE_TOKEN || "0x0";
-  return EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]] || "0x0";
+  if (tokenSymbol === "SAGE") {
+    const addr = CONTRACTS[network]?.SAGE_TOKEN;
+    if (addr && addr !== "0x0") return addr;
+    if (network === "devnet") return CONTRACTS["sepolia"]?.SAGE_TOKEN || "0x0";
+    return "0x0";
+  }
+  const addr = EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]];
+  if (addr && addr !== "0x0") return addr;
+  if (network === "devnet") {
+    return EXTERNAL_TOKENS["sepolia"]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]] || "0x0";
+  }
+  return "0x0";
 }
 
 /**
