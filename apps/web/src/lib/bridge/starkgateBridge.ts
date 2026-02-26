@@ -78,7 +78,7 @@ declare global {
   }
 }
 
-interface EthereumProvider {
+export interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -86,68 +86,85 @@ interface EthereumProvider {
   providers?: EthereumProvider[];
 }
 
-// Allow callers to set a preferred provider (e.g. when user selects from list)
-let _preferredProvider: EthereumProvider | null = null;
+// ============================================================================
+// EIP-6963: Multi-Wallet Discovery
+// ============================================================================
 
-export function setPreferredEthProvider(provider: EthereumProvider | null) {
-  _preferredProvider = provider;
+export interface EIP6963ProviderInfo {
+  uuid: string;
+  name: string;
+  icon: string; // data URI
+  rdns: string; // reverse DNS e.g. "io.metamask"
 }
 
+export interface EIP6963ProviderDetail {
+  info: EIP6963ProviderInfo;
+  provider: EthereumProvider;
+}
+
+/** Collected EIP-6963 wallets (populated by discoverEIP6963Providers) */
+const _eip6963Wallets: EIP6963ProviderDetail[] = [];
+let _eip6963Discovered = false;
+
 /**
- * Detect all available EIP-1193 Ethereum providers.
- * Handles the multi-wallet case where window.ethereum.providers exists,
- * or when EIP-6963 events announce providers.
+ * Discover wallets via EIP-6963 events.
+ * Each wallet extension dispatches `eip6963:announceProvider` with its
+ * provider + metadata. We request announcements and collect responses.
+ * Returns a promise that resolves after a short collection window.
  */
-export function detectEthProviders(): { name: string; provider: EthereumProvider }[] {
-  if (typeof window === "undefined" || !window.ethereum) return [];
+export function discoverEIP6963Providers(): Promise<EIP6963ProviderDetail[]> {
+  if (typeof window === "undefined") return Promise.resolve([]);
 
-  const eth = window.ethereum as unknown as EthereumProvider;
-  const results: { name: string; provider: EthereumProvider }[] = [];
-
-  // Multi-wallet: window.ethereum.providers array (MetaMask + others)
-  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
-    for (const p of eth.providers) {
-      const name = p.isMetaMask
-        ? "MetaMask"
-        : (p as unknown as Record<string, unknown>).isRabby
-          ? "Rabby"
-          : (p as unknown as Record<string, unknown>).isCoinbaseWallet
-            ? "Coinbase"
-            : "Wallet";
-      results.push({ name, provider: p });
-    }
-    return results;
+  // Only discover once per page load
+  if (_eip6963Discovered && _eip6963Wallets.length > 0) {
+    return Promise.resolve([..._eip6963Wallets]);
   }
 
-  // Single wallet
-  const name = eth.isMetaMask
-    ? "MetaMask"
-    : (eth as unknown as Record<string, unknown>).isRabby
-      ? "Rabby"
-      : "Ethereum Wallet";
-  results.push({ name, provider: eth });
-  return results;
+  return new Promise((resolve) => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail as EIP6963ProviderDetail;
+      if (detail?.info && detail?.provider) {
+        // Deduplicate by UUID
+        if (!_eip6963Wallets.some((w) => w.info.uuid === detail.info.uuid)) {
+          _eip6963Wallets.push(detail);
+        }
+      }
+    };
+
+    window.addEventListener("eip6963:announceProvider", handler);
+
+    // Request all wallets to announce themselves
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+
+    // Give wallets 300ms to respond, then resolve
+    setTimeout(() => {
+      window.removeEventListener("eip6963:announceProvider", handler);
+      _eip6963Discovered = true;
+      resolve([..._eip6963Wallets]);
+    }, 300);
+  });
+}
+
+// The actively selected provider (set when user picks a wallet)
+let _selectedProvider: EthereumProvider | null = null;
+
+export function setPreferredEthProvider(provider: EthereumProvider | null) {
+  _selectedProvider = provider;
+}
+
+export function getSelectedProvider(): EthereumProvider | null {
+  return _selectedProvider;
 }
 
 function getEthereumProvider(): EthereumProvider {
+  // 1. Use explicitly selected provider (from wallet picker)
+  if (_selectedProvider) return _selectedProvider;
+
+  // 2. Fallback to window.ethereum
   if (typeof window === "undefined" || !window.ethereum) {
-    throw new Error("MetaMask or an Ethereum wallet is required for L1 bridging");
+    throw new Error("No Ethereum wallet found. Install MetaMask or another wallet extension.");
   }
-
-  // 1. Use explicitly selected provider
-  if (_preferredProvider) return _preferredProvider;
-
-  const eth = window.ethereum as unknown as EthereumProvider;
-
-  // 2. Multi-wallet: prefer MetaMask from providers array
-  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
-    const metamask = eth.providers.find((p) => p.isMetaMask);
-    if (metamask) return metamask;
-    return eth.providers[0];
-  }
-
-  // 3. Single provider fallback
-  return eth;
+  return window.ethereum as unknown as EthereumProvider;
 }
 
 // ============================================================================
