@@ -114,12 +114,34 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
   const network = networkProp || envNetwork || "sepolia";
 
   // Use injected connectors (ArgentX, Braavos, etc.)
-  const { connectors } = useInjectedConnectors({
+  const { connectors: rawConnectors } = useInjectedConnectors({
     recommended: [argent(), braavos()],
     includeRecommended: "always",
     order: "alphabetical",
     shimLegacyConnectors: ["braavos", "argentX"],
   });
+
+  // Patch connectors to gracefully handle wallet_switchStarknetChain failures.
+  // Braavos (and some other wallets) don't support this RPC method, causing
+  // "Unsupported dApp request" errors on connect. We wrap switchChain to
+  // catch and silently ignore the error — the wallet stays on its current chain.
+  const connectors = useMemo(() => {
+    return rawConnectors.map((connector) => {
+      const proto = Object.getPrototypeOf(connector);
+      if (proto && typeof proto.switchChain === "function" && !proto._switchChainPatched) {
+        const originalSwitchChain = proto.switchChain;
+        proto.switchChain = async function (chainId: bigint) {
+          try {
+            await originalSwitchChain.call(this, chainId);
+          } catch {
+            // wallet_switchStarknetChain not supported — ignore silently
+          }
+        };
+        proto._switchChainPatched = true;
+      }
+      return connector;
+    });
+  }, [rawConnectors]);
 
   // Configure chains — only include the target network's chain.
   // Including multiple chains causes starknet-react to call
