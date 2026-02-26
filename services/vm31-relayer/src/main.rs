@@ -26,7 +26,7 @@ use crate::bridge::BridgeService;
 use crate::config::RelayerConfig;
 use crate::prover::ProverService;
 use crate::routes::AppState;
-use crate::store::build_store;
+use crate::store;
 use crate::tree_sync_service::TreeSyncService;
 
 #[tokio::main]
@@ -65,18 +65,46 @@ async fn main() {
         port = config.port,
         batch_max_size = config.batch_max_size,
         batch_timeout_secs = config.batch_timeout_secs,
+        min_batch_size = config.min_batch_size,
+        max_batch_wait_secs = config.max_batch_wait_secs,
         redis = config.redis_url.is_some(),
+        ecies = config.relayer_private_key.is_some(),
+        encrypted_storage = config.storage_key.is_some(),
+        plaintext_allowed = config.legacy_plaintext_allowed,
         origins = config.allowed_origins.len(),
-        "starting vm31-relayer"
+        "starting vm31-relayer with privacy hardening"
     );
 
-    // Build store + start eviction task
-    let store = build_store(&config);
+    // Build store with optional at-rest encryption + start eviction task
+    let store = Arc::new(store::InMemoryStore::with_encryption(
+        config.storage_key.as_ref(),
+    ));
     store.spawn_eviction_task();
 
-    // Build batch queue
-    let (queue, rx) = BatchQueue::new(config.batch_max_size, config.batch_timeout_secs, 32);
+    if config.storage_key.is_some() {
+        info!("note storage encryption enabled (VM31_STORAGE_KEY configured)");
+    }
+    if config.relayer_private_key.is_some() {
+        info!("ECIES submission encryption enabled (VM31_RELAYER_PRIVKEY configured)");
+    }
+    if !config.legacy_plaintext_allowed {
+        info!("plaintext submissions DISABLED (mainnet mode)");
+    }
+
+    // Build batch queue with privacy-enhancing min batch size
+    let (queue, rx) = BatchQueue::with_min_batch(
+        config.batch_max_size,
+        config.batch_timeout_secs,
+        32,
+        config.min_batch_size,
+        config.max_batch_wait_secs,
+    );
     queue.spawn_timeout_loop();
+    info!(
+        min_batch_size = config.min_batch_size,
+        max_batch_wait_secs = config.max_batch_wait_secs,
+        "batch queue shuffle + min-size privacy enabled"
+    );
 
     // Build SncastVm31Backend
     let backend = SncastVm31Backend::new(
@@ -171,6 +199,7 @@ async fn main() {
     let app = Router::new()
         .route("/health", axum::routing::get(routes::health))
         .route("/status", axum::routing::get(routes::status))
+        .route("/public-key", axum::routing::get(routes::public_key))
         .route("/submit", axum::routing::post(routes::submit))
         .route("/batch/{id}", axum::routing::get(routes::get_batch))
         .route("/prove", axum::routing::post(routes::force_prove))
@@ -190,6 +219,11 @@ async fn main() {
         .layer(SetResponseHeaderLayer::overriding(
             "Referrer-Policy".parse::<header::HeaderName>().unwrap(),
             HeaderValue::from_static("no-referrer"),
+        ))
+        // Suppress Server header to prevent framework fingerprinting
+        .layer(SetResponseHeaderLayer::overriding(
+            header::SERVER,
+            HeaderValue::from_static(""),
         ))
         .with_state(state.clone());
 

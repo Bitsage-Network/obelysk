@@ -28,6 +28,11 @@ import { usePrivacyKeys } from "./usePrivacyKeys";
 import { saveNote, markNoteSpent } from "../crypto/keyStore";
 import type { PrivacyNote } from "../crypto";
 import type { ProvingStage } from "@/components/privacy/ProvingFlowCard";
+import {
+  encryptForRelayer,
+  fetchRelayerPublicKey,
+  type EncryptedSubmitRequest,
+} from "../crypto/eciesEnvelope";
 
 // ============================================================================
 // Constants
@@ -38,6 +43,21 @@ const M31_MOD = 0x7FFF_FFFF;
 
 /** Blanket ERC20 approval amount (10^18 * 10 = 10 BTC in 8-decimal base units) */
 const BLANKET_APPROVAL = 10n ** 18n;
+
+/** BTC denomination whitelist (in satoshis / 8-decimal base units).
+ * All BTC deposits must use one of these standard denominations
+ * to prevent exact-amount correlation attacks (privacy gap #7). */
+export const BTC_DENOMINATIONS_SATS: bigint[] = [
+  50_000n,      // 0.0005 BTC
+  100_000n,     // 0.001 BTC
+  500_000n,     // 0.005 BTC
+  1_000_000n,   // 0.01 BTC
+  5_000_000n,   // 0.05 BTC
+  10_000_000n,  // 0.1 BTC
+];
+
+/** BTC asset symbols that require denomination validation */
+const BTC_DENOMINATION_SYMBOLS = new Set(["wBTC", "LBTC", "tBTC", "SolvBTC"]);
 
 /** ERC20 ABI for approve + allowance */
 const ERC20_ABI = [
@@ -307,6 +327,43 @@ function generateRandomBlinding(): [number, number, number, number] {
 }
 
 // ============================================================================
+// BTC denomination helpers
+// ============================================================================
+
+/** Validate that a BTC deposit uses a standard denomination */
+export function validateBtcDenomination(amount: bigint, symbol: string): void {
+  if (!BTC_DENOMINATION_SYMBOLS.has(symbol)) return;
+  if (!BTC_DENOMINATIONS_SATS.includes(amount)) {
+    throw new Error(
+      `BTC deposits must use standard denominations: ${BTC_DENOMINATIONS_SATS.map(
+        (d) => formatBtcAmount(d)
+      ).join(", ")} BTC. Got ${formatBtcAmount(amount)} BTC.`
+    );
+  }
+}
+
+/** Split an arbitrary BTC amount into standard denominations (greedy).
+ * Returns array of denomination amounts that sum to <= input.
+ * Remainder (< smallest denomination) is returned separately. */
+export function splitIntoDenominations(satoshis: bigint): {
+  denominations: bigint[];
+  remainder: bigint;
+} {
+  const sorted = [...BTC_DENOMINATIONS_SATS].sort((a, b) => (b > a ? 1 : -1));
+  const denominations: bigint[] = [];
+  let remaining = satoshis;
+
+  for (const denom of sorted) {
+    while (remaining >= denom) {
+      denominations.push(denom);
+      remaining -= denom;
+    }
+  }
+
+  return { denominations, remainder: remaining };
+}
+
+// ============================================================================
 // Initial state
 // ============================================================================
 
@@ -485,13 +542,24 @@ export function useVM31Vault() {
 
   const submitToRelayer = useCallback(
     async (body: Record<string, unknown>): Promise<VaultSubmitResult> => {
+      // Attempt ECIES encryption for privacy (gap #1)
+      let submitBody: Record<string, unknown> | EncryptedSubmitRequest = body;
+      try {
+        const pubkey = await fetchRelayerPublicKey(relayerUrl);
+        submitBody = await encryptForRelayer(body, pubkey);
+      } catch {
+        // Fallback to plaintext if ECIES not available (e.g., relayer not configured)
+        // This will be rejected in mainnet mode (VM31_ALLOW_PLAINTEXT=false)
+        // ECIES unavailable — plaintext fallback (will be rejected in mainnet mode)
+      }
+
       const res = await fetch(`${relayerUrl}/submit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(submitBody),
       });
 
       if (!res.ok) {
@@ -593,7 +661,7 @@ export function useVM31Vault() {
                   );
                 }
               } catch (err) {
-                console.warn("[VM31] Merkle path fetch failed:", err instanceof Error ? err.message : "unknown error");
+                // Merkle path fetch failed — will retry on next poll
               }
             }
           } else if (status.status === "proving") {
@@ -614,7 +682,7 @@ export function useVM31Vault() {
             if (batchPollRef.current) clearInterval(batchPollRef.current);
           }
         } catch (err) {
-          console.warn("[VM31] Batch poll error:", err instanceof Error ? err.message : "unknown error");
+          // Batch poll error — will retry on next interval
         }
       }, 5_000);
     },
@@ -645,6 +713,9 @@ export function useVM31Vault() {
         if (!info.available) {
           throw new Error(`${params.assetSymbol} is not available on ${network}`);
         }
+
+        // BTC denomination validation (privacy gap #7)
+        validateBtcDenomination(params.amount, params.assetSymbol);
 
         // Stage 1: Privacy key derivation
         setState((p) => ({ ...p, phase: "keys", message: "Preparing privacy keys...", progress: 10 }));
@@ -825,6 +896,11 @@ export function useVM31Vault() {
         // Stage 2: Submit to relayer
         setState((p) => ({ ...p, phase: "submitting", message: "Submitting withdrawal to relayer...", progress: 50 }));
 
+        // Generate random binding salt for anti-rainbow-table protection (privacy gap #5)
+        const saltValues = new Uint32Array(8);
+        crypto.getRandomValues(saltValues);
+        const bindingSalt = Array.from(saltValues).map((v) => v & M31_MOD);
+
         const result = await submitToRelayer({
           type: "withdraw",
           amount: amountToU64(params.amount),
@@ -834,6 +910,7 @@ export function useVM31Vault() {
           merkle_path: params.merklePath,
           merkle_root: params.merkleRoot,
           withdrawal_binding: params.withdrawalBinding,
+          binding_salt: bindingSalt,
         });
 
         const newPhase = result.status === "batch_triggered" ? "proving" : "queued";
@@ -1025,6 +1102,8 @@ export function useVM31Vault() {
     decodeAmountM31,
     formatBtcAmount,
     vaultPhaseToProvingStage,
+    validateBtcDenomination,
+    splitIntoDenominations,
   };
 }
 

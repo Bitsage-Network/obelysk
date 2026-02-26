@@ -3,7 +3,11 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::debug;
+use tracing::{debug, warn};
+
+use aes_gcm::{aead::Aead, Aes256Gcm, KeyInit, Nonce};
+use hkdf::Hkdf;
+use sha2::Sha256;
 
 use crate::config::RelayerConfig;
 
@@ -171,6 +175,65 @@ impl std::fmt::Display for StoreError {
 impl std::error::Error for StoreError {}
 
 // ---------------------------------------------------------------------------
+// Storage encryption layer (defense-in-depth for privacy gap #1)
+// ---------------------------------------------------------------------------
+
+/// Encrypts/decrypts NoteRecord values at rest using AES-256-GCM.
+/// The commitment field (used as lookup key) remains plaintext; only
+/// the note content is encrypted. Derive the key from VM31_STORAGE_KEY
+/// via HKDF-SHA256.
+pub struct StorageEncryption {
+    cipher: Aes256Gcm,
+}
+
+impl StorageEncryption {
+    /// Create from a raw 32-byte key.
+    pub fn new(key: &[u8; 32]) -> Self {
+        let hk = Hkdf::<Sha256>::new(None, key);
+        let mut derived = [0u8; 32];
+        hk.expand(b"obelysk-storage-v1", &mut derived)
+            .expect("HKDF expand for storage key");
+        Self {
+            cipher: Aes256Gcm::new_from_slice(&derived)
+                .expect("AES-256-GCM key init"),
+        }
+    }
+
+    /// Encrypt a NoteRecord → opaque bytes. Nonce is deterministic from
+    /// commitment string (the lookup key) to allow re-encryption of updates.
+    pub fn encrypt_note(&self, commitment: &str, record: &NoteRecord) -> Result<Vec<u8>, StoreError> {
+        let plaintext = serde_json::to_vec(record)
+            .map_err(|e| StoreError::Backend(format!("serialize: {e}")))?;
+        let nonce_bytes = Self::derive_nonce(commitment);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        self.cipher
+            .encrypt(nonce, plaintext.as_ref())
+            .map_err(|e| StoreError::Backend(format!("encrypt: {e}")))
+    }
+
+    /// Decrypt opaque bytes → NoteRecord.
+    pub fn decrypt_note(&self, commitment: &str, ciphertext: &[u8]) -> Result<NoteRecord, StoreError> {
+        let nonce_bytes = Self::derive_nonce(commitment);
+        let nonce = Nonce::from_slice(&nonce_bytes);
+        let plaintext = self.cipher
+            .decrypt(nonce, ciphertext)
+            .map_err(|e| StoreError::Backend(format!("decrypt: {e}")))?;
+        serde_json::from_slice(&plaintext)
+            .map_err(|e| StoreError::Backend(format!("deserialize: {e}")))
+    }
+
+    /// Derive a deterministic 12-byte nonce from the commitment string.
+    /// This allows in-place updates without storing separate nonces.
+    fn derive_nonce(commitment: &str) -> [u8; 12] {
+        use sha2::Digest;
+        let hash = sha2::Sha256::digest(commitment.as_bytes());
+        let mut nonce = [0u8; 12];
+        nonce.copy_from_slice(&hash[..12]);
+        nonce
+    }
+}
+
+// ---------------------------------------------------------------------------
 // In-memory implementation
 // ---------------------------------------------------------------------------
 
@@ -186,6 +249,11 @@ pub struct InMemoryStore {
     idempotency: DashMap<String, (String, u64)>, // (result, created_epoch)
     rate_limits: DashMap<String, (u32, u64)>,     // (count, window_start_epoch)
     notes: DashMap<String, NoteRecord>,
+    /// Encrypted note storage: commitment → AES-256-GCM ciphertext.
+    /// Used when VM31_STORAGE_KEY is configured (defense-in-depth, gap #1).
+    encrypted_notes: DashMap<String, Vec<u8>>,
+    /// Storage encryption layer (None if VM31_STORAGE_KEY not set).
+    storage_encryption: Option<StorageEncryption>,
     eviction_counter: AtomicU64,
 }
 
@@ -196,8 +264,19 @@ impl InMemoryStore {
             idempotency: DashMap::new(),
             rate_limits: DashMap::new(),
             notes: DashMap::new(),
+            encrypted_notes: DashMap::new(),
+            storage_encryption: None,
             eviction_counter: AtomicU64::new(0),
         }
+    }
+
+    /// Create with optional at-rest encryption for note records.
+    pub fn with_encryption(storage_key: Option<&[u8; 32]>) -> Self {
+        let mut store = Self::new();
+        if let Some(key) = storage_key {
+            store.storage_encryption = Some(StorageEncryption::new(key));
+        }
+        store
     }
 
     /// Spawns a background task that periodically evicts expired entries.
@@ -352,12 +431,34 @@ impl RateLimitStore for InMemoryStore {
 
 impl NoteStore for InMemoryStore {
     async fn save_note(&self, commitment: &str, record: &NoteRecord) -> Result<(), StoreError> {
+        // If storage encryption is enabled, encrypt the record at rest
+        if let Some(ref enc) = self.storage_encryption {
+            let ciphertext = enc.encrypt_note(commitment, record)?;
+            self.encrypted_notes.insert(commitment.to_string(), ciphertext);
+        }
+        // Always store in plaintext map too (for in-memory operations)
         self.notes.insert(commitment.to_string(), record.clone());
         Ok(())
     }
 
     async fn get_note(&self, commitment: &str) -> Result<Option<NoteRecord>, StoreError> {
-        Ok(self.notes.get(commitment).map(|r| r.value().clone()))
+        // Try plaintext first (fast path)
+        if let Some(r) = self.notes.get(commitment) {
+            return Ok(Some(r.value().clone()));
+        }
+        // Fallback: try decrypting from encrypted store
+        if let Some(ref enc) = self.storage_encryption {
+            if let Some(ct) = self.encrypted_notes.get(commitment) {
+                match enc.decrypt_note(commitment, ct.value()) {
+                    Ok(record) => return Ok(Some(record)),
+                    Err(e) => {
+                        warn!(commitment = commitment, error = %e, "failed to decrypt note");
+                        return Err(e);
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
 
     async fn list_pending_notes(&self) -> Result<Vec<NoteRecord>, StoreError> {

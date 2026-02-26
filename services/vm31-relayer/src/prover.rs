@@ -2,6 +2,17 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
+/// Produce a short opaque reference for log entries.
+/// FNV-1a hash folded to 32 bits — non-reversible, sufficient for log correlation.
+fn opaque_ref(input: &str) -> String {
+    let mut state: u64 = 0xcbf29ce484222325;
+    for b in input.as_bytes() {
+        state ^= *b as u64;
+        state = state.wrapping_mul(0x100000001b3);
+    }
+    format!("{:08x}", (state >> 32) ^ (state & 0xFFFFFFFF))
+}
+
 use stwo_ml::privacy::pool_client::PoolClient;
 use stwo_ml::privacy::relayer::{
     hash_batch_public_inputs_for_cairo, run_vm31_relayer_flow, RelayOutcome, SncastVm31Backend,
@@ -259,7 +270,7 @@ impl ProverService {
 
         info!(
             batch_id = %batch_id,
-            onchain_batch_id = %outcome.batch_id,
+            chain_ref = %opaque_ref(&outcome.batch_id),
             finalized = outcome.finalized,
             "on-chain submission complete"
         );
@@ -268,7 +279,7 @@ impl ProverService {
         if !withdrawal_recipients.payout.is_empty() {
             info!(
                 batch_id = %batch_id,
-                count = withdrawal_recipients.payout.len(),
+                has_withdrawals = true,
                 "bridging withdrawals"
             );
             for (idx, _) in withdrawal_recipients.payout.iter().enumerate() {
@@ -279,7 +290,7 @@ impl ProverService {
                     // Non-fatal: log and continue. Bridge is idempotent and can be retried.
                     warn!(
                         batch_id = %batch_id,
-                        withdrawal_idx = idx,
+                        wd_ref = %opaque_ref(&format!("{}:{}", outcome.batch_id, idx)),
                         error = %e,
                         "bridge call failed (idempotent, can retry)"
                     );
@@ -317,8 +328,7 @@ impl ProverService {
             if digest.is_some() {
                 info!(
                     batch_id = %batch_id,
-                    commitment = %commitment,
-                    idx = idx,
+                    note_ref = %opaque_ref(&commitment),
                     "deposit note commitment digest extracted from proof"
                 );
             }
@@ -337,7 +347,7 @@ impl ProverService {
             if let Err(e) = self.store.save_note(&commitment, &record).await {
                 warn!(
                     batch_id = %batch_id,
-                    commitment = %commitment,
+                    note_ref = %opaque_ref(&commitment),
                     error = %e,
                     "failed to save note record (non-fatal)"
                 );

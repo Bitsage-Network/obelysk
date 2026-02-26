@@ -31,6 +31,8 @@ import {
   negatePoint,
   getGenerator,
   getPedersenH,
+  setNoteEncryptionKey,
+  clearNoteEncryptionKey,
   type PrivacyKeyPair,
   type ECPoint,
   type PrivacyNote,
@@ -202,6 +204,8 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
     // Derive KEK using HKDF
     const kek = await deriveKEK(signatureBytes);
     setCachedKEK(kek);
+    // Enable at-rest encryption for IndexedDB notes
+    await setNoteEncryptionKey(kek);
 
     return kek;
   }, [address, chainId, signTypedDataAsync, cachedKEK]);
@@ -279,7 +283,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
       await deriveKEKFromWallet(true);
       return true;
     } catch (error) {
-      console.error("[PrivacyKeys] Reveal signature failed:", error instanceof Error ? error.message : "Unknown error");
+      // Reveal signature failed — will re-throw
       throw error;
     }
   }, [address, chainId, deriveKEKFromWallet]);
@@ -439,6 +443,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
     try {
       await deleteKeys(address);
       setCachedKEK(null);
+      clearNoteEncryptionKey();
 
       setState({
         isInitialized: true,
@@ -497,6 +502,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
     try {
       await clearAllData(address);
       setCachedKEK(null);
+      clearNoteEncryptionKey();
 
       setState({
         isInitialized: true,
@@ -529,7 +535,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
         publicKey,
       }));
     } catch (error) {
-      console.error("Failed to refresh state:", error instanceof Error ? error.message : "Unknown error");
+      // Privacy key state refresh failed
     }
   }, [address]);
 

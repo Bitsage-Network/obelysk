@@ -130,6 +130,10 @@ function baseUrl(network: GardenNetwork): string {
 }
 
 function headers(): HeadersInit {
+  // PRIVACY NOTE: The browser will still send User-Agent, Origin, and Referer
+  // headers to Garden's API. These cannot be stripped in a browser context.
+  // For maximum privacy, route through a CORS proxy that strips identifying headers.
+  // The garden-app-id is required by Garden's API for authentication.
   return {
     "Content-Type": "application/json",
     "garden-app-id": GARDEN_APP_ID,
@@ -140,6 +144,8 @@ async function gardenFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
     headers: { ...headers(), ...init?.headers },
+    // Suppress Referer header to prevent Garden from seeing the page URL
+    referrerPolicy: "no-referrer",
   });
 
   const body = await res.text();
@@ -147,18 +153,18 @@ async function gardenFetch<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     parsed = JSON.parse(body);
   } catch {
-    if (!res.ok) throw new Error(`Garden API error (${res.status}): ${body || res.statusText}`);
-    throw new Error(`Garden API returned non-JSON: ${body.slice(0, 200)}`);
+    if (!res.ok) throw new Error(`Garden API error (${res.status})`);
+    throw new Error("Garden API returned invalid response");
   }
 
   // Garden wraps responses in {"status":"Ok"|"Error","result":...,"error":...}
   if (parsed && typeof parsed === "object" && "status" in parsed) {
     const wrapper = parsed as { status: string; result?: unknown; error?: string };
     if (wrapper.status === "Error") {
-      throw new Error(`Garden API error: ${wrapper.error || "Unknown error"}`);
+      throw new Error("Garden API error: operation failed");
     }
     if (!res.ok) {
-      throw new Error(`Garden API error (${res.status}): ${wrapper.error || body}`);
+      throw new Error(`Garden API error (${res.status})`);
     }
     // Unwrap the result if present
     if ("result" in wrapper && wrapper.result !== undefined) {
@@ -167,7 +173,7 @@ async function gardenFetch<T>(url: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new Error(`Garden API error (${res.status}): ${body || res.statusText}`);
+    throw new Error(`Garden API error (${res.status})`);
   }
 
   return parsed as T;

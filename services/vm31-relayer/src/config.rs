@@ -18,9 +18,27 @@ pub struct RelayerConfig {
     pub batch_max_size: usize,
     pub batch_timeout_secs: u64,
     pub chunk_size: u32,
+    /// Minimum transactions required for timeout-triggered flush (default: 3).
+    /// Prevents single-tx batches that offer zero privacy mixing.
+    pub min_batch_size: usize,
+    /// Maximum seconds any transaction can wait in queue (default: 300).
+    /// Hard ceiling to prevent indefinite queueing when min_batch_size is not met.
+    pub max_batch_wait_secs: u64,
 
     // Auth
     pub api_keys: Vec<String>,
+
+    // ECIES encryption for relayer submissions
+    /// X25519 private key for decrypting ECIES envelopes (32 bytes, hex-encoded).
+    /// Generated via `openssl rand -hex 32` and set as VM31_RELAYER_PRIVKEY.
+    pub relayer_private_key: Option<[u8; 32]>,
+    /// When false, reject plaintext submissions (mainnet mode).
+    /// When true, accept both encrypted and plaintext (migration mode).
+    pub legacy_plaintext_allowed: bool,
+
+    // Encrypted note storage
+    /// AES-256 key for encrypting NoteRecord values at rest (32 bytes, hex-encoded).
+    pub storage_key: Option<[u8; 32]>,
 
     // Redis (optional)
     pub redis_url: Option<String>,
@@ -87,6 +105,24 @@ impl RelayerConfig {
             return Err(ConfigError::Invalid("VM31_RATE_LIMIT".into(), "must be > 0".into()));
         }
 
+        let min_batch_size: usize = parse_env_or("VM31_MIN_BATCH_SIZE", 3)?;
+        if min_batch_size == 0 {
+            return Err(ConfigError::Invalid("VM31_MIN_BATCH_SIZE".into(), "must be > 0".into()));
+        }
+        let max_batch_wait_secs: u64 = parse_env_or("VM31_MAX_BATCH_WAIT_SECS", 300)?;
+        if max_batch_wait_secs == 0 {
+            return Err(ConfigError::Invalid("VM31_MAX_BATCH_WAIT_SECS".into(), "must be > 0".into()));
+        }
+
+        // ECIES relayer private key (optional, enables encrypted submissions)
+        let relayer_private_key = parse_hex_key_32("VM31_RELAYER_PRIVKEY")?;
+        let legacy_plaintext_allowed: bool = env::var("VM31_ALLOW_PLAINTEXT")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true); // Default true during migration
+
+        // Storage encryption key (optional, enables at-rest encryption)
+        let storage_key = parse_hex_key_32("VM31_STORAGE_KEY")?;
+
         let tree_cache_path = env::var("VM31_TREE_CACHE_PATH").ok().filter(|s| !s.is_empty());
         let tree_sync_interval_secs: u64 = parse_env_or("VM31_TREE_SYNC_INTERVAL", 15)?;
         if tree_sync_interval_secs == 0 {
@@ -108,7 +144,12 @@ impl RelayerConfig {
             batch_max_size,
             batch_timeout_secs,
             chunk_size,
+            min_batch_size,
+            max_batch_wait_secs,
             api_keys,
+            relayer_private_key,
+            legacy_plaintext_allowed,
+            storage_key,
             redis_url,
             rate_limit_per_min,
             allowed_origins,
@@ -152,6 +193,27 @@ fn parse_env_or<T: std::str::FromStr>(name: &str, default: T) -> Result<T, Confi
             .parse()
             .map_err(|_| ConfigError::Invalid(name.into(), format!("could not parse '{v}'"))),
         _ => Ok(default),
+    }
+}
+
+fn parse_hex_key_32(env_name: &str) -> Result<Option<[u8; 32]>, ConfigError> {
+    match env::var(env_name) {
+        Ok(v) if !v.is_empty() => {
+            let hex = v.strip_prefix("0x").unwrap_or(&v);
+            if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+                return Err(ConfigError::Invalid(
+                    env_name.into(),
+                    "must be exactly 64 hex characters (32 bytes)".into(),
+                ));
+            }
+            let mut key = [0u8; 32];
+            for i in 0..32 {
+                key[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16)
+                    .map_err(|_| ConfigError::Invalid(env_name.into(), "invalid hex".into()))?;
+            }
+            Ok(Some(key))
+        }
+        _ => Ok(None),
     }
 }
 
