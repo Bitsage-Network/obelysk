@@ -164,8 +164,26 @@ const PRIVACY_POOLS_ADDRESS = (process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS || 
 // RPC URL for fetching transaction receipts
 const RPC_URL = getRpcUrl((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
 
-// Default network for pool lookups
-const DEFAULT_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+// Network for pool address lookups
+const DEFAULT_NETWORK: NetworkType = "sepolia";
+
+// Hardcoded Sepolia pool addresses — bypass all lookup machinery.
+// These are the DEPLOYED contracts on Starknet Sepolia.
+const HARDCODED_POOLS: Record<string, string> = {
+  SAGE: "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7",
+  ETH:  "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
+  STRK: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
+  wBTC: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
+  USDC: "0x02bcb455a7e356ef3ff1422d33d0742e633e4b8b4eb9fa6c15e62e8fd16b7e50",
+};
+
+const HARDCODED_TOKENS: Record<string, string> = {
+  SAGE: "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850",
+  ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+  STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+  wBTC: "0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e",
+  USDC: "0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080",
+};
 
 // PPDepositExecuted event selector (keccak hash of event name)
 const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
@@ -234,7 +252,7 @@ export const PRIVACY_DENOMINATIONS = [
   1000, // 1000 SAGE
 ] as const;
 
-export type PrivacyDenomination = (typeof PRIVACY_DENOMINATIONS)[number];
+export type PrivacyDenomination = (typeof PRIVACY_DENOMINATIONS)[number] | number;
 
 // Convert denomination to wei, accounting for token decimals
 function toWei(amount: number, decimals: number = 18): bigint {
@@ -461,13 +479,17 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
       }
 
       // Resolve per-token pool and token addresses
-      const poolAddress = getPrivacyPoolAddress(DEFAULT_NETWORK, tokenSymbol) as `0x${string}`;
-      const tokenAddress = getTokenAddressForSymbol(DEFAULT_NETWORK, tokenSymbol) as `0x${string}`;
+      // Use hardcoded addresses first (guaranteed correct), fall back to lookup
+      const poolAddress = (HARDCODED_POOLS[tokenSymbol] || getPrivacyPoolAddress(DEFAULT_NETWORK, tokenSymbol)) as `0x${string}`;
+      const tokenAddress = (HARDCODED_TOKENS[tokenSymbol] || getTokenAddressForSymbol(DEFAULT_NETWORK, tokenSymbol)) as `0x${string}`;
       const assetId = ASSET_ID_FOR_TOKEN[tokenSymbol] || "0x0";
       const decimals = TOKEN_METADATA[tokenSymbol as keyof typeof TOKEN_METADATA]?.decimals ?? 18;
 
+      // DEBUG: visible in browser console
+      console.log(`[PrivacyPool] v2 deposit: token=${tokenSymbol}, pool=${poolAddress}, tokenAddr=${tokenAddress}`);
+
       if (poolAddress === "0x0") {
-        throw new Error(`Privacy pool not deployed for ${tokenSymbol}`);
+        throw new Error(`Privacy pool not deployed for ${tokenSymbol} on ${DEFAULT_NETWORK}`);
       }
       if (tokenAddress === "0x0") {
         throw new Error(`Token address not configured for ${tokenSymbol}`);
@@ -771,7 +793,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
       // Resolve pool address from note's tokenSymbol
       const noteToken = note.tokenSymbol || "SAGE";
-      const poolAddress = getPrivacyPoolAddress(DEFAULT_NETWORK, noteToken) as `0x${string}`;
+      const poolAddress = (HARDCODED_POOLS[noteToken] || getPrivacyPoolAddress(DEFAULT_NETWORK, noteToken)) as `0x${string}`;
       const decimals = TOKEN_METADATA[noteToken as keyof typeof TOKEN_METADATA]?.decimals ?? 18;
 
       if (poolAddress === "0x0") {

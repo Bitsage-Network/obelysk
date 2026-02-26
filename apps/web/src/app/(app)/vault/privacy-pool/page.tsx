@@ -790,31 +790,72 @@ function PrivacyPoolPageInner() {
                     </div>
                   </div>
 
-                  {/* Denomination Selector */}
+                  {/* Amount Input + Preset Denominations */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">Amount</label>
-                      <span className="text-xs text-gray-600">Fixed for anonymity</span>
+                      <span className="text-xs text-gray-600">Presets recommended for anonymity</span>
                     </div>
+
+                    {/* Custom amount input */}
+                    <div className="relative">
+                      <input
+                        type="number"
+                        value={amount || selectedDenomination}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setAmount(val);
+                          const num = parseFloat(val);
+                          if (!isNaN(num) && num > 0) {
+                            setSelectedDenomination(num);
+                          }
+                        }}
+                        disabled={!hasKeys}
+                        placeholder="Enter amount..."
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border bg-white/[0.02] text-white font-mono text-lg",
+                          "placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-fuchsia-500/40 focus:border-fuchsia-500/40",
+                          "border-white/[0.06]",
+                          !hasKeys && "opacity-40 cursor-not-allowed"
+                        )}
+                        step="any"
+                        min="0"
+                      />
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-gray-500 font-medium">
+                        {selectedAsset.id}
+                      </span>
+                    </div>
+
+                    {/* Preset denomination buttons */}
                     <div className="grid grid-cols-5 gap-2">
                       {assetDenominations.map((denom) => (
                         <button
                           key={denom}
-                          onClick={() => setSelectedDenomination(denom)}
+                          onClick={() => {
+                            setSelectedDenomination(denom);
+                            setAmount(String(denom));
+                          }}
                           disabled={!hasKeys}
                           className={cn(
-                            "p-3 rounded-xl border text-center transition-all",
+                            "p-2.5 rounded-xl border text-center transition-all",
                             selectedDenomination === denom
                               ? "bg-fuchsia-500/15 border-fuchsia-500/40 text-white ring-1 ring-fuchsia-500/20"
                               : "bg-white/[0.02] border-white/[0.06] text-gray-300 hover:border-white/[0.15]",
                             !hasKeys && "opacity-40 cursor-not-allowed"
                           )}
                         >
-                          <span className="text-base font-bold font-mono">{denom}</span>
-                          <p className="text-[10px] text-gray-500 mt-0.5">{selectedAsset.id}</p>
+                          <span className="text-sm font-bold font-mono">{denom}</span>
                         </button>
                       ))}
                     </div>
+
+                    {/* Anonymity warning for non-standard amounts */}
+                    {amount && !assetDenominations.includes(parseFloat(amount)) && parseFloat(amount) > 0 && (
+                      <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-500/[0.06] border border-amber-500/15">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                        <span className="text-xs text-amber-300/80">Custom amounts have smaller anonymity sets than presets</span>
+                      </div>
+                    )}
                   </div>
 
                   {/* Compliance Level */}
