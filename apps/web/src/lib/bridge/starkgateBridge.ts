@@ -82,13 +82,72 @@ interface EthereumProvider {
   request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
   removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+  isMetaMask?: boolean;
+  providers?: EthereumProvider[];
+}
+
+// Allow callers to set a preferred provider (e.g. when user selects from list)
+let _preferredProvider: EthereumProvider | null = null;
+
+export function setPreferredEthProvider(provider: EthereumProvider | null) {
+  _preferredProvider = provider;
+}
+
+/**
+ * Detect all available EIP-1193 Ethereum providers.
+ * Handles the multi-wallet case where window.ethereum.providers exists,
+ * or when EIP-6963 events announce providers.
+ */
+export function detectEthProviders(): { name: string; provider: EthereumProvider }[] {
+  if (typeof window === "undefined" || !window.ethereum) return [];
+
+  const eth = window.ethereum as unknown as EthereumProvider;
+  const results: { name: string; provider: EthereumProvider }[] = [];
+
+  // Multi-wallet: window.ethereum.providers array (MetaMask + others)
+  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
+    for (const p of eth.providers) {
+      const name = p.isMetaMask
+        ? "MetaMask"
+        : (p as unknown as Record<string, unknown>).isRabby
+          ? "Rabby"
+          : (p as unknown as Record<string, unknown>).isCoinbaseWallet
+            ? "Coinbase"
+            : "Wallet";
+      results.push({ name, provider: p });
+    }
+    return results;
+  }
+
+  // Single wallet
+  const name = eth.isMetaMask
+    ? "MetaMask"
+    : (eth as unknown as Record<string, unknown>).isRabby
+      ? "Rabby"
+      : "Ethereum Wallet";
+  results.push({ name, provider: eth });
+  return results;
 }
 
 function getEthereumProvider(): EthereumProvider {
   if (typeof window === "undefined" || !window.ethereum) {
     throw new Error("MetaMask or an Ethereum wallet is required for L1 bridging");
   }
-  return window.ethereum as unknown as EthereumProvider;
+
+  // 1. Use explicitly selected provider
+  if (_preferredProvider) return _preferredProvider;
+
+  const eth = window.ethereum as unknown as EthereumProvider;
+
+  // 2. Multi-wallet: prefer MetaMask from providers array
+  if (Array.isArray(eth.providers) && eth.providers.length > 0) {
+    const metamask = eth.providers.find((p) => p.isMetaMask);
+    if (metamask) return metamask;
+    return eth.providers[0];
+  }
+
+  // 3. Single provider fallback
+  return eth;
 }
 
 // ============================================================================

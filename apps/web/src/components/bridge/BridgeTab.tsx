@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowDownUp,
@@ -32,6 +32,8 @@ import {
   isValidEthereumAddress,
   getBridgeTimingEstimate,
   getMessagingFeeDisplay,
+  detectEthProviders,
+  setPreferredEthProvider,
 } from "@/lib/bridge/starkgateBridge";
 
 // ============================================================================
@@ -46,6 +48,113 @@ const TOKEN_ICONS: Record<BridgeTokenSymbol, string> = {
   USDC: "/tokens/usdc.svg",
   wBTC: "/tokens/wbtc.svg",
 };
+
+// ============================================================================
+// ETHEREUM WALLET SELECTOR (handles MetaMask vs HOT Wallet etc.)
+// ============================================================================
+
+function EthWalletSelector({
+  ethWallet,
+  isProcessing,
+}: {
+  ethWallet: {
+    address: string | null;
+    isConnecting: boolean;
+    connect: () => Promise<void>;
+    disconnect: () => void;
+  };
+  isProcessing: boolean;
+}) {
+  const [providers, setProviders] = useState<{ name: string; provider: unknown }[]>([]);
+  const [showPicker, setShowPicker] = useState(false);
+
+  useEffect(() => {
+    // Detect available wallets on mount
+    const detected = detectEthProviders();
+    setProviders(detected);
+  }, []);
+
+  const handleSelectProvider = useCallback(
+    async (provider: unknown) => {
+      // Set this as the preferred provider before connecting
+      setPreferredEthProvider(provider as Parameters<typeof setPreferredEthProvider>[0]);
+      setShowPicker(false);
+      await ethWallet.connect();
+    },
+    [ethWallet]
+  );
+
+  const handleDisconnect = useCallback(() => {
+    setPreferredEthProvider(null);
+    ethWallet.disconnect();
+  }, [ethWallet]);
+
+  return (
+    <div className="mb-4">
+      <label className="text-xs text-gray-500 mb-2 block">
+        Ethereum Wallet (L1)
+      </label>
+      {ethWallet.address ? (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface-elevated border border-surface-border">
+          <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center">
+            <Wallet className="w-3.5 h-3.5 text-orange-400" />
+          </div>
+          <span className="text-sm text-white font-mono">
+            {ethWallet.address.slice(0, 6)}...{ethWallet.address.slice(-4)}
+          </span>
+          <span className="text-[10px] text-emerald-400 ml-auto mr-2">Connected</span>
+          <button
+            onClick={handleDisconnect}
+            disabled={isProcessing}
+            className="text-[10px] text-gray-500 hover:text-red-400 transition-colors"
+          >
+            Switch
+          </button>
+        </div>
+      ) : showPicker && providers.length > 1 ? (
+        <div className="space-y-2">
+          <p className="text-xs text-gray-400">Select your Ethereum wallet:</p>
+          {providers.map((p, i) => (
+            <button
+              key={i}
+              onClick={() => handleSelectProvider(p.provider)}
+              disabled={ethWallet.isConnecting}
+              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-elevated border border-surface-border text-white hover:border-orange-500/30 hover:bg-orange-500/5 transition-all text-sm font-medium"
+            >
+              <Wallet className="w-4 h-4 text-orange-400" />
+              {p.name}
+            </button>
+          ))}
+          <button
+            onClick={() => setShowPicker(false)}
+            className="w-full text-xs text-gray-500 hover:text-gray-300 py-1"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => {
+            if (providers.length > 1) {
+              setShowPicker(true);
+            } else {
+              ethWallet.connect();
+            }
+          }}
+          disabled={ethWallet.isConnecting}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all text-sm font-medium"
+        >
+          {ethWallet.isConnecting ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Wallet className="w-4 h-4" />
+          )}
+          {providers.length > 1 ? "Select Ethereum Wallet" : "Connect Ethereum Wallet"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 // ============================================================================
 // BRIDGE TAB
@@ -198,37 +307,12 @@ export function BridgeTab({ initialToken }: { initialToken?: string }) {
           </div>
         </div>
 
-        {/* MetaMask Connection (deposits only) */}
+        {/* Ethereum Wallet Connection (deposits only) */}
         {isDeposit && (
-          <div className="mb-4">
-            <label className="text-xs text-gray-500 mb-2 block">
-              Ethereum Wallet (L1)
-            </label>
-            {ethWallet.address ? (
-              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-surface-elevated border border-surface-border">
-                <div className="w-6 h-6 rounded-full bg-orange-500/20 flex items-center justify-center">
-                  <Wallet className="w-3.5 h-3.5 text-orange-400" />
-                </div>
-                <span className="text-sm text-white font-mono">
-                  {ethWallet.address.slice(0, 6)}...{ethWallet.address.slice(-4)}
-                </span>
-                <span className="text-[10px] text-emerald-400 ml-auto">Connected</span>
-              </div>
-            ) : (
-              <button
-                onClick={ethWallet.connect}
-                disabled={ethWallet.isConnecting}
-                className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20 transition-all text-sm font-medium"
-              >
-                {ethWallet.isConnecting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Wallet className="w-4 h-4" />
-                )}
-                Connect MetaMask
-              </button>
-            )}
-          </div>
+          <EthWalletSelector
+            ethWallet={ethWallet}
+            isProcessing={isProcessing}
+          />
         )}
 
         {/* Amount Input */}
