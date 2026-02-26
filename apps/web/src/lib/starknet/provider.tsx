@@ -121,13 +121,18 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
     shimLegacyConnectors: ["braavos", "argentX"],
   });
 
-  // Configure chains based on network
-  // Note: Cannot include both devnet and sepolia as they share the same chain ID
+  // Configure chains — only include the target network's chain.
+  // Including multiple chains causes starknet-react to call
+  // wallet_switchStarknetChain which many wallets (Braavos) don't support.
+  // Users must switch networks in their wallet UI if needed.
   const chains = useMemo(() => {
     if (network === "devnet") {
-      return [devnet]; // Only devnet - same chain ID as sepolia
+      return [devnet];
     }
-    return [sepolia, mainnet];
+    if (network === "mainnet") {
+      return [mainnet];
+    }
+    return [sepolia];
   }, [network]);
 
   // Always use CORS-friendly RPC — never fall back to publicProvider (BlastAPI)
