@@ -378,8 +378,10 @@ export const STARKGATE_BRIDGES = {
       l2Bridge: "0x05cd48fccbfd8aa2773fe22c217e808319ffcc1c5a6a463f7d8fa2da48218196",
       l2Token:  "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
     },
+    // NOTE: StarkGate wBTC bridge is HALTED as of 2025 — wBTC migrated to OFT bridging.
+    // Address corrected from ...b5b5 (wrong) to ...b5b4 (verified on Etherscan).
     wBTC: {
-      l1Bridge: "0x283751A21eafBFcD52297820D27C1f1963D9b5b5",
+      l1Bridge: "0x283751A21eafBFcD52297820D27C1f1963D9b5b4",
       l2Bridge: "0x07aeec4870975311a7396069033796b61cd66ed49d22a786cba12a8d76717302",
       l2Token:  "0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac",
     },
