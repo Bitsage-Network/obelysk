@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useContract, useReadContract, useSendTransaction } from "@starknet-react/core";
 import { RpcProvider } from "starknet";
 import type { Abi, Call } from "starknet";
-import { CONTRACTS } from "./addresses";
+import { CONTRACTS, NETWORK_CONFIG } from "./addresses";
 
 // Import ABIs
 import SAGETokenAbi from "./abis/SAGEToken.json";
@@ -113,9 +113,21 @@ function getTokenAddr(network: string, symbol: string): string {
   return TOKEN_ADDRESSES[network]?.[symbol] || TOKEN_ADDRESSES.sepolia[symbol] || "0x0";
 }
 
-// Module-level RPC URL — same pattern as usePrivacyPool (proven to work client-side)
-const ERC20_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL
-  || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
+// Network-aware RPC URL resolution
+function getRpcUrl(network: NetworkType): string {
+  if (network === "mainnet") {
+    return process.env.NEXT_PUBLIC_MAINNET_RPC_URL
+      || process.env.NEXT_PUBLIC_RPC_URL
+      || NETWORK_CONFIG.mainnet?.rpcUrl
+      || "https://rpc.starknet.lava.build";
+  }
+  if (network === "devnet") {
+    return NETWORK_CONFIG.devnet?.rpcUrl || "http://localhost:5050";
+  }
+  return process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL
+    || NETWORK_CONFIG.sepolia?.rpcUrl
+    || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
+}
 
 /**
  * Direct RPC-based ERC20 balance hook.
@@ -125,19 +137,30 @@ const ERC20_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL
 function useErc20Balance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
+  network: NetworkType = "sepolia",
 ) {
   const [data, setData] = useState<bigint | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
 
+  // Reset balance when address or token changes (e.g. disconnect)
+  useEffect(() => {
+    if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
+      setData(undefined);
+      setError(null);
+      setIsLoading(false);
+    }
+  }, [tokenAddress, userAddress]);
+
   const fetchBalance = useCallback(async () => {
     if (!tokenAddress || !userAddress || tokenAddress === "0x0") {
+      setData(undefined);
       return;
     }
 
     try {
       setIsLoading(true);
-      const provider = new RpcProvider({ nodeUrl: ERC20_RPC_URL });
+      const provider = new RpcProvider({ nodeUrl: getRpcUrl(network) });
       const result = await provider.callContract({
         contractAddress: tokenAddress,
         entrypoint: "balance_of",
@@ -153,7 +176,7 @@ function useErc20Balance(
     } finally {
       setIsLoading(false);
     }
-  }, [tokenAddress, userAddress]);
+  }, [tokenAddress, userAddress, network]);
 
   useEffect(() => { fetchBalance(); }, [fetchBalance]);
 
@@ -167,19 +190,19 @@ function useErc20Balance(
 }
 
 export function useEthBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getTokenAddr(network, "ETH"), address);
+  return useErc20Balance(getTokenAddr(network, "ETH"), address, network);
 }
 
 export function useStrkBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getTokenAddr(network, "STRK"), address);
+  return useErc20Balance(getTokenAddr(network, "STRK"), address, network);
 }
 
 export function useUsdcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getTokenAddr(network, "USDC"), address);
+  return useErc20Balance(getTokenAddr(network, "USDC"), address, network);
 }
 
 export function useWbtcBalance(address: string | undefined, network: NetworkType = "sepolia") {
-  return useErc20Balance(getTokenAddr(network, "wBTC"), address);
+  return useErc20Balance(getTokenAddr(network, "wBTC"), address, network);
 }
 
 /**
@@ -188,11 +211,12 @@ export function useWbtcBalance(address: string | undefined, network: NetworkType
 export function useTokenBalance(
   tokenAddress: string | undefined,
   userAddress: string | undefined,
-  _network: NetworkType = "sepolia"
+  network: NetworkType = "sepolia"
 ) {
   return useErc20Balance(
     tokenAddress && tokenAddress !== "0x0" ? tokenAddress : undefined,
     userAddress,
+    network,
   );
 }
 
