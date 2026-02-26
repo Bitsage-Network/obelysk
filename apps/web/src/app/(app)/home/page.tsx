@@ -133,9 +133,19 @@ export default function HomePage() {
     usdValue: string;
   } | null>(null);
 
-  // Compute token data
+  // Compute token data — show zeros when wallet is disconnected
   const tokenData = useMemo(() => {
     return TOKENS.map((t) => {
+      // No wallet connected → show zero balances
+      if (!address) {
+        return {
+          symbol: t.symbol,
+          name: t.name,
+          balance: "0.00",
+          usdValue: "0.00",
+          numUsdValue: 0,
+        };
+      }
       const bal = balances[t.symbol as keyof typeof balances];
       const decimals = bal && typeof bal === "object" && "decimals" in bal ? (bal.decimals as number) : 18;
       const raw = bal && typeof bal === "object" && "data" in bal ? parseU256(bal.data) : 0n;
@@ -151,7 +161,7 @@ export default function HomePage() {
         numUsdValue: numBalance * price,
       };
     });
-  }, [balances, prices]);
+  }, [address, balances, prices]);
 
   const totalUsdValue = useMemo(() => {
     return tokenData.reduce((sum, t) => sum + t.numUsdValue, 0);
