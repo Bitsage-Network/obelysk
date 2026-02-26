@@ -165,25 +165,46 @@ const PRIVACY_POOLS_ADDRESS = (process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS || 
 const RPC_URL = getRpcUrl((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
 
 // Network for pool address lookups
-const DEFAULT_NETWORK: NetworkType = "sepolia";
+const DEFAULT_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
 
-// Hardcoded Sepolia pool addresses — bypass all lookup machinery.
-// These are the DEPLOYED contracts on Starknet Sepolia.
-const HARDCODED_POOLS: Record<string, string> = {
-  SAGE: "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7",
-  ETH:  "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
-  STRK: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
-  wBTC: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
-  USDC: "0x02bcb455a7e356ef3ff1422d33d0742e633e4b8b4eb9fa6c15e62e8fd16b7e50",
+// Per-network hardcoded pool addresses — bypass all lookup machinery.
+const HARDCODED_POOLS_BY_NETWORK: Record<string, Record<string, string>> = {
+  sepolia: {
+    SAGE: "0x0d85ad03dcd91a075bef0f4226149cb7e43da795d2c1d33e3227c68bfbb78a7",
+    ETH:  "0x07ad28f81b8e90e9e7ae0a2bd5692d54df7fc9df91bbc2d403845698caf0fe67",
+    STRK: "0x03624fd7adc5e5b82e0925c68dd4714fde4031da4a9222ca7bd223ef71418e2b",
+    wBTC: "0x06ca244b53fea7ebee5a169f6f3a26ff22cd57c772f3f563ed1bafc367555263",
+    USDC: "0x02bcb455a7e356ef3ff1422d33d0742e633e4b8b4eb9fa6c15e62e8fd16b7e50",
+  },
+  mainnet: {
+    SAGE: "0x0224977344d123eb5c20fd088f15b62d0541f8282f4a23dd87bdf9839aac724f",
+    ETH:  "0x06d0b41c96809796faa02a5eac2f74e090effd09ccab7274054b90aa671e82b5",
+    STRK: "0x02c348e89b355691ba5e4ece681fd6b497f8ab2ba670fa5842208b251a3c9cf1",
+    wBTC: "0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2",
+    USDC: "0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b",
+  },
 };
 
-const HARDCODED_TOKENS: Record<string, string> = {
-  SAGE: "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850",
-  ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
-  STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-  wBTC: "0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e",
-  USDC: "0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080",
+const HARDCODED_TOKENS_BY_NETWORK: Record<string, Record<string, string>> = {
+  sepolia: {
+    SAGE: "0x072349097c8a802e7f66dc96b95aca84e4d78ddad22014904076c76293a99850",
+    ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    wBTC: "0x00452bd5c0512a61df7c7be8cfea5e4f893cb40e126bdc40aee6054db955129e",
+    USDC: "0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080",
+  },
+  mainnet: {
+    SAGE: "0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799",
+    ETH:  "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+    STRK: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
+    wBTC: "0x03fe2b97c1fd336e750087d68b9b867997fd64a2661ff3ca5a7c771641e8e7ac",
+    USDC: "0x053c91253bc9682c04929ca02ed00b3e423f6710d2ee7e0d5ebb06f3ecf368a8",
+  },
 };
+
+// Resolve for current network
+const HARDCODED_POOLS = HARDCODED_POOLS_BY_NETWORK[DEFAULT_NETWORK] || HARDCODED_POOLS_BY_NETWORK.sepolia;
+const HARDCODED_TOKENS = HARDCODED_TOKENS_BY_NETWORK[DEFAULT_NETWORK] || HARDCODED_TOKENS_BY_NETWORK.sepolia;
 
 // PPDepositExecuted event selector (keccak hash of event name)
 const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");

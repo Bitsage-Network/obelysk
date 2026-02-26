@@ -195,9 +195,14 @@ export const CONTRACTS = {
     VM31_VERIFIER: "0x0",
     VM31_BRIDGE: "0x0",
   },
-  // Mainnet - Not yet deployed
+  // Mainnet - Deployed 2026-02-26
+  // Owner/Deployer: 0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660
   mainnet: {
-    SAGE_TOKEN: "0x0",
+    // Core Token — deployed 2026-02-26
+    // Class hash: 0x5e17a261a36e447ffdc2771d8b9fd73e92fe630900c1b106a4e8ffaf44ab5b7
+    SAGE_TOKEN: "0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799",
+
+    // Not yet deployed on mainnet
     STAKING: "0x0",
     WORKER_STAKING: "0x0",
     VALIDATOR_REGISTRY: "0x0",
@@ -213,7 +218,9 @@ export const CONTRACTS = {
     STWO_VERIFIER: "0x0",
     OPTIMISTIC_TEE: "0x0",
     FRAUD_PROOF: "0x0",
-    PRIVACY_ROUTER: "0x0",
+    // Privacy Router — deployed 2026-02-26
+    // Class hash: 0x5e59ee1d08a3fa74c7743795515b31c1dec460984348a62d3d32880a4cdb796
+    PRIVACY_ROUTER: "0x00f3fd871ba1b5b176270a7eb9e222c964c50fa8a31234394ea00ce70bfbdfbd",
     PROVER_REGISTRY: "0x0",
     WORKER_PRIVACY: "0x0",
     FAUCET: "0x0",
@@ -226,7 +233,6 @@ export const CONTRACTS = {
     LINEAR_VESTING: "0x0",
     MILESTONE_VESTING: "0x0",
     ORACLE_WRAPPER: "0x0",
-    // NEW contracts (added 2025-12-31)
     OTC_ORDERBOOK: "0x0",
     PRIVACY_POOLS: "0x0",
     CONFIDENTIAL_SWAP: "0x0",
@@ -236,23 +242,23 @@ export const CONTRACTS = {
     ADDRESS_REGISTRY: "0x0",
     DYNAMIC_PRICING: "0x0",
     SHIELDED_SWAP_ROUTER: "0x0",
-    CONFIDENTIAL_TRANSFER: "0x0",
 
-    // Session Management (Wallet-Agnostic AA)
+    // Confidential Transfer — deployed 2026-02-26
+    // Class hash: 0x5399d938717e3f3887d2e96c01332aa256e6ed9e7c114c6c4ce050d316234b9
+    CONFIDENTIAL_TRANSFER: "0x0673685bdb01fbf57c390ec2c0d893e7c77316cdea315b0fbfbc85b9a9a979d2",
+
     SESSION_MANAGER: "0x0",
 
-    // Per-token Privacy Pools
-    SAGE_PRIVACY_POOL: "0x0",
-    ETH_PRIVACY_POOL: "0x0",
-    STRK_PRIVACY_POOL: "0x0",
-    WBTC_PRIVACY_POOL: "0x0",
-    USDC_PRIVACY_POOL: "0x0",
+    // Per-token Privacy Pools — deployed 2026-02-26
+    // Class hash: 0x66d5a299c8d28eb02a2a057a73fc648e1a84d10167ba6c68c998a97aa0f2b8b
+    SAGE_PRIVACY_POOL: "0x0224977344d123eb5c20fd088f15b62d0541f8282f4a23dd87bdf9839aac724f",
+    ETH_PRIVACY_POOL: "0x06d0b41c96809796faa02a5eac2f74e090effd09ccab7274054b90aa671e82b5",
+    STRK_PRIVACY_POOL: "0x02c348e89b355691ba5e4ece681fd6b497f8ab2ba670fa5842208b251a3c9cf1",
+    WBTC_PRIVACY_POOL: "0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2",
+    USDC_PRIVACY_POOL: "0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b",
+
     STEALTH_REGISTRY: "0x0",
-
-    // Dark Pool (Commit-Reveal Batch Auction)
     DARK_POOL: "0x0",
-
-    // VM31 UTXO Privacy (BTC Vault + general shielded assets)
     VM31_POOL: "0x0",
     VM31_VERIFIER: "0x0",
     VM31_BRIDGE: "0x0",
@@ -493,7 +499,7 @@ export const NETWORK_CONFIG = {
   mainnet: {
     chainId: "0x534e5f4d41494e",
     name: "Starknet Mainnet",
-    rpcUrl: process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://starknet-mainnet.public.blastapi.io",
+    rpcUrl: process.env.NEXT_PUBLIC_MAINNET_RPC_URL || "https://rpc.starknet.lava.build",
     explorerUrl: "https://voyager.online",
   },
 };
@@ -548,11 +554,11 @@ export const PRIVACY_POOL_FOR_TOKEN: Record<string, Record<string, string>> = {
     USDC: CONTRACTS.sepolia.USDC_PRIVACY_POOL,
   },
   mainnet: {
-    SAGE: "0x0",
-    ETH: "0x0",
-    STRK: "0x0",
-    wBTC: "0x0",
-    USDC: "0x0",
+    SAGE: "0x0224977344d123eb5c20fd088f15b62d0541f8282f4a23dd87bdf9839aac724f",
+    ETH: "0x06d0b41c96809796faa02a5eac2f74e090effd09ccab7274054b90aa671e82b5",
+    STRK: "0x02c348e89b355691ba5e4ece681fd6b497f8ab2ba670fa5842208b251a3c9cf1",
+    wBTC: "0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2",
+    USDC: "0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b",
   },
 };
 
@@ -611,12 +617,12 @@ export function getTokenAddressForSymbol(
   tokenSymbol: string,
 ): string {
   if (tokenSymbol === "SAGE") {
-    const addr = CONTRACTS[network]?.SAGE_TOKEN;
+    const addr: string = CONTRACTS[network]?.SAGE_TOKEN;
     if (addr && addr !== "0x0") return addr;
     if (network === "devnet") return CONTRACTS["sepolia"]?.SAGE_TOKEN || "0x0";
     return "0x0";
   }
-  const addr = EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]];
+  const addr: string | undefined = EXTERNAL_TOKENS[network]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]];
   if (addr && addr !== "0x0") return addr;
   if (network === "devnet") {
     return EXTERNAL_TOKENS["sepolia"]?.[tokenSymbol as keyof (typeof EXTERNAL_TOKENS)["sepolia"]] || "0x0";
