@@ -4,11 +4,11 @@ import { ReactNode, useMemo } from "react";
 import { sepolia, mainnet, type Chain } from "@starknet-react/chains";
 import {
   StarknetConfig,
-  publicProvider,
   jsonRpcProvider,
   argent,
   braavos,
   useInjectedConnectors,
+  useNetwork as useStarknetNetwork,
   voyager,
 } from "@starknet-react/core";
 import { ObelyskWalletProvider } from "@/lib/obelysk/ObelyskWalletContext";
@@ -20,25 +20,17 @@ import { initializeWarningSuppression } from "@/lib/utils/suppressWarnings";
 // Initialize warning suppression for library deprecation messages
 initializeWarningSuppression();
 
+// Starknet chain IDs
+const SN_MAIN = BigInt("0x534e5f4d41494e");
+const SN_SEPOLIA = BigInt("0x534e5f5345504f4c4941");
+
 /**
  * Inner wrapper that provides SDK context
- *
- * IMPORTANT: Always mount the SDK providers to avoid "must be used within provider"
- * errors when components use SDK hooks. The providers internally handle the
- * not-connected state by returning default/empty values.
- *
- * Previously we delayed mounting until wallet was connected, but this caused
- * React error boundaries to trigger re-renders when hooks were called outside
- * the provider context.
  */
 function SDKWrapper({ children }: { children: ReactNode }) {
-  // In demo mode, skip SDK providers entirely
   if (process.env.NEXT_PUBLIC_DEMO_MODE === 'true') {
     return <>{children}</>;
   }
-
-  // Always mount SDK providers - they handle the not-connected state internally
-  // This prevents "must be used within provider" errors
   return (
     <BitSageSDKProvider>
       <ObelyskWalletProvider>
@@ -48,12 +40,30 @@ function SDKWrapper({ children }: { children: ReactNode }) {
   );
 }
 
-// Check if demo mode is enabled
-const IS_DEMO_MODE = process.env.NEXT_PUBLIC_DEMO_MODE === 'true';
+/**
+ * Detects the connected wallet's network and provides it via NetworkContext.
+ * Falls back to env var default when no wallet is connected.
+ */
+function NetworkDetector({ children, defaultNetwork }: { children: ReactNode; defaultNetwork: "devnet" | "sepolia" | "mainnet" }) {
+  const { chain } = useStarknetNetwork();
+
+  const network = useMemo(() => {
+    if (!chain?.id) return defaultNetwork;
+    if (chain.id === SN_MAIN) return "mainnet";
+    if (chain.id === SN_SEPOLIA) return "sepolia";
+    return defaultNetwork;
+  }, [chain?.id, defaultNetwork]);
+
+  return (
+    <NetworkProvider network={network}>
+      <SDKWrapper>{children}</SDKWrapper>
+    </NetworkProvider>
+  );
+}
 
 // Custom devnet chain configuration
 const devnet: Chain = {
-  id: BigInt("0x534e5f5345504f4c4941"), // Uses Sepolia chain ID for compatibility
+  id: SN_SEPOLIA, // Uses Sepolia chain ID for compatibility
   network: "devnet",
   name: "Local Devnet",
   nativeCurrency: {
@@ -83,35 +93,33 @@ interface StarknetProviderProps {
   network?: "devnet" | "sepolia" | "mainnet";
 }
 
-// Get network from env on client side
-const getNetworkFromEnv = (): "devnet" | "sepolia" | "mainnet" => {
-  if (typeof window !== "undefined") {
-    return (process.env.NEXT_PUBLIC_STARKNET_NETWORK || "sepolia") as "devnet" | "sepolia" | "mainnet";
-  }
-  return "sepolia"; // Default for SSR
-};
+// CORS-friendly RPC provider factory that handles BOTH mainnet and sepolia.
+// starknet-react calls the provider function with each chain to get the RPC URL,
+// so we return the correct URL based on the chain being configured.
+function multiNetworkProvider() {
+  const mainnetRpc = process.env.NEXT_PUBLIC_MAINNET_RPC_URL
+    || process.env.NEXT_PUBLIC_RPC_URL
+    || NETWORK_CONFIG.mainnet?.rpcUrl
+    || "https://rpc.starknet.lava.build";
 
-// CORS-friendly RPC provider factory — used for ALL networks
-// BlastAPI (starknet-react default) blocks CORS from custom domains,
-// so we always use Alchemy or env-configured RPC.
-function corsProvider(network: "devnet" | "sepolia" | "mainnet") {
-  if (network === "devnet") {
-    return jsonRpcProvider({
-      rpc: () => ({ nodeUrl: NETWORK_CONFIG.devnet.rpcUrl }),
-    });
-  }
-  const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL
-    || NETWORK_CONFIG[network]?.rpcUrl
+  const sepoliaRpc = process.env.NEXT_PUBLIC_SEPOLIA_RPC_URL
+    || NETWORK_CONFIG.sepolia?.rpcUrl
     || "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo";
+
   return jsonRpcProvider({
-    rpc: () => ({ nodeUrl: rpcUrl }),
+    rpc: (chain: Chain) => {
+      if (chain.id === SN_MAIN) {
+        return { nodeUrl: mainnetRpc };
+      }
+      // Sepolia / devnet / anything else
+      return { nodeUrl: sepoliaRpc };
+    },
   });
 }
 
 export function StarknetProvider({ children, network: networkProp }: StarknetProviderProps) {
-  // Use env variable directly - NEXT_PUBLIC_* is available on both server and client
   const envNetwork = process.env.NEXT_PUBLIC_STARKNET_NETWORK as "devnet" | "sepolia" | "mainnet" | undefined;
-  const network = networkProp || envNetwork || "sepolia";
+  const defaultNetwork = networkProp || envNetwork || "sepolia";
 
   // Use injected connectors (ArgentX, Braavos, etc.)
   const { connectors: rawConnectors } = useInjectedConnectors({
@@ -143,22 +151,22 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
     });
   }, [rawConnectors]);
 
-  // Configure chains — only include the target network's chain.
-  // Including multiple chains causes starknet-react to call
-  // wallet_switchStarknetChain which many wallets (Braavos) don't support.
-  // Users must switch networks in their wallet UI if needed.
+  // Include BOTH mainnet and sepolia chains so the app works with either wallet.
+  // The switchChain patch above prevents errors from wallets that don't support
+  // wallet_switchStarknetChain. NetworkDetector auto-detects which chain the
+  // wallet is on and sets the correct network context.
   const chains = useMemo(() => {
-    if (network === "devnet") {
+    if (defaultNetwork === "devnet") {
       return [devnet];
     }
-    if (network === "mainnet") {
-      return [mainnet];
+    // Default chain first (preferred), other chain as fallback
+    if (defaultNetwork === "mainnet") {
+      return [mainnet, sepolia];
     }
-    return [sepolia];
-  }, [network]);
+    return [sepolia, mainnet];
+  }, [defaultNetwork]);
 
-  // Always use CORS-friendly RPC — never fall back to publicProvider (BlastAPI)
-  const provider = useMemo(() => corsProvider(network), [network]);
+  const provider = useMemo(() => multiNetworkProvider(), []);
 
   return (
     <StarknetConfig
@@ -168,9 +176,9 @@ export function StarknetProvider({ children, network: networkProp }: StarknetPro
       explorer={voyager}
       autoConnect
     >
-      <NetworkProvider network={network}>
-        <SDKWrapper>{children}</SDKWrapper>
-      </NetworkProvider>
+      <NetworkDetector defaultNetwork={defaultNetwork}>
+        {children}
+      </NetworkDetector>
     </StarknetConfig>
   );
 }
