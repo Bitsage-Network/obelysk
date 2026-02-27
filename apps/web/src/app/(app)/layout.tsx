@@ -13,6 +13,8 @@ import {
   Landmark,
   ArrowUpDown,
   ExternalLink,
+  X,
+  FlaskConical,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/ConnectWalletButton";
@@ -115,6 +117,45 @@ function MoreMenu({
   );
 }
 
+function BetaBanner() {
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    setDismissed(localStorage.getItem("obelyzk-beta-dismissed") === "true");
+  }, []);
+
+  if (dismissed) return null;
+
+  return (
+    <div className="relative bg-gradient-to-r from-blue-600/90 via-indigo-600/90 to-violet-600/90 text-white text-center text-sm py-2 px-4 z-[60]">
+      <div className="flex items-center justify-center gap-2">
+        <FlaskConical className="w-3.5 h-3.5 shrink-0" />
+        <span>
+          <strong>Beta</strong> — Obelyzk Protocol is under active development. Building in public.{" "}
+          <a
+            href="https://x.com/Obelyzk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline underline-offset-2 hover:text-white/80 transition-colors"
+          >
+            Follow updates
+          </a>
+        </span>
+      </div>
+      <button
+        onClick={() => {
+          setDismissed(true);
+          localStorage.setItem("obelyzk-beta-dismissed", "true");
+        }}
+        className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-white/10 transition-colors"
+        aria-label="Dismiss beta banner"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+}
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -131,6 +172,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-surface-dark">
+      {/* Beta Announcement */}
+      <BetaBanner />
+
       {/* Desktop Header */}
       <header className="border-b border-surface-border/60 sticky top-0 bg-surface-dark/95 backdrop-blur-xl z-50 hidden lg:block">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
