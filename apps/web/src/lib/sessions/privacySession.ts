@@ -146,11 +146,16 @@ export type SessionPreset = keyof typeof SESSION_PRESETS;
 
 const SESSION_STORAGE_KEY = "obelysk_privacy_sessions";
 
+// Privacy sessions contain session keys, wallet signatures, and spending policies.
+// Using sessionStorage (not localStorage) ensures data is scoped to the browser tab
+// and cleared on tab/window close — preventing cross-session correlation and
+// reducing the window for XSS-based exfiltration.
+
 function loadSessions(): Map<string, PrivacySession> {
   if (typeof window === "undefined") return new Map();
 
   try {
-    const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+    const stored = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!stored) return new Map();
 
     const parsed = JSON.parse(stored);
@@ -192,7 +197,7 @@ function saveSessions(sessions: Map<string, PrivacySession>): void {
     };
   }
 
-  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(obj));
+  sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(obj));
 }
 
 // ============================================================================

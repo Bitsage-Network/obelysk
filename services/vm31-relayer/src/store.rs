@@ -149,7 +149,7 @@ pub trait NoteStore: Send + Sync + 'static {
 }
 
 /// Extra fields to set when updating batch status.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct StatusUpdate {
     pub proof_hash: Option<String>,
     pub batch_id_onchain: Option<String>,
@@ -199,37 +199,39 @@ impl StorageEncryption {
         }
     }
 
-    /// Encrypt a NoteRecord → opaque bytes. Nonce is deterministic from
-    /// commitment string (the lookup key) to allow re-encryption of updates.
-    pub fn encrypt_note(&self, commitment: &str, record: &NoteRecord) -> Result<Vec<u8>, StoreError> {
+    /// Encrypt a NoteRecord → opaque bytes.
+    /// Uses a random 12-byte nonce prepended to the ciphertext (nonce || ct).
+    /// Each encryption gets a fresh nonce — safe for re-encryption of updates.
+    pub fn encrypt_note(&self, _commitment: &str, record: &NoteRecord) -> Result<Vec<u8>, StoreError> {
+        use rand::RngCore;
         let plaintext = serde_json::to_vec(record)
             .map_err(|e| StoreError::Backend(format!("serialize: {e}")))?;
-        let nonce_bytes = Self::derive_nonce(commitment);
+        let mut nonce_bytes = [0u8; 12];
+        rand::thread_rng().fill_bytes(&mut nonce_bytes);
         let nonce = Nonce::from_slice(&nonce_bytes);
-        self.cipher
+        let ct = self.cipher
             .encrypt(nonce, plaintext.as_ref())
-            .map_err(|e| StoreError::Backend(format!("encrypt: {e}")))
+            .map_err(|e| StoreError::Backend(format!("encrypt: {e}")))?;
+        // Prepend nonce to ciphertext: [nonce(12) || ciphertext]
+        let mut out = Vec::with_capacity(12 + ct.len());
+        out.extend_from_slice(&nonce_bytes);
+        out.extend_from_slice(&ct);
+        Ok(out)
     }
 
     /// Decrypt opaque bytes → NoteRecord.
-    pub fn decrypt_note(&self, commitment: &str, ciphertext: &[u8]) -> Result<NoteRecord, StoreError> {
-        let nonce_bytes = Self::derive_nonce(commitment);
-        let nonce = Nonce::from_slice(&nonce_bytes);
+    /// Expects format: [nonce(12) || ciphertext].
+    pub fn decrypt_note(&self, _commitment: &str, data: &[u8]) -> Result<NoteRecord, StoreError> {
+        if data.len() < 12 {
+            return Err(StoreError::Backend("encrypted note too short (missing nonce)".into()));
+        }
+        let (nonce_bytes, ciphertext) = data.split_at(12);
+        let nonce = Nonce::from_slice(nonce_bytes);
         let plaintext = self.cipher
             .decrypt(nonce, ciphertext)
             .map_err(|e| StoreError::Backend(format!("decrypt: {e}")))?;
         serde_json::from_slice(&plaintext)
             .map_err(|e| StoreError::Backend(format!("deserialize: {e}")))
-    }
-
-    /// Derive a deterministic 12-byte nonce from the commitment string.
-    /// This allows in-place updates without storing separate nonces.
-    fn derive_nonce(commitment: &str) -> [u8; 12] {
-        use sha2::Digest;
-        let hash = sha2::Sha256::digest(commitment.as_bytes());
-        let mut nonce = [0u8; 12];
-        nonce.copy_from_slice(&hash[..12]);
-        nonce
     }
 }
 
@@ -255,6 +257,11 @@ pub struct InMemoryStore {
     /// Storage encryption layer (None if VM31_STORAGE_KEY not set).
     storage_encryption: Option<StorageEncryption>,
     eviction_counter: AtomicU64,
+    /// Optional Redis write-through for crash recovery.
+    /// When set, every batch/note mutation is mirrored to Redis.
+    /// On startup, existing data is loaded from Redis into the in-memory maps.
+    #[cfg(feature = "redis")]
+    redis_backend: Option<RedisStore>,
 }
 
 impl InMemoryStore {
@@ -267,6 +274,8 @@ impl InMemoryStore {
             encrypted_notes: DashMap::new(),
             storage_encryption: None,
             eviction_counter: AtomicU64::new(0),
+            #[cfg(feature = "redis")]
+            redis_backend: None,
         }
     }
 
@@ -277,6 +286,82 @@ impl InMemoryStore {
             store.storage_encryption = Some(StorageEncryption::new(key));
         }
         store
+    }
+
+    /// Create with optional at-rest encryption AND Redis write-through for crash recovery.
+    /// When Redis is configured, all batch/note writes are mirrored to Redis.
+    /// On startup, call `load_from_redis()` to hydrate the in-memory maps.
+    #[cfg(feature = "redis")]
+    pub fn with_redis_backend(
+        storage_key: Option<&[u8; 32]>,
+        redis_url: &str,
+    ) -> Result<Self, StoreError> {
+        let mut store = Self::with_encryption(storage_key);
+        store.redis_backend = Some(RedisStore::new(redis_url)?);
+        Ok(store)
+    }
+
+    /// Load all active batches and notes from Redis into the in-memory maps.
+    /// Call this once at startup before accepting requests.
+    #[cfg(feature = "redis")]
+    pub async fn load_from_redis(&self) -> Result<(usize, usize), StoreError> {
+        let redis = match &self.redis_backend {
+            Some(r) => r,
+            None => return Ok((0, 0)),
+        };
+
+        let mut conn = redis.conn().await?;
+
+        // Load batches: scan for keys matching "batch:*"
+        let batch_keys: Vec<String> = redis::cmd("KEYS")
+            .arg("batch:*")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| StoreError::Backend(format!("redis KEYS batch:* : {e}")))?;
+
+        let mut batch_count = 0usize;
+        for key in &batch_keys {
+            let val: Option<String> = redis::cmd("GET")
+                .arg(key)
+                .query_async(&mut conn)
+                .await
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+            if let Some(json) = val {
+                if let Ok(rec) = serde_json::from_str::<BatchRecord>(&json) {
+                    // Only load active batches (skip finalized/failed)
+                    if matches!(rec.status, BatchStatus::Pending | BatchStatus::Proving | BatchStatus::Submitting) {
+                        let id = key.strip_prefix("batch:").unwrap_or(key);
+                        self.batches.insert(id.to_string(), rec);
+                        batch_count += 1;
+                    }
+                }
+            }
+        }
+
+        // Load notes: scan for keys matching "note:*"
+        let note_keys: Vec<String> = redis::cmd("KEYS")
+            .arg("note:*")
+            .query_async(&mut conn)
+            .await
+            .map_err(|e| StoreError::Backend(format!("redis KEYS note:* : {e}")))?;
+
+        let mut note_count = 0usize;
+        for key in &note_keys {
+            let val: Option<String> = redis::cmd("GET")
+                .arg(key)
+                .query_async(&mut conn)
+                .await
+                .map_err(|e| StoreError::Backend(e.to_string()))?;
+            if let Some(json) = val {
+                if let Ok(rec) = serde_json::from_str::<NoteRecord>(&json) {
+                    let commitment = key.strip_prefix("note:").unwrap_or(key);
+                    self.notes.insert(commitment.to_string(), rec);
+                    note_count += 1;
+                }
+            }
+        }
+
+        Ok((batch_count, note_count))
     }
 
     /// Spawns a background task that periodically evicts expired entries.
@@ -328,6 +413,13 @@ impl InMemoryStore {
 impl BatchStore for InMemoryStore {
     async fn save_batch(&self, id: &str, batch: &BatchRecord) -> Result<(), StoreError> {
         self.batches.insert(id.to_string(), batch.clone());
+        // Write-through to Redis for crash recovery
+        #[cfg(feature = "redis")]
+        if let Some(ref redis) = self.redis_backend {
+            if let Err(e) = BatchStore::save_batch(redis, id, batch).await {
+                warn!(batch_id = id, error = %e, "redis write-through failed for batch save");
+            }
+        }
         Ok(())
     }
 
@@ -346,18 +438,25 @@ impl BatchStore for InMemoryStore {
             .get_mut(id)
             .ok_or_else(|| StoreError::NotFound(id.into()))?;
         let rec = entry.value_mut();
-        rec.status = status;
-        if let Some(v) = extra.proof_hash {
+        rec.status = status.clone();
+        if let Some(v) = extra.proof_hash.clone() {
             rec.proof_hash = Some(v);
         }
-        if let Some(v) = extra.batch_id_onchain {
+        if let Some(v) = extra.batch_id_onchain.clone() {
             rec.batch_id_onchain = Some(v);
         }
-        if let Some(v) = extra.tx_hash {
+        if let Some(v) = extra.tx_hash.clone() {
             rec.tx_hash = Some(v);
         }
-        if let Some(v) = extra.error {
+        if let Some(v) = extra.error.clone() {
             rec.error = Some(v);
+        }
+        // Write-through to Redis for crash recovery
+        #[cfg(feature = "redis")]
+        if let Some(ref redis) = self.redis_backend {
+            if let Err(e) = BatchStore::update_status(redis, id, status, extra).await {
+                warn!(batch_id = id, error = %e, "redis write-through failed for status update");
+            }
         }
         Ok(())
     }
@@ -438,6 +537,13 @@ impl NoteStore for InMemoryStore {
         }
         // Always store in plaintext map too (for in-memory operations)
         self.notes.insert(commitment.to_string(), record.clone());
+        // Write-through to Redis for crash recovery
+        #[cfg(feature = "redis")]
+        if let Some(ref redis) = self.redis_backend {
+            if let Err(e) = NoteStore::save_note(redis, commitment, record).await {
+                warn!(commitment = commitment, error = %e, "redis write-through failed for note save");
+            }
+        }
         Ok(())
     }
 
@@ -689,15 +795,28 @@ fn now_epoch() -> u64 {
 }
 
 /// Builds the appropriate store based on config.
-/// Returns an `InMemoryStore` by default. If `redis` feature is enabled and
-/// `config.redis_url` is set, attempts a `RedisStore`.
+///
+/// When the `redis` feature is enabled and `REDIS_URL` is set, the store uses
+/// Redis as a write-through backend for crash recovery. All batch/note writes
+/// are mirrored to Redis, and on startup `load_from_redis()` hydrates the
+/// in-memory maps from Redis state.
+///
+/// Without Redis, the store is purely in-memory (lost on restart).
 pub fn build_store(config: &RelayerConfig) -> Arc<InMemoryStore> {
-    // For now, the concrete type is InMemoryStore. When redis feature is enabled,
-    // the caller can construct RedisStore separately. We keep the factory simple
-    // because trait objects with async fns require boxing; the concrete type
-    // approach avoids that overhead.
-    let _ = config;
-    Arc::new(InMemoryStore::new())
+    #[cfg(feature = "redis")]
+    {
+        if let Some(ref redis_url) = config.redis_url {
+            match InMemoryStore::with_redis_backend(config.storage_key.as_ref(), redis_url) {
+                Ok(store) => {
+                    return Arc::new(store);
+                }
+                Err(e) => {
+                    warn!(error = %e, "failed to connect to Redis, falling back to in-memory only");
+                }
+            }
+        }
+    }
+    Arc::new(InMemoryStore::with_encryption(config.storage_key.as_ref()))
 }
 
 #[cfg(feature = "redis")]

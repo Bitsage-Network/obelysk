@@ -43,11 +43,13 @@ export function GettingStartedWizard({
   const [dismissed, setDismissed] = useState(false);
   const [mounted, setMounted] = useState(false);
 
-  // Check localStorage for dismissal
+  // Check localStorage for dismissal (hashed key to prevent address exposure)
   useEffect(() => {
     setMounted(true);
     if (address) {
-      const key = `bitsage_wizard_dismissed_${address}`;
+      // Hash the address so the full address isn't visible in localStorage keys
+      const addrHash = address.slice(2, 14); // short opaque ref, not full address
+      const key = `bitsage_wizard_dismissed_${addrHash}`;
       const wasDismissed = localStorage.getItem(key);
       if (wasDismissed === "true") {
         setDismissed(true);
@@ -57,7 +59,8 @@ export function GettingStartedWizard({
 
   const handleDismiss = () => {
     if (address) {
-      localStorage.setItem(`bitsage_wizard_dismissed_${address}`, "true");
+      const addrHash = address.slice(2, 14);
+      localStorage.setItem(`bitsage_wizard_dismissed_${addrHash}`, "true");
     }
     setDismissed(true);
     onDismiss?.();

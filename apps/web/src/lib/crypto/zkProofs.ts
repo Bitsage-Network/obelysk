@@ -20,6 +20,7 @@ import {
   CURVE_ORDER,
   STARK_PRIME,
 } from "./constants";
+import { hash } from "starknet";
 import {
   getGenerator,
   getPedersenH,
@@ -47,14 +48,27 @@ export interface SchnorrProof {
   challenge: bigint;     // c = H(G, Y, A) (Fiat-Shamir challenge)
 }
 
+/** OR-proof sub-proof for one branch of the binary constraint */
+interface OrBranchProof {
+  nonceCommitment: ECPoint;
+  challenge: bigint;
+  response: bigint;
+}
+
+/** Per-bit OR-proof proving C_i commits to 0 or 1 */
+interface BitOrProof {
+  proof0: OrBranchProof;
+  proof1: OrBranchProof;
+}
+
 /**
- * Range proof using bit decomposition
+ * Range proof using bit decomposition with OR-sigma binary constraint
  * Proves: 0 <= value < 2^bits
  */
 export interface RangeProof {
   bitCommitments: ECPoint[];     // Commitment to each bit
-  bitResponses: bigint[];        // Responses for each bit
-  aggregateChallenge: bigint;    // Single challenge for efficiency
+  bitOrProofs: BitOrProof[];     // OR-proofs proving each bit is 0 or 1
+  aggregateChallenge: bigint;    // Single Fiat-Shamir challenge
 }
 
 /**
@@ -102,30 +116,37 @@ export interface TransferProof {
 // ============================================================================
 
 /**
- * Compute Fiat-Shamir challenge using Poseidon-like hash
- * In production, use actual Poseidon hash for Cairo compatibility
+ * Compute Fiat-Shamir challenge using real Poseidon hash (Cairo-compatible).
+ * All inputs are serialized as field elements and hashed via starknet.js Poseidon.
  */
 function computeChallenge(...inputs: (ECPoint | bigint | string)[]): bigint {
-  let state = 0n;
-  const MIX_CONST = 0x800000000000011000000000000000000000000000000000000000000000001n;
-
+  const values: string[] = [];
   for (const input of inputs) {
-    let value: bigint;
     if (typeof input === "string") {
-      value = BigInt("0x" + Buffer.from(input).toString("hex"));
+      // Encode string as field element via hex
+      const hex = "0x" + Buffer.from(input).toString("hex");
+      values.push(hex);
     } else if (typeof input === "bigint") {
-      value = input;
+      values.push("0x" + mod(input, STARK_PRIME).toString(16));
     } else {
-      // ECPoint - hash both coordinates
-      value = mod(input.x + input.y * MIX_CONST, CURVE_ORDER);
+      // ECPoint - include both coordinates
+      values.push("0x" + mod(input.x, STARK_PRIME).toString(16));
+      values.push("0x" + mod(input.y, STARK_PRIME).toString(16));
     }
-
-    // Poseidon-like mixing
-    state = mod(state + value, STARK_PRIME);
-    state = mod(state * state * state + state * 3n + 1n, STARK_PRIME);
   }
 
-  return mod(state, CURVE_ORDER);
+  let result: string;
+  if (values.length === 0) {
+    return 0n;
+  } else if (values.length === 1) {
+    result = hash.computePoseidonHash(values[0], "0x0");
+  } else if (values.length === 2) {
+    result = hash.computePoseidonHash(values[0], values[1]);
+  } else {
+    result = hash.computePoseidonHashOnElements(values);
+  }
+
+  return mod(BigInt(result), CURVE_ORDER);
 }
 
 // ============================================================================
@@ -193,12 +214,12 @@ export function verifySchnorrProof(
 /**
  * Generate range proof that 0 <= value < 2^bits
  *
- * Uses bit decomposition: value = b_0 + 2*b_1 + 4*b_2 + ... + 2^(n-1)*b_(n-1)
- * where each b_i in {0, 1}
+ * Uses bit decomposition with OR-sigma protocol:
+ *   value = b_0 + 2*b_1 + ... + 2^(n-1)*b_(n-1) where each b_i in {0, 1}
  *
- * For each bit b_i, we prove:
- * - Commitment C_i = b_i * G + r_i * H
- * - b_i * (b_i - 1) = 0 (proves b_i is binary)
+ * For each bit b_i:
+ *   C_i = b_i * G + r_i * H
+ *   OR-proof: proves C_i commits to 0 or 1 without revealing which
  */
 export function generateRangeProof(
   value: bigint,
@@ -207,63 +228,115 @@ export function generateRangeProof(
 ): RangeProof {
   const g = getGenerator();
   const h = getPedersenH();
+  const negG = negatePoint(g);
 
-  // Check value is in range
   if (value < 0n || value >= (1n << BigInt(bits))) {
     throw new Error(`Value ${value} out of range [0, 2^${bits})`);
   }
 
   const bitCommitments: ECPoint[] = [];
-  const bitResponses: bigint[] = [];
   const bitBlindings: bigint[] = [];
 
-  // Decompose value into bits and create commitments
-  let remainingValue = value;
+  // Step 1: Decompose into bits and create commitments
   let totalBlinding = 0n;
-
   for (let i = 0; i < bits; i++) {
-    const bit = remainingValue & 1n;
-    remainingValue = remainingValue >> 1n;
+    const bit = (value >> BigInt(i)) & 1n;
+    const weight = 1n << BigInt(i);
 
-    // Random blinding for this bit (except last one)
-    const bitBlinding = i < bits - 1 ? randomScalar() : mod(blinding - totalBlinding, CURVE_ORDER);
+    // Random blinding per bit; last bit forced so aggregate matches
+    const bitBlinding = i < bits - 1
+      ? randomScalar()
+      : mod(blinding - totalBlinding, CURVE_ORDER);
     bitBlindings.push(bitBlinding);
-    totalBlinding = mod(totalBlinding + bitBlinding * (1n << BigInt(i)), CURVE_ORDER);
+    totalBlinding = mod(totalBlinding + bitBlinding * weight, CURVE_ORDER);
 
-    // Commitment: C_i = b_i * G + r_i * H
-    const bitG = scalarMult(bit, g);
-    const blindH = scalarMult(bitBlinding, h);
-    const bitCommitment = addPoints(bitG, blindH);
-    bitCommitments.push(bitCommitment);
+    // C_i = bit * G + r_i * H
+    const rH = scalarMult(bitBlinding, h);
+    const C_i = bit === 1n ? addPoints(g, rH) : rH;
+    bitCommitments.push(C_i);
   }
 
-  // Generate aggregate challenge
+  // Step 2: Prepare OR-proofs (real + simulated branches)
+  interface PreparedBit {
+    bit: bigint;
+    k_real: bigint;
+    R_real: ECPoint;
+    e_sim: bigint;
+    s_sim: bigint;
+    R_sim: ECPoint;
+  }
+
+  const prepared: PreparedBit[] = [];
+  for (let i = 0; i < bits; i++) {
+    const bit = (value >> BigInt(i)) & 1n;
+    const C_i = bitCommitments[i];
+
+    const k_real = randomScalar();
+    const R_real = scalarMult(k_real, h);
+
+    const e_sim = randomScalar();
+    const s_sim = randomScalar();
+
+    // Simulated branch target: C_i if simulating b=0, C_i - G if simulating b=1
+    const target = bit === 0n ? addPoints(C_i, negG) : C_i;
+    // R_sim = s_sim * H - e_sim * target
+    const R_sim = addPoints(scalarMult(s_sim, h), negatePoint(scalarMult(e_sim, target)));
+
+    prepared.push({ bit, k_real, R_real, e_sim, s_sim, R_sim });
+  }
+
+  // Step 3: Fiat-Shamir challenge over all commitments + nonce commitments
   const aggregateChallenge = computeChallenge(
     g, h,
     ...bitCommitments,
+    ...prepared.flatMap(p =>
+      p.bit === 0n
+        ? [p.R_real, p.R_sim]  // branch-0 real, branch-1 sim
+        : [p.R_sim, p.R_real]  // branch-0 sim, branch-1 real
+    ),
     BigInt(bits),
   );
 
-  // Generate responses for each bit
+  // Step 4: Compute real-branch challenges and responses
+  const bitOrProofs: BitOrProof[] = [];
   for (let i = 0; i < bits; i++) {
-    const bit = (value >> BigInt(i)) & 1n;
-    // Response proves knowledge of bit and blinding
-    const response = mod(
-      bitBlindings[i] + aggregateChallenge * bit,
-      CURVE_ORDER
-    );
-    bitResponses.push(response);
+    const p = prepared[i];
+
+    // Per-bit challenge derived from aggregate
+    const perBitChallenge = computeChallenge(aggregateChallenge, BigInt(i));
+    const e_real = mod(perBitChallenge - p.e_sim, CURVE_ORDER);
+    const s_real = mod(p.k_real + e_real * bitBlindings[i], CURVE_ORDER);
+
+    let proof0: OrBranchProof;
+    let proof1: OrBranchProof;
+
+    if (p.bit === 0n) {
+      proof0 = { nonceCommitment: p.R_real, challenge: e_real, response: s_real };
+      proof1 = { nonceCommitment: p.R_sim, challenge: p.e_sim, response: p.s_sim };
+    } else {
+      proof0 = { nonceCommitment: p.R_sim, challenge: p.e_sim, response: p.s_sim };
+      proof1 = { nonceCommitment: p.R_real, challenge: e_real, response: s_real };
+    }
+
+    bitOrProofs.push({ proof0, proof1 });
   }
 
   return {
     bitCommitments,
-    bitResponses,
+    bitOrProofs,
     aggregateChallenge,
   };
 }
 
 /**
- * Verify range proof
+ * Verify range proof with OR-sigma binary constraints
+ *
+ * For each bit i:
+ *   1. e_i = H(aggregateChallenge, i)
+ *   2. e_0 + e_1 == e_i
+ *   3. Branch-0: s_0 * H == R_0 + e_0 * C_i
+ *   4. Branch-1: s_1 * H == R_1 + e_1 * (C_i - G)
+ * Then: sum(C_i * 2^i) == valueCommitment
  */
 export function verifyRangeProof(
   proof: RangeProof,
@@ -272,15 +345,22 @@ export function verifyRangeProof(
 ): boolean {
   const g = getGenerator();
   const h = getPedersenH();
+  const negG = negatePoint(g);
 
-  if (proof.bitCommitments.length !== bits || proof.bitResponses.length !== bits) {
+  if (proof.bitCommitments.length !== bits || proof.bitOrProofs.length !== bits) {
     return false;
   }
 
-  // Verify challenge
+  // Re-derive Fiat-Shamir challenge
+  const noncePoints: ECPoint[] = [];
+  for (let i = 0; i < bits; i++) {
+    const orProof = proof.bitOrProofs[i];
+    noncePoints.push(orProof.proof0.nonceCommitment, orProof.proof1.nonceCommitment);
+  }
   const expectedChallenge = computeChallenge(
     g, h,
     ...proof.bitCommitments,
+    ...noncePoints,
     BigInt(bits),
   );
 
@@ -288,36 +368,49 @@ export function verifyRangeProof(
     return false;
   }
 
-  // Reconstruct value commitment from bit commitments
-  let reconstructed: ECPoint = { x: 0n, y: 0n }; // Point at infinity
+  // Verify each bit's OR-proof
   for (let i = 0; i < bits; i++) {
-    const weight = 1n << BigInt(i);
-    const weightedCommitment = scalarMult(weight, proof.bitCommitments[i]);
-    reconstructed = addPoints(reconstructed, weightedCommitment);
-  }
+    const C_i = proof.bitCommitments[i];
+    const orProof = proof.bitOrProofs[i];
 
-  // Check reconstructed matches claimed
-  if (reconstructed.x !== valueCommitment.x || reconstructed.y !== valueCommitment.y) {
-    return false;
-  }
-
-  // Verify each bit commitment is on-curve and satisfies binary constraint
-  for (let i = 0; i < bits; i++) {
-    const Ci = proof.bitCommitments[i];
-    if (!isOnCurve(Ci)) {
+    if (!isOnCurve(C_i)) {
       return false;
     }
-    // Binary constraint: Ci must commit to 0 or 1
-    // Check: Ci - 1*G must also be a valid Pedersen commitment form
-    // Verify via Schnorr proof of (b_i * (1 - b_i) == 0) encoded in responses
-    if (proof.bitResponses && i < proof.bitResponses.length) {
-      const resp = proof.bitResponses[i];
-      // Verify: resp * G == Ci + challenge * Ci (Schnorr equation)
-      // If response is zero, the proof is trivially forgeable
-      if (resp === 0n) {
-        return false;
-      }
+
+    // Per-bit challenge
+    const perBitChallenge = computeChallenge(proof.aggregateChallenge, BigInt(i));
+
+    // Challenge split: e_0 + e_1 == perBitChallenge
+    const challengeSum = mod(orProof.proof0.challenge + orProof.proof1.challenge, CURVE_ORDER);
+    if (challengeSum !== perBitChallenge) {
+      return false;
     }
+
+    // Branch-0: s_0 * H == R_0 + e_0 * C_i
+    const lhs0 = scalarMult(orProof.proof0.response, h);
+    const rhs0 = addPoints(orProof.proof0.nonceCommitment, scalarMult(orProof.proof0.challenge, C_i));
+    if (lhs0.x !== rhs0.x || lhs0.y !== rhs0.y) {
+      return false;
+    }
+
+    // Branch-1: s_1 * H == R_1 + e_1 * (C_i - G)
+    const CiMinusG = addPoints(C_i, negG);
+    const lhs1 = scalarMult(orProof.proof1.response, h);
+    const rhs1 = addPoints(orProof.proof1.nonceCommitment, scalarMult(orProof.proof1.challenge, CiMinusG));
+    if (lhs1.x !== rhs1.x || lhs1.y !== rhs1.y) {
+      return false;
+    }
+  }
+
+  // Verify aggregate: sum(C_i * 2^i) == valueCommitment
+  let reconstructed: ECPoint = { x: 0n, y: 0n };
+  for (let i = 0; i < bits; i++) {
+    const weight = 1n << BigInt(i);
+    reconstructed = addPoints(reconstructed, scalarMult(weight, proof.bitCommitments[i]));
+  }
+
+  if (reconstructed.x !== valueCommitment.x || reconstructed.y !== valueCommitment.y) {
+    return false;
   }
 
   return true;
@@ -368,13 +461,23 @@ export function generateBalanceProof(
 }
 
 /**
- * Schnorr proof for committed value
+ * Schnorr proof for Pedersen-committed value: C = v*G + r*H
+ *
+ * Proves knowledge of (v, r) opening the commitment:
+ *   A = k_v * G + k_r * H
+ *   e = H(G, H, C, A)
+ *   s_v = k_v + e * v, s_r = k_r + e * r
+ *
+ * Verifier checks: s_v * G + s_r * H == A + e * C
+ *
+ * Returns both responses packed as a single combined response
+ * to match the SchnorrProof interface used by BalanceProof.
  */
 function generateSchnorrProofForValue(
   value: bigint,
   blinding: bigint,
   commitment: ECPoint
-): SchnorrProof {
+): SchnorrProof & { valueResponse: bigint } {
   const g = getGenerator();
   const h = getPedersenH();
 
@@ -389,10 +492,11 @@ function generateSchnorrProofForValue(
 
   const challenge = computeChallenge(g, h, commitment, commitmentA);
 
-  // s = k + c * (v, r) - just use blinding for simplified version
+  // Both responses needed for full Pedersen opening proof
+  const valueResponse = mod(k_v + challenge * value, CURVE_ORDER);
   const response = mod(k_r + challenge * blinding, CURVE_ORDER);
 
-  return { commitment: commitmentA, response, challenge };
+  return { commitment: commitmentA, response, challenge, valueResponse };
 }
 
 // ============================================================================

@@ -44,9 +44,11 @@ const M31_MOD = 0x7FFF_FFFF;
 /** Blanket ERC20 approval amount (10^18 * 10 = 10 BTC in 8-decimal base units) */
 const BLANKET_APPROVAL = 10n ** 18n;
 
-/** BTC denomination whitelist (in satoshis / 8-decimal base units).
- * All BTC deposits must use one of these standard denominations
+/** Standard denomination whitelists per asset (in base units).
+ * All deposits must use one of these standard denominations
  * to prevent exact-amount correlation attacks (privacy gap #7). */
+
+/** BTC denominations (8 decimals, base unit = satoshi) */
 export const BTC_DENOMINATIONS_SATS: bigint[] = [
   50_000n,      // 0.0005 BTC
   100_000n,     // 0.001 BTC
@@ -56,8 +58,57 @@ export const BTC_DENOMINATIONS_SATS: bigint[] = [
   10_000_000n,  // 0.1 BTC
 ];
 
-/** BTC asset symbols that require denomination validation */
-const BTC_DENOMINATION_SYMBOLS = new Set(["wBTC", "LBTC", "tBTC", "SolvBTC"]);
+/** ETH denominations (18 decimals) */
+const ETH_DENOMINATIONS: bigint[] = [
+  1_000_000_000_000_000n,      // 0.001 ETH
+  5_000_000_000_000_000n,      // 0.005 ETH
+  10_000_000_000_000_000n,     // 0.01 ETH
+  50_000_000_000_000_000n,     // 0.05 ETH
+  100_000_000_000_000_000n,    // 0.1 ETH
+  500_000_000_000_000_000n,    // 0.5 ETH
+];
+
+/** STRK denominations (18 decimals) */
+const STRK_DENOMINATIONS: bigint[] = [
+  50_000_000_000_000_000n,     // 0.05 STRK
+  100_000_000_000_000_000n,    // 0.1 STRK
+  500_000_000_000_000_000n,    // 0.5 STRK
+  1_000_000_000_000_000_000n,  // 1 STRK
+  5_000_000_000_000_000_000n,  // 5 STRK
+  10_000_000_000_000_000_000n, // 10 STRK
+];
+
+/** USDC denominations (6 decimals) */
+const USDC_DENOMINATIONS: bigint[] = [
+  1_000_000n,     // 1 USDC
+  5_000_000n,     // 5 USDC
+  10_000_000n,    // 10 USDC
+  50_000_000n,    // 50 USDC
+  100_000_000n,   // 100 USDC
+  500_000_000n,   // 500 USDC
+];
+
+/** SAGE denominations (18 decimals) */
+const SAGE_DENOMINATIONS: bigint[] = [
+  10_000_000_000_000_000n,     // 0.01 SAGE
+  50_000_000_000_000_000n,     // 0.05 SAGE
+  100_000_000_000_000_000n,    // 0.1 SAGE
+  500_000_000_000_000_000n,    // 0.5 SAGE
+  1_000_000_000_000_000_000n,  // 1 SAGE
+  5_000_000_000_000_000_000n,  // 5 SAGE
+];
+
+/** Denomination whitelist keyed by asset symbol */
+const DENOMINATIONS_FOR_SYMBOL: Record<string, bigint[]> = {
+  wBTC: BTC_DENOMINATIONS_SATS,
+  LBTC: BTC_DENOMINATIONS_SATS,
+  tBTC: BTC_DENOMINATIONS_SATS,
+  SolvBTC: BTC_DENOMINATIONS_SATS,
+  ETH: ETH_DENOMINATIONS,
+  STRK: STRK_DENOMINATIONS,
+  USDC: USDC_DENOMINATIONS,
+  SAGE: SAGE_DENOMINATIONS,
+};
 
 /** ERC20 ABI for approve + allowance */
 const ERC20_ABI = [
@@ -330,14 +381,14 @@ function generateRandomBlinding(): [number, number, number, number] {
 // BTC denomination helpers
 // ============================================================================
 
-/** Validate that a BTC deposit uses a standard denomination */
+/** Validate that a deposit uses a standard denomination for the asset.
+ * Unknown asset symbols pass through without restriction (forward-compatible). */
 export function validateBtcDenomination(amount: bigint, symbol: string): void {
-  if (!BTC_DENOMINATION_SYMBOLS.has(symbol)) return;
-  if (!BTC_DENOMINATIONS_SATS.includes(amount)) {
+  const denoms = DENOMINATIONS_FOR_SYMBOL[symbol];
+  if (!denoms) return; // Unknown asset — no restriction
+  if (!denoms.includes(amount)) {
     throw new Error(
-      `BTC deposits must use standard denominations: ${BTC_DENOMINATIONS_SATS.map(
-        (d) => formatBtcAmount(d)
-      ).join(", ")} BTC. Got ${formatBtcAmount(amount)} BTC.`
+      `Deposits must use standard denominations for ${symbol}. Got ${amount.toString()}.`
     );
   }
 }
@@ -386,7 +437,10 @@ export function useVM31Vault() {
   const { address, account } = useAccount();
   const { network } = useNetwork();
   const [state, setState] = useState<VaultState>(INITIAL_STATE);
-  const [vaultNotes, setVaultNotes] = useState<StoredVaultNote[]>([]);
+  // Vault notes stored in useRef to prevent exposure of blinding factors/amounts via React DevTools.
+  // A version counter triggers re-renders without leaking note data to the component tree.
+  const vaultNotesRef = useRef<StoredVaultNote[]>([]);
+  const [notesVersion, setNotesVersion] = useState(0);
   const batchPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Privacy keys integration
@@ -420,8 +474,14 @@ export function useVM31Vault() {
 
   const getAssetInfo = useCallback(
     (symbol: string): VaultAssetInfo => {
-      const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
-      const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
+      if (!network) {
+        throw new Error("[useVM31Vault] Network not available. Ensure NetworkProvider is mounted.");
+      }
+      const networkKey = network as keyof typeof EXTERNAL_TOKENS;
+      const tokens = EXTERNAL_TOKENS[networkKey];
+      if (!tokens) {
+        throw new Error(`[useVM31Vault] No token addresses configured for network "${network}".`);
+      }
       const tokenAddress = String(tokens?.[symbol as keyof typeof tokens] ?? "0x0");
       const vm31AssetId = VM31_ASSET_ID_FOR_TOKEN[symbol] ?? 0;
       const decimalsMap: Record<string, number> = {
@@ -542,16 +602,10 @@ export function useVM31Vault() {
 
   const submitToRelayer = useCallback(
     async (body: Record<string, unknown>): Promise<VaultSubmitResult> => {
-      // Attempt ECIES encryption for privacy (gap #1)
-      let submitBody: Record<string, unknown> | EncryptedSubmitRequest = body;
-      try {
-        const pubkey = await fetchRelayerPublicKey(relayerUrl);
-        submitBody = await encryptForRelayer(body, pubkey);
-      } catch {
-        // Fallback to plaintext if ECIES not available (e.g., relayer not configured)
-        // This will be rejected in mainnet mode (VM31_ALLOW_PLAINTEXT=false)
-        // ECIES unavailable — plaintext fallback (will be rejected in mainnet mode)
-      }
+      // ECIES encryption is mandatory — all submissions must be encrypted.
+      // The relayer rejects plaintext in production (VM31_ALLOW_PLAINTEXT=false).
+      const pubkey = await fetchRelayerPublicKey(relayerUrl);
+      const submitBody = await encryptForRelayer(body, pubkey);
 
       const res = await fetch(`${relayerUrl}/submit`, {
         method: "POST",
@@ -563,8 +617,15 @@ export function useVM31Vault() {
       });
 
       if (!res.ok) {
-        const errBody = await res.text();
-        throw new Error(`Relayer error (${res.status}): ${errBody}`);
+        // Sanitize error — don't leak relayer internals to the UI
+        const genericErrors: Record<number, string> = {
+          400: "Invalid submission format",
+          401: "Relayer authentication failed",
+          429: "Rate limit exceeded — try again later",
+          500: "Relayer service temporarily unavailable",
+          503: "Relayer service unavailable",
+        };
+        throw new Error(genericErrors[res.status] || `Relayer error (${res.status})`);
       }
 
       const data = await res.json();
@@ -609,9 +670,17 @@ export function useVM31Vault() {
 
   const fetchMerklePath = useCallback(
     async (commitment: string): Promise<{ merklePath: VaultMerklePath; merkleRoot: [number, number, number, number, number, number, number, number] } | null> => {
-      const res = await fetch(`${relayerUrl}/merkle-path/${encodeURIComponent(commitment)}`, {
-        headers: { "x-api-key": apiKey },
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      let res: Response;
+      try {
+        res = await fetch(`${relayerUrl}/merkle-path/${encodeURIComponent(commitment)}`, {
+          headers: { "x-api-key": apiKey },
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (res.status === 404) return null; // not indexed yet
       if (!res.ok) throw new Error(`Merkle fetch failed: ${res.status}`);
       const data = await res.json();
@@ -640,25 +709,24 @@ export function useVM31Vault() {
             if (batchPollRef.current) clearInterval(batchPollRef.current);
 
             // Auto-fetch merkle paths for notes in this batch (sequential to avoid parallel state races)
-            const notesInBatch = vaultNotes.filter(
+            const notesInBatch = vaultNotesRef.current.filter(
               (n) => n.batchId === batchId && !n.merkleProofAvailable,
             );
             for (const note of notesInBatch) {
               try {
                 const result = await fetchMerklePath(note.commitment);
                 if (result) {
-                  setVaultNotes((cur) =>
-                    cur.map((n) =>
-                      n.commitment === note.commitment
-                        ? {
-                            ...n,
-                            merklePath: result.merklePath,
-                            merkleRoot: result.merkleRoot,
-                            merkleProofAvailable: true,
-                          }
-                        : n,
-                    ),
+                  vaultNotesRef.current = vaultNotesRef.current.map((n) =>
+                    n.commitment === note.commitment
+                      ? {
+                          ...n,
+                          merklePath: result.merklePath,
+                          merkleRoot: result.merkleRoot,
+                          merkleProofAvailable: true,
+                        }
+                      : n,
                   );
+                  setNotesVersion((v) => v + 1);
                 }
               } catch (err) {
                 // Merkle path fetch failed — will retry on next poll
@@ -793,7 +861,10 @@ export function useVM31Vault() {
         // Stage 4: Store note locally
         const { lo, hi } = encodeAmountM31(params.amount);
         const blindingFactor = generateRandomBlinding();
-        const noteCommitment = result.idempotencyKey || `vm31-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const randomBytes = new Uint8Array(6);
+        crypto.getRandomValues(randomBytes);
+        const randomHex = Array.from(randomBytes, (b) => b.toString(16).padStart(2, "0")).join("");
+        const noteCommitment = result.idempotencyKey || `vm31-${Date.now()}-${randomHex}`;
         const note: StoredVaultNote = {
           symbol: params.assetSymbol,
           amount: params.amount.toString(),
@@ -808,7 +879,8 @@ export function useVM31Vault() {
           blinding: blindingFactor,
           merkleProofAvailable: false,
         };
-        setVaultNotes((prev) => [...prev, note]);
+        vaultNotesRef.current = [...vaultNotesRef.current, note];
+        setNotesVersion((v) => v + 1);
 
         // Also store as PrivacyNote for unified note management
         if (address) {
@@ -1003,9 +1075,10 @@ export function useVM31Vault() {
 
   const getUnspentNotes = useCallback(
     (symbol?: string): StoredVaultNote[] => {
-      return vaultNotes.filter((n) => !n.spent && (!symbol || n.symbol === symbol));
+      return vaultNotesRef.current.filter((n) => !n.spent && (!symbol || n.symbol === symbol));
     },
-    [vaultNotes],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [notesVersion],
   );
 
   const getShieldedBalance = useCallback(
@@ -1024,14 +1097,13 @@ export function useVM31Vault() {
 
   const markVaultNoteSpent = useCallback(
     async (commitment: string, batchId: string) => {
-      // Update local state
-      setVaultNotes((prev) =>
-        prev.map((n) =>
-          n.commitment === commitment
-            ? { ...n, spent: true, spentTxHash: batchId }
-            : n,
-        ),
+      // Update local state (ref to hide from DevTools)
+      vaultNotesRef.current = vaultNotesRef.current.map((n) =>
+        n.commitment === commitment
+          ? { ...n, spent: true, spentTxHash: batchId }
+          : n,
       );
+      setNotesVersion((v) => v + 1);
       // Persist to IndexedDB
       try {
         await markNoteSpent(commitment, batchId);
@@ -1082,8 +1154,8 @@ export function useVM31Vault() {
     startBatchPolling,
     fetchMerklePath,
 
-    // Note management
-    vaultNotes,
+    // Note management (ref-backed to hide blinding factors from React DevTools)
+    vaultNotes: vaultNotesRef.current,
     getUnspentNotes,
     getShieldedBalance,
     markVaultNoteSpent,

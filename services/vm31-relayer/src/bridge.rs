@@ -75,6 +75,7 @@ impl BridgeService {
                         batch_id = %batch_id,
                         wd_ref = %opaque_ref(&format!("{batch_id}:{withdrawal_idx}")),
                         attempts = MAX_BRIDGE_RETRIES,
+                        error = %e,
                         "bridge call failed after all retries"
                     );
                     return Err(e);

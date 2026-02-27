@@ -11,8 +11,8 @@
  */
 
 import { hash } from "starknet";
-import { CURVE_ORDER } from "./constants";
-import { mod, randomScalar } from "./elgamal";
+import { CURVE_ORDER, STARK_PRIME, CURVE_A, CURVE_B } from "./constants";
+import { mod, randomScalar, scalarMult, tonelliShanks } from "./elgamal";
 
 /**
  * Poseidon hash using Starknet's implementation
@@ -29,8 +29,9 @@ function poseidonHash(inputs: bigint[]): bigint {
   }
 
   // Convert bigints to hex strings for starknet.js
+  // Reduce mod STARK_PRIME (field prime), NOT CURVE_ORDER — Poseidon operates over the Stark field
   const hexInputs = inputs.map((input) => {
-    const modInput = mod(input, CURVE_ORDER);
+    const modInput = mod(input, STARK_PRIME);
     return "0x" + modInput.toString(16);
   });
 
@@ -62,8 +63,9 @@ function pedersenHash(inputs: bigint[]): bigint {
     throw new Error("Pedersen hash requires at least one input");
   }
 
+  // Reduce mod STARK_PRIME (field prime), NOT CURVE_ORDER — Pedersen operates over the Stark field
   const hexInputs = inputs.map((input) => {
-    const modInput = mod(input, CURVE_ORDER);
+    const modInput = mod(input, STARK_PRIME);
     return "0x" + modInput.toString(16);
   });
 
@@ -184,43 +186,39 @@ export interface KeyImage {
   y: bigint;
 }
 
-// Derive key image from private key
-// KeyImage = sk * H_p(P) where P = sk * G
+// Derive key image from private key using proper EC scalar multiplication.
+// KeyImage = sk * H_p(P) where P = sk * G and H_p maps to a curve point.
 export function deriveKeyImage(
   privateKey: bigint,
   publicKeyX: bigint,
   publicKeyY: bigint
 ): KeyImage {
-  // Hash public key to curve point
   const hashPoint = hashToCurvePoint(publicKeyX, publicKeyY);
-
-  // Key image = sk * H_p(P)
-  // Simplified: just hash and multiply
-  const imageX = mod(privateKey * hashPoint.x, CURVE_ORDER);
-  const imageY = mod(privateKey * hashPoint.y, CURVE_ORDER);
-
-  return { x: imageX, y: imageY };
+  // Proper EC scalar multiplication (not field multiplication on coordinates)
+  const image = scalarMult(privateKey, hashPoint);
+  return { x: image.x, y: image.y };
 }
 
 /**
- * Hash to curve point using Poseidon
- * This derives a deterministic curve point from input coordinates.
- *
- * Note: This is a simplified implementation that hashes to a scalar
- * and derives a point. For full security in production, consider
- * using a proper hash-to-curve implementation like Elligator2.
+ * Hash to curve point using try-and-increment.
+ * Produces a valid point on the Stark curve: y^2 = x^3 + CURVE_A*x + CURVE_B (mod STARK_PRIME).
+ * Uses Poseidon with an incrementing counter until a valid x-coordinate is found.
  */
 function hashToCurvePoint(x: bigint, y: bigint): { x: bigint; y: bigint } {
-  // Hash the coordinates using Poseidon
-  const h1 = poseidonHash([x, y]);
-  const h2 = poseidonHash([y, x, h1]);
-
-  // Derive point coordinates (simplified - assumes valid curve points)
-  // In a full implementation, we would use try-and-increment or Elligator
-  const pointX = mod(h1, CURVE_ORDER);
-  const pointY = mod(h2, CURVE_ORDER);
-
-  return { x: pointX, y: pointY };
+  for (let counter = 0n; counter < 256n; counter++) {
+    const candidateX = mod(poseidonHash([x, y, counter]), STARK_PRIME);
+    // y^2 = x^3 + a*x + b (mod p)
+    const y2 = mod(
+      candidateX * candidateX * candidateX + CURVE_A * candidateX + CURVE_B,
+      STARK_PRIME
+    );
+    const candidateY = tonelliShanks(y2, STARK_PRIME);
+    if (candidateY !== null) {
+      return { x: candidateX, y: candidateY };
+    }
+  }
+  // Statistically unreachable (~50% chance per trial)
+  throw new Error("hashToCurvePoint: failed to find valid point");
 }
 
 // Check if key image has been used (prevents double-spending in mixing)

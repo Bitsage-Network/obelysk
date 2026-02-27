@@ -223,7 +223,7 @@ async function fetchMetaAddress(
     const msg = err instanceof Error ? err.message : String(err);
     // Only log if it's NOT the expected "not registered" revert
     if (!msg.includes("not registered") && !msg.includes("No meta") && !msg.includes("not found")) {
-      console.warn("[Stealth] fetchMetaAddress error:", msg);
+      // Privacy: stealth meta-address fetch error intentionally not logged
     }
     return null;
   }
@@ -263,7 +263,7 @@ async function fetchAnnouncement(
       stealth_address: BigInt(result[2] || "0"),
     };
   } catch (err) {
-    console.error("[Stealth] Failed to fetch announcement:", err instanceof Error ? err.message : "unknown error");
+    // Privacy: stealth announcement fetch error intentionally not logged
     return null;
   }
 }
@@ -298,10 +298,8 @@ export function useStealthOnChain(address: string | undefined) {
 
   const rpcUrl = NETWORK_CONFIG[network]?.rpcUrl || "";
   const contracts = CONTRACTS[network];
-  // Hardcoded fallback — StealthRegistry is deployed on Sepolia at this address.
-  // The CONTRACTS lookup can fail if network type doesn't match keys exactly.
-  const SEPOLIA_STEALTH_REGISTRY = "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59";
-  const registryAddress = contracts?.STEALTH_REGISTRY || SEPOLIA_STEALTH_REGISTRY;
+  // No silent Sepolia fallback — if StealthRegistry is not deployed on this network, surface the gap.
+  const registryAddress = contracts?.STEALTH_REGISTRY || "0x0";
   const registryDeployed = registryAddress !== "0x0";
 
   // Fetch meta-address from contract
