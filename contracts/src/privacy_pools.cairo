@@ -379,6 +379,9 @@ pub mod PrivacyPools {
         LeanIMTState, LeanIMTProof, LeanIMTBatchResult,
         calculate_depth, hash_pair, verify_proof,
     };
+    use sage_contracts::obelysk::bit_proofs::{
+        verify_range_proof_32, deserialize_range_proof_32, deserialize_range_proofs_32,
+    };
     use starknet::{
         ContractAddress, ClassHash, get_caller_address, get_block_timestamp, get_contract_address,
     };
@@ -1064,6 +1067,15 @@ pub mod PrivacyPools {
             assert!(!self.deposit_exists.read(commitment), "Deposit already exists");
             assert!(amount > 0, "Amount must be positive");
 
+            // Verify range proof: proves amount_commitment commits to a value in [0, 2^32)
+            if range_proof_data.len() > 0 {
+                let rp_opt = deserialize_range_proof_32(range_proof_data);
+                assert!(rp_opt.is_some(), "Invalid range proof data");
+                let rp = rp_opt.unwrap();
+                let valid = verify_range_proof_32(amount_commitment, @rp);
+                assert!(valid, "Range proof verification failed");
+            }
+
             let caller = get_caller_address();
             let timestamp = get_block_timestamp();
 
@@ -1118,6 +1130,25 @@ pub mod PrivacyPools {
             assert!(len == amount_commitments.len(), "Mismatched lengths");
             assert!(len == asset_ids.len(), "Mismatched lengths");
             assert!(len == amounts.len(), "Mismatched amounts length");
+
+            // Verify range proofs for all deposits in batch
+            if range_proof_data.len() > 0 {
+                let proofs_opt = deserialize_range_proofs_32(range_proof_data);
+                assert!(proofs_opt.is_some(), "Invalid batch range proof data");
+                let proofs = proofs_opt.unwrap();
+                assert!(proofs.len() == len, "Range proof count mismatch");
+                let mut rp_i: u32 = 0;
+                loop {
+                    if rp_i >= len {
+                        break;
+                    }
+                    let valid = verify_range_proof_32(
+                        *amount_commitments.at(rp_i), proofs.at(rp_i.into())
+                    );
+                    assert!(valid, "Range proof verification failed");
+                    rp_i += 1;
+                };
+            }
 
             let caller = get_caller_address();
             let timestamp = get_block_timestamp();
