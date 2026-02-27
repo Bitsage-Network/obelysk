@@ -62,6 +62,7 @@ async fn main() {
     info!(
         host = %config.host,
         port = config.port,
+        network = %config.network,
         batch_max_size = config.batch_max_size,
         batch_timeout_secs = config.batch_timeout_secs,
         min_batch_size = config.min_batch_size,
@@ -117,7 +118,7 @@ async fn main() {
     let prover_pool_config = PoolClientConfig {
         rpc_url: config.rpc_url.clone(),
         pool_address: config.pool_contract.clone(),
-        network: "sepolia".to_string(),
+        network: config.network.clone(),
         verify_rpc_urls: vec![],
     };
 
@@ -131,7 +132,7 @@ async fn main() {
     let tree_pool_config = PoolClientConfig {
         rpc_url: config.rpc_url.clone(),
         pool_address: config.pool_contract.clone(),
-        network: "sepolia".to_string(),
+        network: config.network.clone(),
         verify_rpc_urls: vec![],
     };
 
