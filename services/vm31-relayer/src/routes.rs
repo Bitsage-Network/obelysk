@@ -272,6 +272,7 @@ impl SubmitRequest {
                 merkle_path,
                 merkle_root,
                 withdrawal_binding,
+                ..
             } => {
                 validate_amount(*amount)?;
                 Ok(PendingTx::Withdraw {

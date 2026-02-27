@@ -507,7 +507,7 @@ impl BatchStore for RedisStore {
             .arg(&json)
             .arg("EX")
             .arg(86400u64) // 24h TTL
-            .exec_async(&mut conn)
+            .query_async(&mut conn)
             .await
             .map_err(|e| StoreError::Backend(e.to_string()))
     }
@@ -599,7 +599,7 @@ impl RateLimitStore for RedisStore {
         let _: () = redis::cmd("EXPIRE")
             .arg(&redis_key)
             .arg(window_secs)
-            .exec_async(&mut conn)
+            .query_async(&mut conn)
             .await
             .map_err(|e| StoreError::Backend(e.to_string()))?;
         Ok(count <= limit)
@@ -617,7 +617,7 @@ impl NoteStore for RedisStore {
             .arg(&json)
             .arg("EX")
             .arg(86400u64 * 7) // 7-day TTL for note records
-            .exec_async(&mut conn)
+            .query_async(&mut conn)
             .await
             .map_err(|e| StoreError::Backend(e.to_string()))?;
 
@@ -626,14 +626,14 @@ impl NoteStore for RedisStore {
             redis::cmd("SADD")
                 .arg("notes:pending")
                 .arg(commitment)
-                .exec_async(&mut conn)
+                .query_async(&mut conn)
                 .await
                 .map_err(|e| StoreError::Backend(e.to_string()))?;
         } else {
             redis::cmd("SREM")
                 .arg("notes:pending")
                 .arg(commitment)
-                .exec_async(&mut conn)
+                .query_async(&mut conn)
                 .await
                 .map_err(|e| StoreError::Backend(e.to_string()))?;
         }
