@@ -22,8 +22,18 @@ import type { MerkleProof } from "@/lib/crypto/merkle";
 import PrivacyPoolsABI from "@/lib/contracts/abis/PrivacyPools.json";
 import { getRpcUrl, type NetworkType } from "@/lib/contracts/addresses";
 
-// RPC URL — network-aware
-const RPC_URL = getRpcUrl((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
+// RPC URL — network-aware, no silent sepolia fallback
+function resolveRagequitNetwork(): NetworkType {
+  const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
+  if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
+    throw new Error(
+      "[useCancelRagequit] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
+      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
+    );
+  }
+  return env;
+}
+const RPC_URL = getRpcUrl(resolveRagequitNetwork());
 
 interface InclusionSet {
   id: string;
@@ -66,7 +76,7 @@ const KNOWN_INCLUSION_SETS = [
 export function useCancelRagequit(): UseCancelRagequitResult {
   const { address } = useAccount();
   const { sendAsync } = useSendTransaction({});
-  const addresses = getContractAddresses((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
+  const addresses = getContractAddresses(resolveRagequitNetwork());
 
   // State
   const [isLoading, setIsLoading] = useState(false);

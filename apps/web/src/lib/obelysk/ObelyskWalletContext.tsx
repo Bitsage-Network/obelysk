@@ -268,7 +268,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
             return { verified: false, amount: note.denomination };
           } catch (err) {
             // If RPC fails, trust local note (graceful degradation)
-            console.warn("[ObelyskWallet] Could not verify note on-chain, using local:", note.commitment.slice(0, 16) + "...");
+            // Privacy: note commitment and verification details intentionally not logged
             return { verified: true, amount: note.denomination };
           }
         });
@@ -280,7 +280,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         setPrivacyPoolBalance(verifiedBalance);
         setStaleNotesCount(staleCount);
       } catch (error) {
-        console.error("[ObelyskWallet] Failed to load privacy pool balance:", error instanceof Error ? error.message : "Unknown error");
+        // Privacy: pool balance load failure intentionally not logged
         setPrivacyPoolBalance(0);
       }
     };
@@ -413,7 +413,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       // Return result for the modal to use
       return result;
     } catch (error) {
-      console.error("[ObelyskWallet] ElGamal reveal failed:", error instanceof Error ? error.message : "Unknown error");
+      // Privacy: ElGamal reveal failure intentionally not logged
       throw error;
     }
   }, [hasLocalKeys, initLocalKeys, revealWithDecryption]);
@@ -560,7 +560,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
         throw new Error("No claim method available - wallet not connected or SDK not ready");
       }
     } catch (error) {
-      console.error("[Rollover] Failed:", error instanceof Error ? error.message : "Unknown error");
+      // Privacy: rollover failure intentionally not logged
       setProvingState("error");
       throw error;
     }
@@ -649,7 +649,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
           signature = [sigArray[0], sigArray[1]];
         }
       } catch (sigError) {
-        console.warn("[Ragequit] Could not sign ragequit message:", sigError instanceof Error ? sigError.message : "Unknown error");
+        // Privacy: ragequit signature failure intentionally not logged
       }
 
       // Build the PPRagequitProof struct
@@ -716,7 +716,7 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       refetchSageBalance();
 
     } catch (error) {
-      console.error("[Ragequit] Failed:", error instanceof Error ? error.message : "Unknown error");
+      // Privacy: ragequit failure intentionally not logged
       setProvingState("error");
       throw error;
     }

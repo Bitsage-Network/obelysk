@@ -329,6 +329,10 @@ pub mod DarkPoolAuction {
     // Minimum 48h for mainnet (172800s); use 300s for testnet via constructor
     const DEFAULT_UPGRADE_DELAY: u64 = 172800;
 
+    // Maximum orders per epoch to prevent gas exhaustion during settlement.
+    // settle_epoch() iterates all orders O(n^2) for clearing — unbounded N is a DoS vector.
+    const MAX_ORDERS_PER_EPOCH: u32 = 500;
+
     // ========================================================================
     // Storage
     // ========================================================================
@@ -632,6 +636,10 @@ pub mod DarkPoolAuction {
 
             let caller = get_caller_address();
             let epoch = self.get_current_epoch();
+
+            // Prevent DoS: cap orders per epoch so settle_epoch doesn't run out of gas
+            let current_epoch_orders = self.epoch_order_count.read(epoch);
+            assert!(current_epoch_orders < MAX_ORDERS_PER_EPOCH, "Epoch order limit reached");
 
             // Verify balance proof
             self._verify_balance_proof(@balance_proof, caller, give_asset);
@@ -1213,17 +1221,30 @@ pub mod DarkPoolAuction {
             assert!(now >= execute_after, "Too early");
             assert!(now <= execute_before, "Too late");
 
-            // 4. Verify signature over (nonce, execute_after, execute_before, entrypoint) hash
-            // The signature must come from a registered session key owner
+            // 4. Verify signature over (nonce, execute_after, execute_before, entrypoint, caller, calldata_hash)
+            // The signature must come from a registered session key owner.
+            // SECURITY: calldata and caller MUST be included in the signed message.
+            // Without calldata coverage, a relay could swap the operation payload
+            // after signature verification. Without caller coverage, the signature
+            // could be replayed by any caller when caller=0x0 was not intended.
             assert!(signature.len() >= 3, "Invalid signature");
             let sig_owner_felt = *signature.at(0);
             let sig_r = *signature.at(1);
             let sig_s = *signature.at(2);
 
-            // Reconstruct the owner address from the signature
+            // Hash the calldata separately, then include in the message hash
+            let calldata_hash = poseidon_hash_span(call_calldata.span());
+
             // Session key verification: hash must match registered key
             let msg_hash = poseidon_hash_span(
-                array![nonce, execute_after.into(), execute_before.into(), call_entrypoint].span()
+                array![
+                    nonce,
+                    execute_after.into(),
+                    execute_before.into(),
+                    call_entrypoint,
+                    actual_caller.into(),
+                    calldata_hash,
+                ].span()
             );
 
             // Verify session key is registered
@@ -1285,6 +1306,9 @@ pub mod DarkPoolAuction {
 
         fn schedule_upgrade(ref self: ContractState, new_class_hash: ClassHash) {
             self.ownable.assert_only_owner();
+            // Prevent timelock reset: cannot reschedule while another upgrade is pending
+            let existing = self.pending_upgrade.read();
+            assert!(existing.is_zero(), "Another upgrade already pending");
             self.pending_upgrade.write(new_class_hash);
             self.upgrade_scheduled_at.write(get_block_timestamp());
         }

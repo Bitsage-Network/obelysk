@@ -34,20 +34,24 @@ export const apiClient: AxiosInstance = axios.create({
 // Request interceptor for auth and logging
 apiClient.interceptors.request.use(
   (config) => {
-    // Add wallet address to headers if available (for authenticated requests)
-    const walletAddress = typeof window !== 'undefined'
-      ? localStorage.getItem('wallet_address')
-      : null;
+    // Only send wallet address for endpoints that explicitly require auth.
+    // Sending on ALL requests allows backend to correlate anonymous on-chain
+    // operations with browsing activity, undermining privacy pool anonymity.
+    if (config.headers['X-Requires-Auth']) {
+      const walletAddress = typeof window !== 'undefined'
+        ? localStorage.getItem('wallet_address')
+        : null;
 
-    if (walletAddress) {
-      config.headers['X-Wallet-Address'] = walletAddress;
+      if (walletAddress) {
+        config.headers['X-Wallet-Address'] = walletAddress;
+      }
+      delete config.headers['X-Requires-Auth'];
     }
 
     debugLog(`[API] ${config.method?.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
-    console.error('[API] Request error:', error);
     return Promise.reject(error);
   }
 );
@@ -82,16 +86,7 @@ apiClient.interceptors.response.use(
       });
     }
 
-    console.error(`[API] Error ${status}: ${message}`);
-
-    // Handle specific error codes
-    if (status === 401) {
-      // Handle unauthorized - could redirect to login
-      console.warn('[API] Unauthorized request');
-    } else if (status === 429) {
-      // Handle rate limiting
-      console.warn('[API] Rate limited');
-    }
+    // API error details intentionally not logged to prevent leaking interaction patterns
 
     return Promise.reject(error);
   }
@@ -1136,7 +1131,6 @@ export const getJobsChartData = async (): Promise<Array<{ day: string; jobs: num
   } catch {
     // Return empty data array - NO FAKE DATA
     // UI should show "Data unavailable" message
-    console.warn("[JobAnalytics] API unavailable - returning empty chart data");
     return [];
   }
 };
@@ -1222,7 +1216,6 @@ export const getSagePrice = async (): Promise<TokenPrice | null> => {
     const response = await getTokenPrice('SAGE');
     return response.data;
   } catch {
-    console.warn('[PriceFeed] SAGE price API unavailable');
     return null;
   }
 };
@@ -1596,11 +1589,10 @@ class WebSocketClient {
         this.tryReconnect();
       };
 
-      this.ws.onerror = (error) => {
-        console.error('[WS] Error:', error);
+      this.ws.onerror = () => {
+        // WS error details intentionally not logged
       };
-    } catch (error) {
-      console.error('[WS] Failed to connect:', error);
+    } catch {
       this.tryReconnect();
     }
   }
@@ -1611,7 +1603,7 @@ class WebSocketClient {
       debugLog(`[WS] Reconnecting (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
       setTimeout(() => this.connect(), this.reconnectDelay);
     } else {
-      console.error('[WS] Max reconnection attempts reached');
+      // Max reconnection attempts reached — silent failure
     }
   }
 
@@ -1700,8 +1692,8 @@ class SpecializedWebSocketClient<T extends IndexedWebSocketMessage> {
         try {
           const message: T = JSON.parse(event.data);
           this.callbacks.forEach(callback => callback(message));
-        } catch (error) {
-          console.error(`[WS:${this.options.endpoint}] Failed to parse:`, error);
+        } catch {
+          // WS parse failure intentionally not logged
         }
       };
 
@@ -1712,11 +1704,10 @@ class SpecializedWebSocketClient<T extends IndexedWebSocketMessage> {
         }
       };
 
-      this.ws.onerror = (error) => {
-        console.error(`[WS:${this.options.endpoint}] Error:`, error);
+      this.ws.onerror = () => {
+        // WS error details intentionally not logged
       };
-    } catch (error) {
-      console.error(`[WS:${this.options.endpoint}] Failed to connect:`, error);
+    } catch {
       if (this.shouldReconnect) {
         this.tryReconnect();
       }

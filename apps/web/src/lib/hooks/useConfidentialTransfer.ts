@@ -31,8 +31,18 @@ import { usePrivacyKeys } from "./usePrivacyKeys";
 import { CONTRACTS, getRpcUrl, type NetworkType } from "../contracts/addresses";
 import { useNetwork } from "../contexts/NetworkContext";
 
-// Use centralized contract address — falls back to current network default
-const CT_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+// Use centralized contract address — NEVER silently fall back to sepolia
+function resolveCTNetwork(): NetworkType {
+  const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
+  if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
+    throw new Error(
+      "[useConfidentialTransfer] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
+      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
+    );
+  }
+  return env;
+}
+const CT_NETWORK: NetworkType = resolveCTNetwork();
 
 function getConfidentialTransferAddress(network: string): string {
   const contracts = CONTRACTS[network as keyof typeof CONTRACTS];
@@ -186,7 +196,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
   const CONFIDENTIAL_TRANSFER_ADDRESS = getConfidentialTransferAddress(network);
   const provider = useMemo(
     () => new RpcProvider({
-      nodeUrl: getRpcUrl((network as NetworkType) || (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia"),
+      nodeUrl: getRpcUrl((network as NetworkType) || CT_NETWORK),
     }),
     [network]
   );
@@ -209,7 +219,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       const pkY = BigInt(result[1] || "0");
       return pkX !== 0n || pkY !== 0n;
     } catch (error) {
-      console.error("[ConfidentialTransfer] isRegistered error:", error instanceof Error ? error.message : "Unknown error");
+      // Registration check failed — silently return false (privacy: no log output)
       return false;
     }
   }, [address, provider]);
@@ -559,7 +569,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         const balance = await hybridDecrypt(cipher, keyPair.privateKey, undefined, 10000000000n);
         return balance;
       } catch (error) {
-        console.error("[ConfidentialTransfer] getBalance error:", error instanceof Error ? error.message : "Unknown error");
+        // Balance fetch failed — silently return zero (privacy: no log output)
         return 0n;
       }
     },
