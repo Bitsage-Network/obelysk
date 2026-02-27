@@ -31,14 +31,16 @@ import { usePrivacyKeys } from "./usePrivacyKeys";
 import { CONTRACTS, getRpcUrl, type NetworkType } from "../contracts/addresses";
 import { useNetwork } from "../contexts/NetworkContext";
 
-// Use centralized contract address — falls back to sepolia
+// Use centralized contract address — falls back to current network default
+const CT_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+
 function getConfidentialTransferAddress(network: string): string {
   const contracts = CONTRACTS[network as keyof typeof CONTRACTS];
   if (contracts && "CONFIDENTIAL_TRANSFER" in contracts) {
     const addr = (contracts as Record<string, string>).CONFIDENTIAL_TRANSFER;
     if (addr && addr !== "0x0") return addr;
   }
-  return CONTRACTS.sepolia.CONFIDENTIAL_TRANSFER;
+  return CONTRACTS[CT_NETWORK].CONFIDENTIAL_TRANSFER;
 }
 
 // Asset IDs (matching Cairo contract)
@@ -160,9 +162,6 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
   const { address, account } = useAccount();
   const { sendAsync } = useSendTransaction({});
 
-  // Dynamic contract address from centralized config
-  const CONFIDENTIAL_TRANSFER_ADDRESS = getConfidentialTransferAddress("sepolia");
-
   // Use privacy keys hook for proper key management
   const {
     hasKeys,
@@ -182,8 +181,9 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
     pendingOut: { SAGE: 0n, STRK: 0n, USDC: 0n },
   });
 
-  // Provider for read calls
+  // Provider for read calls — network-aware
   const { network } = useNetwork();
+  const CONFIDENTIAL_TRANSFER_ADDRESS = getConfidentialTransferAddress(network);
   const provider = useMemo(
     () => new RpcProvider({
       nodeUrl: getRpcUrl((network as NetworkType) || (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia"),

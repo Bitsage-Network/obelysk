@@ -23,6 +23,8 @@ import { RpcProvider, CallData } from "starknet";
 import { getContractAddresses, useSageBalance, buildCompleteRagequitCall, type PPRagequitProof } from "@/lib/contracts";
 import { generateMerkleProofOnChain } from "@/lib/crypto/onChainMerkleProof";
 import { PRIVACY_POOL_FOR_TOKEN, getRpcUrl, getStarknetChainId, type NetworkType } from "@/lib/contracts/addresses";
+
+const WALLET_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
 import { useOnChainSagePrice } from "@/lib/hooks/useOnChainData";
 import { useSession, useSessionStatus, Session, SessionConfig, SessionKeyPair, SESSION_PRESETS } from "@/lib/sessions";
 import { getUnspentBalance, getUnspentNotes, getNotes, deleteNote } from "@/lib/crypto/keyStore";
@@ -258,8 +260,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
           try {
             // Determine pool address from note's tokenSymbol (default SAGE for legacy notes)
             const tokenSymbol = note.tokenSymbol || "SAGE";
-            const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
-            const proof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
+            const poolAddr = PRIVACY_POOL_FOR_TOKEN[WALLET_NETWORK]?.[tokenSymbol] || undefined;
+            const proof = await generateMerkleProofOnChain(note.commitment, WALLET_NETWORK, poolAddr);
             if (proof !== null) {
               return { verified: true, amount: note.denomination };
             }
@@ -299,8 +301,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
     for (const note of notes) {
       try {
         const tokenSymbol = note.tokenSymbol || "SAGE";
-        const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
-        const proof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
+        const poolAddr = PRIVACY_POOL_FOR_TOKEN[WALLET_NETWORK]?.[tokenSymbol] || undefined;
+        const proof = await generateMerkleProofOnChain(note.commitment, WALLET_NETWORK, poolAddr);
         if (proof === null) {
           await deleteNote(note.commitment);
           cleared++;
@@ -596,7 +598,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
       setProvingTime(proofTimeMs);
       setProvingState("sending");
 
-      const contractAddresses = getContractAddresses("sepolia");
+      const ragequitNetwork: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+      const contractAddresses = getContractAddresses(ragequitNetwork);
 
       // Calculate total amount
       const totalAmount = notes.reduce((sum, note) => sum + BigInt(Math.floor(note.denomination * 1e18)), 0n);
@@ -607,8 +610,8 @@ export function ObelyskWalletProvider({ children }: { children: ReactNode }) {
 
       // Generate Merkle proof on-chain (no backend needed)
       const tokenSymbol = note.tokenSymbol || "SAGE";
-      const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[tokenSymbol] || undefined;
-      const merkleProof = await generateMerkleProofOnChain(note.commitment, "sepolia", poolAddr);
+      const poolAddr = PRIVACY_POOL_FOR_TOKEN[ragequitNetwork]?.[tokenSymbol] || undefined;
+      const merkleProof = await generateMerkleProofOnChain(note.commitment, ragequitNetwork, poolAddr);
 
       // Build the global tree proof (required for ragequit)
       const globalTreeProof = merkleProof ? {
