@@ -173,7 +173,7 @@ function PrivacyPoolPageInner() {
     isLoading: isLoadingASPs,
     error: aspError,
     refresh: refreshASPs,
-  } = useASPRegistry({ network: "sepolia" });
+  } = useASPRegistry({ network });
 
   const [showNullifier, setShowNullifier] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
@@ -756,7 +756,7 @@ function PrivacyPoolPageInner() {
                     <div className="grid grid-cols-5 gap-2">
                       {POOL_ASSETS.map((asset) => {
                         const isLive = asset.status === "live";
-                        const poolAddr = PRIVACY_POOL_FOR_TOKEN["sepolia"]?.[asset.id];
+                        const poolAddr = PRIVACY_POOL_FOR_TOKEN[network]?.[asset.id];
                         const hasPool = isLive && poolAddr && poolAddr !== "0x0";
                         return (
                           <button
@@ -1504,13 +1504,13 @@ function PrivacyPoolPageInner() {
               compact={false}
               maxItems={10}
               options={{
-                network: "sepolia",
+                network,
                 contractFilter: [
-                  CONTRACTS.sepolia.SAGE_PRIVACY_POOL,
-                  CONTRACTS.sepolia.ETH_PRIVACY_POOL,
-                  CONTRACTS.sepolia.STRK_PRIVACY_POOL,
-                  CONTRACTS.sepolia.WBTC_PRIVACY_POOL,
-                  CONTRACTS.sepolia.USDC_PRIVACY_POOL,
+                  CONTRACTS[network].SAGE_PRIVACY_POOL,
+                  CONTRACTS[network].ETH_PRIVACY_POOL,
+                  CONTRACTS[network].STRK_PRIVACY_POOL,
+                  CONTRACTS[network].WBTC_PRIVACY_POOL,
+                  CONTRACTS[network].USDC_PRIVACY_POOL,
                 ],
                 eventTypes: ["deposit", "withdrawal"],
               }}

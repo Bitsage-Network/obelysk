@@ -112,6 +112,7 @@ const INITIAL_STATE: GaslessDepositState = {
 };
 
 const GASLESS_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+const PAYMASTER_NETWORK: "sepolia" | "mainnet" = GASLESS_NETWORK === "mainnet" ? "mainnet" : "sepolia";
 const RPC_URL = getRpcUrl(GASLESS_NETWORK);
 
 const ASSET_SAGE = "0"; // SAGE asset ID in privacy pools
@@ -183,7 +184,7 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
   const checkSponsoredEligibility = useCallback(async (): Promise<boolean> => {
     if (!address) return false;
     try {
-      const paymaster = getAVNUPaymaster("sepolia");
+      const paymaster = getAVNUPaymaster(PAYMASTER_NETWORK);
       const result = await paymaster.checkEligibility(address);
       return result.eligible;
     } catch {
@@ -205,7 +206,7 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
     }
 
     const amountWei = BigInt(denomination) * BigInt(10 ** 18);
-    const addresses = CONTRACTS.sepolia;
+    const addresses = CONTRACTS[GASLESS_NETWORK];
 
     try {
       // ========================================
@@ -384,9 +385,9 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         txHash = result.transaction_hash;
       } else {
         // Gasless via AVNU Paymaster
-        const paymaster = getAVNUPaymaster("sepolia");
+        const paymaster = getAVNUPaymaster(PAYMASTER_NETWORK);
         const gasToken = gasMethod === "pay-usdc"
-          ? EXTERNAL_TOKENS.sepolia.USDC
+          ? EXTERNAL_TOKENS[GASLESS_NETWORK].USDC
           : gasMethod === "pay-sage"
           ? addresses.SAGE_TOKEN
           : undefined;

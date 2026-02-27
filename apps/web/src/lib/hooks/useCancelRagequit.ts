@@ -66,7 +66,7 @@ const KNOWN_INCLUSION_SETS = [
 export function useCancelRagequit(): UseCancelRagequitResult {
   const { address } = useAccount();
   const { sendAsync } = useSendTransaction({});
-  const addresses = getContractAddresses("sepolia");
+  const addresses = getContractAddresses((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
 
   // State
   const [isLoading, setIsLoading] = useState(false);
