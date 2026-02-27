@@ -1,0 +1,26 @@
+services:
+  vm31-relayer:
+    image: obelysk/vm31-relayer:latest
+    container_name: vm31-relayer
+    env_file:
+      - .env
+    ports:
+      - "3080:3080"
+    volumes:
+      - vm31-data:/var/lib/vm31
+    networks:
+      - bitsage-marketplace_default
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:3080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  bitsage-marketplace_default:
+    external: true
+
+volumes:
+  vm31-data:

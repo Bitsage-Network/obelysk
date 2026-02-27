@@ -13,7 +13,7 @@ fn opaque_ref(input: &str) -> String {
     format!("{:08x}", (state >> 32) ^ (state & 0xFFFFFFFF))
 }
 
-use stwo_ml::privacy::pool_client::PoolClient;
+use stwo_ml::privacy::pool_client::{PoolClient, PoolClientConfig};
 use stwo_ml::privacy::relayer::{
     hash_batch_public_inputs_for_cairo, run_vm31_relayer_flow, RelayOutcome, SncastVm31Backend,
     Vm31RelayerConfig, WithdrawalRecipients,
@@ -66,7 +66,7 @@ impl DepositNoteInfo {
 /// Orchestrates batch proving and on-chain submission.
 pub struct ProverService {
     backend: SncastVm31Backend,
-    pool_client: PoolClient,
+    pool_config: PoolClientConfig,
     store: Arc<InMemoryStore>,
     relayer_config: Vm31RelayerConfig,
     bridge: BridgeService,
@@ -75,14 +75,14 @@ pub struct ProverService {
 impl ProverService {
     pub fn new(
         backend: SncastVm31Backend,
-        pool_client: PoolClient,
+        pool_config: PoolClientConfig,
         store: Arc<InMemoryStore>,
         chunk_size: u32,
         bridge: BridgeService,
     ) -> Self {
         Self {
             backend,
-            pool_client,
+            pool_config,
             store,
             relayer_config: Vm31RelayerConfig {
                 chunk_size,
@@ -135,9 +135,12 @@ impl ProverService {
 
         // ── Step 1: Validate inputs (PoolClient calls are synchronous RPC) ──
         {
-            let pool_client = self.pool_client.clone();
+            let pool_cfg = self.pool_config.clone();
             let txs_ref = txs.clone();
-            tokio::task::spawn_blocking(move || Self::validate_inputs_blocking(&pool_client, &txs_ref))
+            tokio::task::spawn_blocking(move || {
+                let pool_client = PoolClient::new(pool_cfg);
+                Self::validate_inputs_blocking(&pool_client, &txs_ref)
+            })
                 .await
                 .map_err(|e| ProverError::Validation(format!("task join error: {e}")))?
                 ?;

@@ -259,9 +259,11 @@ export const CONTRACTS = {
 
     STEALTH_REGISTRY: "0x0",
     DARK_POOL: "0x0",
-    VM31_POOL: "0x0",
-    VM31_VERIFIER: "0x0",
-    VM31_BRIDGE: "0x0",
+
+    // VM31 UTXO Privacy — deployed 2026-02-27
+    VM31_POOL: "0x0230eb355e54a98b4511d86585d45d6a5b9075d0ec254877485047b6d651400d",
+    VM31_VERIFIER: "0x05071a9428cba9a7e4cbcbf3cee2d16caaaf2b6b9d270a8fb6089a4a97d330e8",
+    VM31_BRIDGE: "0x048f481c4ada306f5b62d7d223ddd0cf8055a423ffa2b278b3ff767ca9c0356c",
   },
 } as const;
 
@@ -576,7 +578,11 @@ export const ASSET_ID_FOR_TOKEN: Record<string, string> = {
 // VM31 UTXO pool asset IDs (assigned by VM31Pool.register_asset())
 // Populated after on-chain registration via register-btc-vault-assets.sh
 export const VM31_ASSET_ID_FOR_TOKEN: Record<string, number> = {
-  wBTC: 0,     // TODO: Update after register_asset() returns the assigned ID
+  wBTC: 0,     // Registered in VM31Pool mainnet
+  SAGE: 1,
+  ETH: 2,
+  STRK: 3,
+  USDC: 4,
   LBTC: 0,     // Not yet registered
   tBTC: 0,     // Not yet registered
   SolvBTC: 0,  // Not yet registered

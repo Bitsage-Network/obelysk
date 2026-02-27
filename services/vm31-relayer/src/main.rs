@@ -18,7 +18,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
-use stwo_ml::privacy::pool_client::{PoolClient, PoolClientConfig};
+use stwo_ml::privacy::pool_client::PoolClientConfig;
 use stwo_ml::privacy::relayer::SncastVm31Backend;
 
 use crate::batch_queue::BatchQueue;
@@ -26,7 +26,6 @@ use crate::bridge::BridgeService;
 use crate::config::RelayerConfig;
 use crate::prover::ProverService;
 use crate::routes::AppState;
-use crate::store;
 use crate::tree_sync_service::TreeSyncService;
 
 #[tokio::main]
@@ -114,14 +113,13 @@ async fn main() {
         &config.pool_contract,
     );
 
-    // Build PoolClient for on-chain queries
-    let pool_config = PoolClientConfig {
+    // Build PoolClientConfig for ProverService and TreeSyncService
+    let prover_pool_config = PoolClientConfig {
         rpc_url: config.rpc_url.clone(),
         pool_address: config.pool_contract.clone(),
         network: "sepolia".to_string(),
         verify_rpc_urls: vec![],
     };
-    let pool_client = PoolClient::new(pool_config);
 
     // Build BridgeService
     let bridge = BridgeService::new(
@@ -130,7 +128,6 @@ async fn main() {
         config.bridge_contract.clone(),
     );
 
-    // Build PoolClientConfig for TreeSyncService
     let tree_pool_config = PoolClientConfig {
         rpc_url: config.rpc_url.clone(),
         pool_address: config.pool_contract.clone(),
@@ -141,7 +138,7 @@ async fn main() {
     // Build ProverService and spawn batch processor
     let prover = ProverService::new(
         backend,
-        pool_client,
+        prover_pool_config,
         store.clone(),
         config.chunk_size,
         bridge,
