@@ -8,6 +8,7 @@ pub struct RelayerConfig {
 
     // Starknet
     pub rpc_url: String,
+    pub network: String,
     pub account: String,
     pub verifier_contract: String,
     pub pool_contract: String,
@@ -58,6 +59,14 @@ impl RelayerConfig {
     pub fn from_env() -> Result<Self, ConfigError> {
         let rpc_url = require_env("STARKNET_RPC_URL")?;
         validate_rpc_url(&rpc_url)?;
+
+        let network = env::var("STARKNET_NETWORK").unwrap_or_else(|_| "sepolia".into());
+        if network != "mainnet" && network != "sepolia" {
+            return Err(ConfigError::Invalid(
+                "STARKNET_NETWORK".into(),
+                "must be 'mainnet' or 'sepolia'".into(),
+            ));
+        }
 
         let account = require_env("STARKNET_ACCOUNT")?;
         let verifier_contract = require_env("VM31_VERIFIER_CONTRACT")?;
@@ -136,6 +145,7 @@ impl RelayerConfig {
                 .parse()
                 .map_err(|_| ConfigError::Invalid("VM31_PORT".into(), "must be a valid port number".into()))?,
             rpc_url,
+            network,
             account,
             verifier_contract,
             pool_contract,
