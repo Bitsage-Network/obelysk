@@ -82,3 +82,47 @@ with provably unknown discrete log. Previously used 2*G (known dlog).
 - **Constructor Args**: owner=deployer, relayer=deployer, vm31_pool=`0x07cf94...e1f9`, confidential_transfer=`0x07ab4e...0e86`
 - **Upgradability**: 5-min timelocked (`schedule_upgrade` / `execute_upgrade` / `cancel_upgrade`)
 - **Features**: Bridges finalized VM31 withdrawals into ConfidentialTransfer encrypted balances, idempotent bridge keys, reentrancy guard, pausable
+
+---
+
+## Starknet Mainnet — 2026-02-26
+
+Mainnet deployment of core SAGE Token + Obelysk privacy contracts.
+Owner/Deployer (Braavos): `0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660`
+
+### SAGE Token (BitSage-Cairo-Smart-Contracts)
+- **Class Hash**: `0x5e17a261a36e447ffdc2771d8b9fd73e92fe630900c1b106a4e8ffaf44ab5b7`
+- **Contract Address**: `0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799`
+- **Constructor Args**: owner=deployer, job_manager=0x0, cdc_pool=0x0, paymaster=0x0, treasury=deployer, team=deployer, liquidity=deployer
+- **TGE**: 110,000,000 SAGE minted (100M to liquidity_beneficiary=deployer, 10M to owner=deployer)
+- **Verified**: `name()=BitSage Token`, `symbol()=SAGE`, `total_supply()=110000000e18`
+
+### ConfidentialTransfer (Obelysk-Protocol)
+- **Class Hash**: `0x5399d938717e3f3887d2e96c01332aa256e6ed9e7c114c6c4ce050d316234b9`
+- **Contract Address**: `0x0673685bdb01fbf57c390ec2c0d893e7c77316cdea315b0fbfbc85b9a9a979d2`
+- **Constructor Args**: owner=deployer, auditor_key_x=0x0, auditor_key_y=0x0, upgrade_delay=172800 (48h)
+- **Verified**: `owner()=deployer`
+
+### PrivacyRouter (Obelysk-Protocol)
+- **Class Hash**: `0x5e59ee1d08a3fa74c7743795515b31c1dec460984348a62d3d32880a4cdb796`
+- **Contract Address**: `0x00f3fd871ba1b5b176270a7eb9e222c964c50fa8a31234394ea00ce70bfbdfbd`
+- **Constructor Args**: owner=deployer, sage_token=SAGE_MAINNET, payment_router=0x0
+
+### PrivacyPools x5 (Obelysk-Protocol)
+- **Class Hash**: `0x66d5a299c8d28eb02a2a057a73fc648e1a84d10167ba6c68c998a97aa0f2b8b`
+- All instances deployed then initialized via `initialize(owner, token_address, privacy_router)`
+
+| Pool | Contract Address | Token |
+|------|-----------------|-------|
+| **SAGE** | `0x0224977344d123eb5c20fd088f15b62d0541f8282f4a23dd87bdf9839aac724f` | SAGE `0x0098d5...c799` |
+| **ETH** | `0x06d0b41c96809796faa02a5eac2f74e090effd09ccab7274054b90aa671e82b5` | ETH `0x049d36...dc7` |
+| **STRK** | `0x02c348e89b355691ba5e4ece681fd6b497f8ab2ba670fa5842208b251a3c9cf1` | STRK `0x04718f...938d` |
+| **wBTC** | `0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2` | wBTC `0x03fe2b...7ac` |
+| **USDC** | `0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b` | USDC `0x053c91...8a8` |
+
+- **Verified**: All 5 pools return `is_initialized()=true`, `get_pp_stats()=(0,0,0,0)` (fresh)
+
+### Frontend Updates
+- `addresses.ts`: All mainnet addresses populated (CONTRACTS.mainnet, PRIVACY_POOL_FOR_TOKEN.mainnet, EXTERNAL_TOKENS.mainnet)
+- `usePrivacyPool.ts`: HARDCODED_POOLS_BY_NETWORK.mainnet + HARDCODED_TOKENS_BY_NETWORK.mainnet added
+- Network selection: `NEXT_PUBLIC_STARKNET_NETWORK=mainnet` activates mainnet paths
