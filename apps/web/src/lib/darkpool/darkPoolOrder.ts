@@ -407,68 +407,63 @@ export async function readBalanceHint(
 }
 
 // ============================================================================
-// Local AE Hint Cache (fallback before contract upgrade)
+// Local AE Hint Cache (in-memory only — never persisted to disk)
 // ============================================================================
 
-const HINT_CACHE_KEY = "obelysk-darkpool-hints";
+// AE hints contain cryptographic decryption material (encryptedAmount, nonce, mac).
+// Storing these in localStorage exposes them to XSS and cross-tab exfiltration.
+// Keep in memory only — hints are regenerated on page reload if needed.
 
-interface CachedHintEntry {
-  trader: string;
-  assetId: string;
-  encryptedAmount: string;
-  nonce: string;
-  mac: string;
+/** In-memory AE hint cache (clears on page unload). */
+const hintCache = new Map<string, { encryptedAmount: bigint; nonce: bigint; mac: bigint; cachedAt: number }>();
+
+/** Hint cache TTL — 30 minutes. */
+const HINT_CACHE_TTL_MS = 30 * 60 * 1000;
+
+/** Max entries to prevent unbounded growth. */
+const HINT_CACHE_MAX = 50;
+
+function hintCacheKey(trader: string, assetId: string): string {
+  // Use truncated address ref — not full address
+  return `${trader.slice(0, 10)}:${assetId}`;
 }
 
 /**
- * Cache an AE hint locally (used during deposit before contract upgrade)
+ * Cache an AE hint in memory (used during deposit before contract upgrade)
  */
 export function cacheHintLocally(
   trader: string,
   assetId: string,
   hint: { encryptedAmount: bigint; nonce: bigint; mac: bigint },
 ): void {
-  try {
-    const raw = localStorage.getItem(HINT_CACHE_KEY);
-    const cache: CachedHintEntry[] = raw ? JSON.parse(raw) : [];
-    // Upsert
-    const idx = cache.findIndex((e) => e.trader === trader && e.assetId === assetId);
-    const entry: CachedHintEntry = {
-      trader,
-      assetId,
-      encryptedAmount: hint.encryptedAmount.toString(),
-      nonce: hint.nonce.toString(),
-      mac: hint.mac.toString(),
-    };
-    if (idx >= 0) cache[idx] = entry;
-    else cache.push(entry);
-    localStorage.setItem(HINT_CACHE_KEY, JSON.stringify(cache));
-  } catch {
-    // localStorage unavailable (SSR)
+  const key = hintCacheKey(trader, assetId);
+  hintCache.set(key, { ...hint, cachedAt: Date.now() });
+  // Cap entries
+  if (hintCache.size > HINT_CACHE_MAX) {
+    const firstKey = hintCache.keys().next().value;
+    if (firstKey) hintCache.delete(firstKey);
   }
 }
 
 /**
- * Load a cached hint from local storage
+ * Load a cached hint from in-memory cache
  */
 function loadCachedHint(
   trader: string,
   assetId: string,
 ): { encryptedAmount: bigint; nonce: bigint; mac: bigint } | null {
-  try {
-    const raw = localStorage.getItem(HINT_CACHE_KEY);
-    if (!raw) return null;
-    const cache: CachedHintEntry[] = JSON.parse(raw);
-    const entry = cache.find((e) => e.trader === trader && e.assetId === assetId);
-    if (!entry) return null;
-    return {
-      encryptedAmount: BigInt(entry.encryptedAmount),
-      nonce: BigInt(entry.nonce),
-      mac: BigInt(entry.mac),
-    };
-  } catch {
+  const key = hintCacheKey(trader, assetId);
+  const entry = hintCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > HINT_CACHE_TTL_MS) {
+    hintCache.delete(key);
     return null;
   }
+  return {
+    encryptedAmount: entry.encryptedAmount,
+    nonce: entry.nonce,
+    mac: entry.mac,
+  };
 }
 
 /**

@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use sha2::{Sha256, Digest};
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
 
@@ -36,30 +37,19 @@ struct DepositNoteInfo {
 }
 
 impl DepositNoteInfo {
-    /// Compute a deterministic commitment key via FNV-1a hash of note fields.
+    /// Compute a deterministic commitment key via SHA-256 of note fields.
+    /// Collision-resistant — safe for use as a database key.
     fn commitment_key(&self) -> String {
-        let mut state: u64 = 0xcbf29ce484222325;
+        let mut hasher = Sha256::new();
         for &v in &self.owner_pubkey {
-            for b in v.to_le_bytes() {
-                state ^= b as u64;
-                state = state.wrapping_mul(0x100000001b3);
-            }
+            hasher.update(v.to_le_bytes());
         }
-        for b in self.asset_id.to_le_bytes() {
-            state ^= b as u64;
-            state = state.wrapping_mul(0x100000001b3);
-        }
-        for b in self.amount.to_le_bytes() {
-            state ^= b as u64;
-            state = state.wrapping_mul(0x100000001b3);
-        }
+        hasher.update(self.asset_id.to_le_bytes());
+        hasher.update(self.amount.to_le_bytes());
         for &v in &self.blinding {
-            for b in v.to_le_bytes() {
-                state ^= b as u64;
-                state = state.wrapping_mul(0x100000001b3);
-            }
+            hasher.update(v.to_le_bytes());
         }
-        format!("{:016x}", state)
+        format!("{:x}", hasher.finalize())
     }
 }
 
@@ -103,7 +93,7 @@ impl ProverService {
                 error!(batch_id = %batch_id, error = %e, "batch processing failed");
                 // Ensure batch is marked Failed on ANY error path, preventing
                 // batches stuck in "Proving" or "Submitting" forever.
-                let _ = self
+                if let Err(store_err) = self
                     .store
                     .update_status(
                         &batch_id,
@@ -113,7 +103,15 @@ impl ProverService {
                             ..Default::default()
                         },
                     )
-                    .await;
+                    .await
+                {
+                    error!(
+                        batch_id = %batch_id,
+                        original_error = %e,
+                        store_error = %store_err,
+                        "failed to mark batch as Failed (store unreachable)"
+                    );
+                }
             }
         }
         warn!("prover service channel closed, shutting down");

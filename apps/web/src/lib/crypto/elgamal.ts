@@ -101,7 +101,15 @@ export function addPoints(p1: ECPoint, p2: ECPoint): ECPoint {
   return { x: x3, y: y3 };
 }
 
-// Scalar multiplication using double-and-add
+// Scalar multiplication using Montgomery ladder (constant-time w.r.t. scalar bits).
+//
+// Unlike double-and-add, the Montgomery ladder performs the same number of
+// point additions and doublings regardless of which bits are set in k.
+// This prevents timing side channels that could leak private key bits.
+//
+// Algorithm: for each bit of k (high to low), we maintain (R0, R1) where
+// R1 = R0 + P is always the invariant. If bit=0: R1 = R0 + R1, R0 = 2*R0.
+// If bit=1: R0 = R0 + R1, R1 = 2*R1. Both branches do one add + one double.
 export function scalarMult(k: bigint, p: ECPoint): ECPoint {
   if (k === 0n || isInfinity(p)) return POINT_AT_INFINITY;
   if (k < 0n) {
@@ -109,19 +117,32 @@ export function scalarMult(k: bigint, p: ECPoint): ECPoint {
     p = negatePoint(p);
   }
   k = mod(k, CURVE_ORDER);
+  if (k === 0n) return POINT_AT_INFINITY;
 
-  let result = POINT_AT_INFINITY;
-  let addend = p;
-
-  while (k > 0n) {
-    if (k & 1n) {
-      result = addPoints(result, addend);
-    }
-    addend = addPoints(addend, addend);
-    k = k >> 1n;
+  // Find highest bit position
+  let bitLen = 0;
+  let tmp = k;
+  while (tmp > 0n) {
+    bitLen++;
+    tmp >>= 1n;
   }
 
-  return result;
+  // Montgomery ladder: R0 = O (identity), R1 = P
+  let R0: ECPoint = POINT_AT_INFINITY;
+  let R1: ECPoint = p;
+
+  for (let i = bitLen - 1; i >= 0; i--) {
+    const bit = (k >> BigInt(i)) & 1n;
+    if (bit === 0n) {
+      R1 = addPoints(R0, R1);
+      R0 = addPoints(R0, R0);
+    } else {
+      R0 = addPoints(R0, R1);
+      R1 = addPoints(R1, R1);
+    }
+  }
+
+  return R0;
 }
 
 // Get the generator point G
@@ -136,14 +157,18 @@ export function getPedersenH(): ECPoint {
 }
 
 // Generate a random scalar (for private key or randomness)
+// Rejects zero to prevent catastrophic key leaks in Schnorr proofs (s = k + c*sk with k=0)
 export function randomScalar(): bigint {
-  const bytes = new Uint8Array(32);
-  crypto.getRandomValues(bytes);
-  let scalar = 0n;
-  for (let i = 0; i < 32; i++) {
-    scalar = (scalar << 8n) | BigInt(bytes[i]);
+  for (;;) {
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    let scalar = 0n;
+    for (let i = 0; i < 32; i++) {
+      scalar = (scalar << 8n) | BigInt(bytes[i]);
+    }
+    const result = mod(scalar, CURVE_ORDER);
+    if (result !== 0n) return result;
   }
-  return mod(scalar, CURVE_ORDER);
 }
 
 // Generate a privacy keypair

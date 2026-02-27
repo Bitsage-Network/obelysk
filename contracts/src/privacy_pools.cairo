@@ -389,7 +389,8 @@ pub mod PrivacyPools {
         StoragePointerReadAccess, StoragePointerWriteAccess,
         StorageMapReadAccess, StorageMapWriteAccess, Map
     };
-    use core::poseidon::poseidon_hash_span;
+    use core::poseidon::{poseidon_hash_span, PoseidonTrait};
+    use core::hash::HashStateTrait;
     use core::traits::TryInto;
     use core::num::traits::Zero;
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
@@ -472,6 +473,9 @@ pub mod PrivacyPools {
         pending_upgrade: ClassHash,
         upgrade_scheduled_at: u64,
         upgrade_delay: u64,
+
+        // --- Reentrancy guard ---
+        reentrancy_locked: bool,
     }
 
     // =========================================================================
@@ -967,6 +971,7 @@ pub mod PrivacyPools {
             self.association_set_count.write(set_count + 1);
 
             if initial_commitments.len() > 0 {
+                assert!(initial_commitments.len() <= PP_MAX_BATCH_SIZE, "Too many initial commitments (max 100)");
                 self._add_commitments_to_set(set_id, initial_commitments);
             }
 
@@ -988,11 +993,22 @@ pub mod PrivacyPools {
         ) {
             self._require_not_paused();
             assert!(self.set_exists.read(set_id), "Set does not exist");
+            assert!(commitments.len() <= PP_MAX_BATCH_SIZE, "Too many commitments (max 100)");
 
             let set_info = self.association_set_info.read(set_id);
             let caller_asp_id = self.asp_by_address.read(get_caller_address());
             assert!(caller_asp_id == set_info.asp_id, "Caller does not own this set");
             assert!(set_info.is_active, "Set is not active");
+
+            // Verify each commitment corresponds to a real deposit (prevent fabricated commitments)
+            let mut i: u32 = 0;
+            loop {
+                if i >= commitments.len() {
+                    break;
+                }
+                assert!(self.deposit_exists.read(*commitments.at(i)), "Commitment not a valid deposit");
+                i += 1;
+            };
 
             self._add_commitments_to_set(set_id, commitments);
         }
@@ -1004,6 +1020,7 @@ pub mod PrivacyPools {
         ) {
             self._require_not_paused();
             assert!(self.set_exists.read(set_id), "Set does not exist");
+            assert!(commitments.len() <= PP_MAX_BATCH_SIZE, "Too many commitments (max 100)");
 
             let set_info = self.association_set_info.read(set_id);
             let caller_asp_id = self.asp_by_address.read(get_caller_address());
@@ -1063,28 +1080,28 @@ pub mod PrivacyPools {
         ) -> u64 {
             self._require_not_paused();
             self._require_initialized();
+            // Reentrancy guard: prevents malicious token callbacks from re-entering
+            assert!(!self.reentrancy_locked.read(), "Reentrant call");
+            self.reentrancy_locked.write(true);
+
             assert!(commitment != 0, "Invalid commitment");
             assert!(!self.deposit_exists.read(commitment), "Deposit already exists");
             assert!(amount > 0, "Amount must be positive");
 
-            // Verify range proof: proves amount_commitment commits to a value in [0, 2^32)
-            if range_proof_data.len() > 0 {
-                let rp_opt = deserialize_range_proof_32(range_proof_data);
-                assert!(rp_opt.is_some(), "Invalid range proof data");
-                let rp = rp_opt.unwrap();
-                let valid = verify_range_proof_32(amount_commitment, @rp);
-                assert!(valid, "Range proof verification failed");
-            }
+            // Range proof is MANDATORY: proves amount_commitment is in [0, 2^32).
+            // Without this, an attacker can deposit with an arbitrary commitment
+            // that doesn't bind to the actual amount.
+            assert!(range_proof_data.len() > 0, "Range proof required");
+            let rp_opt = deserialize_range_proof_32(range_proof_data);
+            assert!(rp_opt.is_some(), "Invalid range proof data");
+            let rp = rp_opt.unwrap();
+            let valid = verify_range_proof_32(amount_commitment, @rp);
+            assert!(valid, "Range proof verification failed");
 
             let caller = get_caller_address();
             let timestamp = get_block_timestamp();
 
-            // Transfer tokens from depositor to this contract
-            // User must have approved this contract to spend their tokens first
-            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            let transfer_success = sage_token.transfer_from(caller, get_contract_address(), amount);
-            assert!(transfer_success, "Token transfer failed");
-
+            // CEI: Effects BEFORE external call to prevent reentrancy exploits.
             // Insert deposit into global Merkle tree
             let global_index = self._insert_global_deposit(commitment);
 
@@ -1101,6 +1118,13 @@ pub mod PrivacyPools {
             self.deposit_info.write(commitment, deposit);
             self.total_deposits.write(self.total_deposits.read() + 1);
             self.total_volume_deposited.write(self.total_volume_deposited.read() + amount);
+
+            // Interaction: External call AFTER all state updates (checks-effects-interactions)
+            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
+            let transfer_success = sage_token.transfer_from(caller, get_contract_address(), amount);
+            assert!(transfer_success, "Token transfer failed");
+
+            self.reentrancy_locked.write(false);
 
             self.emit(PPDepositExecuted {
                 commitment,
@@ -1123,6 +1147,8 @@ pub mod PrivacyPools {
         ) -> LeanIMTBatchResult {
             self._require_not_paused();
             self._require_initialized();
+            assert!(!self.reentrancy_locked.read(), "Reentrant call");
+            self.reentrancy_locked.write(true);
 
             let len = commitments.len();
             assert!(len > 0, "Empty batch");
@@ -1131,29 +1157,28 @@ pub mod PrivacyPools {
             assert!(len == asset_ids.len(), "Mismatched lengths");
             assert!(len == amounts.len(), "Mismatched amounts length");
 
-            // Verify range proofs for all deposits in batch
-            if range_proof_data.len() > 0 {
-                let proofs_opt = deserialize_range_proofs_32(range_proof_data);
-                assert!(proofs_opt.is_some(), "Invalid batch range proof data");
-                let proofs = proofs_opt.unwrap();
-                assert!(proofs.len() == len, "Range proof count mismatch");
-                let mut rp_i: u32 = 0;
-                loop {
-                    if rp_i >= len {
-                        break;
-                    }
-                    let valid = verify_range_proof_32(
-                        *amount_commitments.at(rp_i), proofs.at(rp_i.into())
-                    );
-                    assert!(valid, "Range proof verification failed");
-                    rp_i += 1;
-                };
-            }
+            // Range proof mandatory for all batch deposits
+            assert!(range_proof_data.len() > 0, "Range proof required");
+            let proofs_opt = deserialize_range_proofs_32(range_proof_data);
+            assert!(proofs_opt.is_some(), "Invalid batch range proof data");
+            let proofs = proofs_opt.unwrap();
+            assert!(proofs.len() == len, "Range proof count mismatch");
+            let mut rp_i: u32 = 0;
+            loop {
+                if rp_i >= len {
+                    break;
+                }
+                let valid = verify_range_proof_32(
+                    *amount_commitments.at(rp_i), proofs.at(rp_i.into())
+                );
+                assert!(valid, "Range proof verification failed");
+                rp_i += 1;
+            };
 
             let caller = get_caller_address();
             let timestamp = get_block_timestamp();
 
-            // Calculate total amount and transfer all tokens at once
+            // Calculate total amount
             let mut total_amount: u256 = 0;
             let mut j: u32 = 0;
             loop {
@@ -1166,11 +1191,7 @@ pub mod PrivacyPools {
                 j += 1;
             };
 
-            // Transfer all tokens from depositor to this contract
-            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            let transfer_success = sage_token.transfer_from(caller, get_contract_address(), total_amount);
-            assert!(transfer_success, "Token transfer failed");
-
+            // CEI: Effects BEFORE external call
             let state = self.global_deposit_tree.read();
             let start_index = state.size;
 
@@ -1226,6 +1247,13 @@ pub mod PrivacyPools {
 
             self.total_deposits.write(self.total_deposits.read() + len.into());
 
+            // Interaction: External call AFTER all state updates
+            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
+            let transfer_success = sage_token.transfer_from(caller, get_contract_address(), total_amount);
+            assert!(transfer_success, "Token transfer failed");
+
+            self.reentrancy_locked.write(false);
+
             LeanIMTBatchResult {
                 new_root,
                 new_size: final_size,
@@ -1252,6 +1280,9 @@ pub mod PrivacyPools {
         fn pp_withdraw(ref self: ContractState, proof: PPWithdrawalProof) -> bool {
             self._require_not_paused();
             self._require_initialized();
+            assert!(!self.reentrancy_locked.read(), "Reentrant call");
+            self.reentrancy_locked.write(true);
+
             assert!(!self.nullifier_used.read(proof.nullifier), "Nullifier already used");
 
             let is_valid_global = verify_proof(@proof.global_tree_proof);
@@ -1284,16 +1315,19 @@ pub mod PrivacyPools {
                 compliance_level = 2;
             }
 
+            // CEI: All state updates BEFORE external call
             self.nullifier_used.write(proof.nullifier, true);
             self._insert_nullifier(proof.nullifier);
-
-            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            sage_token.transfer(proof.recipient, proof.amount);
-
             self.total_withdrawals.write(self.total_withdrawals.read() + 1);
             self.total_volume_withdrawn.write(
                 self.total_volume_withdrawn.read() + proof.amount
             );
+
+            // Interaction: External call AFTER all state updates
+            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
+            sage_token.transfer(proof.recipient, proof.amount);
+
+            self.reentrancy_locked.write(false);
 
             self.emit(PPWithdrawalExecuted {
                 nullifier: proof.nullifier,
@@ -1360,16 +1394,32 @@ pub mod PrivacyPools {
 
         fn complete_pp_ragequit(ref self: ContractState, request_id: u256) {
             self._require_not_paused();
+            assert!(!self.reentrancy_locked.read(), "Reentrant call");
+            self.reentrancy_locked.write(true);
 
             let mut request = self.ragequit_requests.read(request_id);
             assert!(request.status == PPRagequitStatus::Pending, "Invalid request status");
             assert!(get_block_timestamp() >= request.executable_at, "Delay not passed");
 
+            // CEI: All state updates BEFORE external call
             request.status = PPRagequitStatus::Completed;
             self.ragequit_requests.write(request_id, request);
 
+            // Invalidate the deposit to prevent double-extraction via pp_withdraw
+            self.deposit_exists.write(request.commitment, false);
+
+            // Mark a ragequit-specific nullifier as used to prevent replay
+            let ragequit_nullifier = PoseidonTrait::new()
+                .update(request.commitment)
+                .update('ragequit')
+                .finalize();
+            self.nullifier_used.write(ragequit_nullifier, true);
+
+            // Interaction: External call AFTER all state updates
             let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
             sage_token.transfer(request.recipient, request.amount);
+
+            self.reentrancy_locked.write(false);
 
             self.emit(PPRagequitCompleted {
                 request_id,
@@ -1394,6 +1444,10 @@ pub mod PrivacyPools {
 
             let set_info = self.association_set_info.read(new_inclusion_set_id);
             assert!(set_info.set_type == AssociationSetType::Inclusion, "Not an inclusion set");
+
+            // Only the ASP that owns this inclusion set can cancel a ragequit
+            let caller_asp_id = self.asp_by_address.read(get_caller_address());
+            assert!(caller_asp_id == set_info.asp_id, "Only set owner ASP can cancel");
 
             request.status = PPRagequitStatus::Cancelled;
             self.ragequit_requests.write(request_id, request);
@@ -1425,6 +1479,7 @@ pub mod PrivacyPools {
 
         fn set_ragequit_delay(ref self: ContractState, delay: u64) {
             self._only_owner();
+            assert!(delay >= 3600, "Minimum 1 hour delay");
             self.ragequit_delay.write(delay);
         }
 

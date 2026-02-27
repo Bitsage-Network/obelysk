@@ -372,7 +372,7 @@ function PrivacyPoolPageInner() {
       setAuditKey(newAuditKey);
       localStorage.setItem("bitsage_audit_key", JSON.stringify(newAuditKey));
     } catch (error) {
-      console.error("Failed to generate audit key:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: audit key generation error intentionally not logged
     } finally {
       setIsGeneratingAuditKey(false);
     }
@@ -438,7 +438,7 @@ function PrivacyPoolPageInner() {
       await refetchDeposits();
       await refreshPoolStats();
     } catch (error) {
-      console.error("Deposit failed:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: deposit error intentionally not logged
     }
   };
 
@@ -494,7 +494,7 @@ function PrivacyPoolPageInner() {
       await refetchDeposits();
       await refreshPoolStats();
     } catch (error) {
-      console.error("Withdraw failed:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: withdrawal error intentionally not logged
       setProofPhase("connecting");
       setProofPhaseProgress(0);
     }
@@ -519,7 +519,7 @@ function PrivacyPoolPageInner() {
         "which is not yet available. Please try again once the event indexer is deployed."
       );
     } catch (error) {
-      console.error("Ragequit initiation failed:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: ragequit error intentionally not logged
     } finally {
       setIsProcessing(false);
     }
@@ -546,7 +546,7 @@ function PrivacyPoolPageInner() {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Cancel failed";
       setCancelError(errorMessage);
-      console.error("Cancel ragequit error:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: cancel ragequit error intentionally not logged
     } finally {
       setIsProcessing(false);
     }
@@ -563,7 +563,7 @@ function PrivacyPoolPageInner() {
       setRagequitStatus("none");
       setRagequitCountdown(0);
     } catch (error) {
-      console.error("Ragequit execution failed:", error instanceof Error ? error.message : "unknown error");
+      // Privacy: ragequit execution error intentionally not logged
     } finally {
       setIsProcessing(false);
     }

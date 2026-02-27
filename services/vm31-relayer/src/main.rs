@@ -9,6 +9,7 @@ mod tree_sync_service;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::http::{header, HeaderValue};
 use axum::Router;
@@ -16,7 +17,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use stwo_ml::privacy::pool_client::PoolClientConfig;
 use stwo_ml::privacy::relayer::SncastVm31Backend;
@@ -75,11 +76,26 @@ async fn main() {
         "starting vm31-relayer with privacy hardening"
     );
 
-    // Build store with optional at-rest encryption + start eviction task
-    let store = Arc::new(store::InMemoryStore::with_encryption(
-        config.storage_key.as_ref(),
-    ));
+    // Build store with optional Redis write-through + at-rest encryption
+    let store = store::build_store(&config);
     store.spawn_eviction_task();
+
+    // Hydrate in-memory maps from Redis on startup (crash recovery)
+    #[cfg(feature = "redis")]
+    if config.redis_url.is_some() {
+        match store.load_from_redis().await {
+            Ok((batches, notes)) => {
+                if batches > 0 || notes > 0 {
+                    info!(batches, notes, "restored state from Redis (crash recovery)");
+                } else {
+                    info!("Redis connected, no prior state to restore");
+                }
+            }
+            Err(e) => {
+                warn!(error = %e, "failed to load from Redis, starting with empty state");
+            }
+        }
+    }
 
     if config.storage_key.is_some() {
         info!("note storage encryption enabled (VM31_STORAGE_KEY configured)");
@@ -136,7 +152,7 @@ async fn main() {
         verify_rpc_urls: vec![],
     };
 
-    // Build ProverService and spawn batch processor
+    // Build ProverService and spawn batch processor (keep handle for graceful shutdown)
     let prover = ProverService::new(
         backend,
         prover_pool_config,
@@ -144,7 +160,7 @@ async fn main() {
         config.chunk_size,
         bridge,
     );
-    tokio::spawn(async move {
+    let prover_handle = tokio::spawn(async move {
         prover.run(rx).await;
     });
 
@@ -245,6 +261,15 @@ async fn main() {
     .await
     .expect("server error");
 
+    // After HTTP server stops accepting new requests, wait for prover
+    // to finish processing any in-flight batches before exiting.
+    info!("HTTP server stopped, waiting for prover to finish in-flight batches");
+    match tokio::time::timeout(Duration::from_secs(300), prover_handle).await {
+        Ok(Ok(())) => info!("prover shut down cleanly"),
+        Ok(Err(e)) => error!(error = %e, "prover task panicked during shutdown"),
+        Err(_) => warn!("prover shutdown timed out after 300s, forcing exit"),
+    }
+
     info!("vm31-relayer shut down");
 }
 
@@ -271,12 +296,16 @@ async fn shutdown_signal(state: Arc<AppState>) {
         _ = terminate => info!("received SIGTERM, shutting down"),
     }
 
-    // Drain the batch queue before shutdown
+    // Drain the batch queue before shutdown.
+    // This sends remaining txs to the prover channel, which the prover
+    // will process before its channel closes and it exits.
     let pending = state.queue.pending_count().await;
     if pending > 0 {
         info!(pending, "draining batch queue before shutdown");
         if let Some(batch_id) = state.queue.force_flush().await {
             info!(batch_id = %batch_id, pending, "flushed pending transactions");
+        } else {
+            warn!(pending, "force_flush rejected (below min_batch_size), transactions will be lost on shutdown");
         }
     }
 }

@@ -111,7 +111,17 @@ const INITIAL_STATE: GaslessDepositState = {
   commitment: null,
 };
 
-const GASLESS_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+function resolveGaslessNetwork(): NetworkType {
+  const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
+  if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
+    throw new Error(
+      "[useGaslessPrivacyDeposit] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
+      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
+    );
+  }
+  return env;
+}
+const GASLESS_NETWORK: NetworkType = resolveGaslessNetwork();
 const PAYMASTER_NETWORK: "sepolia" | "mainnet" = GASLESS_NETWORK === "mainnet" ? "mainnet" : "sepolia";
 const RPC_URL = getRpcUrl(GASLESS_NETWORK);
 
@@ -323,7 +333,7 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
         const currentAllowance = BigInt(allowanceResult.toString());
         needsApproval = currentAllowance < amountWei;
       } catch (err) {
-        console.warn("Could not check allowance:", err instanceof Error ? err.message : "unknown error");
+        // Privacy: allowance check failure intentionally not logged
       }
 
       // Build calls
@@ -468,7 +478,7 @@ export function useGaslessPrivacyDeposit(): UseGaslessPrivacyDepositResult {
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Deposit failed";
-      console.error("Deposit error:", errorMessage);
+      // Privacy: deposit error intentionally not logged
 
       setState((prev) => ({
         ...prev,

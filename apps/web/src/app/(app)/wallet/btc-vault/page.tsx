@@ -555,8 +555,10 @@ export default function BtcVaultPage() {
 
   // Build asset options
   const assetOptions: BtcAssetOption[] = useMemo(() => {
-    const networkKey = (network || "sepolia") as keyof typeof EXTERNAL_TOKENS;
-    const tokens = EXTERNAL_TOKENS[networkKey] ?? EXTERNAL_TOKENS.sepolia;
+    if (!network) throw new Error("[BtcVault] Network not available from NetworkContext.");
+    const networkKey = network as keyof typeof EXTERNAL_TOKENS;
+    const tokens = EXTERNAL_TOKENS[networkKey];
+    if (!tokens) throw new Error(`[BtcVault] No token addresses for network "${network}".`);
     const liveAssets = new Set(["wBTC"]);
 
     return BTC_VAULT_ASSETS.map((symbol) => {

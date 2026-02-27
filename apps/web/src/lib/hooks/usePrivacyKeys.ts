@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useAccount, useSignTypedData } from "@starknet-react/core";
 import { shortString } from "starknet";
 import {
@@ -135,8 +135,14 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
   // KEK cache (in-memory only, cleared on page refresh)
   const [cachedKEK, setCachedKEK] = useState<CryptoKey | null>(null);
 
-  // Last decryption proofs for UI display
-  const [lastDecryptionProofs, setLastDecryptionProofs] = useState<DecryptedNote[] | null>(null);
+  // Rate limit key operations — prevent rapid re-invocations / signature flooding
+  const lastKeyOpAt = useRef<number>(0);
+  const KEY_OP_MIN_INTERVAL_MS = 3000;
+
+  // Decryption proofs stored in useRef to prevent exposure of shared secrets via React DevTools.
+  // A version counter triggers re-renders for consuming components.
+  const lastDecryptionProofsRef = useRef<DecryptedNote[] | null>(null);
+  const [proofsVersion, setProofsVersion] = useState(0);
 
   // Check if keys exist on mount
   useEffect(() => {
@@ -213,6 +219,11 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
   // Initialize keys (generate new keypair)
   const initializeKeys = useCallback(async () => {
     if (!address) throw new Error("Wallet not connected");
+    const now = Date.now();
+    if (now - lastKeyOpAt.current < KEY_OP_MIN_INTERVAL_MS) {
+      throw new Error("Key operation rate limited — wait a moment before retrying");
+    }
+    lastKeyOpAt.current = now;
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
@@ -240,6 +251,11 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
   // Unlock keys (load existing keypair)
   const unlockKeys = useCallback(async (forceSign: boolean = false): Promise<PrivacyKeyPair | null> => {
     if (!address) throw new Error("Wallet not connected");
+    const now = Date.now();
+    if (now - lastKeyOpAt.current < KEY_OP_MIN_INTERVAL_MS) {
+      throw new Error("Key operation rate limited — wait a moment before retrying");
+    }
+    lastKeyOpAt.current = now;
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
 
@@ -369,7 +385,8 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
       }
     }
 
-    setLastDecryptionProofs(decryptedNotes);
+    lastDecryptionProofsRef.current = decryptedNotes;
+    setProofsVersion((v) => v + 1);
     return decryptedNotes;
   }, [address, deriveKEKFromWallet]);
 
@@ -554,7 +571,7 @@ export function usePrivacyKeys(): UsePrivacyKeysReturn {
     // ElGamal decryption
     decryptNotesWithProof,
     revealWithDecryption,
-    lastDecryptionProofs,
+    lastDecryptionProofs: lastDecryptionProofsRef.current,
     clearAll,
     refreshState,
   };

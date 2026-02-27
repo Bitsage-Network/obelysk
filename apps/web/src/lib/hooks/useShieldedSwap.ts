@@ -325,7 +325,10 @@ export function useShieldedSwap(): UseShieldedSwapResult {
         const routerAddress =
           SHIELDED_SWAP_ROUTER[
             network as keyof typeof SHIELDED_SWAP_ROUTER
-          ] || SHIELDED_SWAP_ROUTER.sepolia;
+          ];
+        if (!routerAddress) {
+          throw new Error(`[useShieldedSwap] No SHIELDED_SWAP_ROUTER address for network "${network}".`);
+        }
 
         const sourcePool = getPrivacyPoolForToken(
           network as NetworkType,
@@ -675,14 +678,13 @@ export function useShieldedSwap(): UseShieldedSwapResult {
             spent: false,
             tokenSymbol: outputSymbol,
             encryptedAmount,
-            encryptionRandomness: encryptionRandomness.toString(),
+            // encryptionRandomness intentionally NOT persisted — combined with
+            // the public key it enables trivial ElGamal decryption (r + PK → m).
           };
           await saveNote(address, outputNote);
 
         } else {
-          console.warn(
-            "[ShieldedSwap] Tx submitted but not yet confirmed. Input note NOT marked spent."
-          );
+          // Privacy: swap confirmation status intentionally not logged
         }
 
         // ================================================================

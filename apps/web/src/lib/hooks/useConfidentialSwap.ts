@@ -70,10 +70,21 @@ export interface SwapOrder {
 }
 
 // Proof structures
+interface OrBranchProof {
+  nonceCommitment: ECPoint;
+  challenge: bigint;
+  response: bigint;
+}
+
+interface BitOrProof {
+  proof0: OrBranchProof;
+  proof1: OrBranchProof;
+}
+
 export interface RangeProof {
   bitCommitments: ECPoint[];
+  bitOrProofs: BitOrProof[];
   challenge: bigint;
-  responses: bigint[];
   numBits: number;
 }
 
@@ -446,13 +457,22 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
             data.push(c.x.toString());
             data.push(c.y.toString());
           }
-          // challenge
-          data.push(rp.challenge.toString());
-          // responses array: length + elements
-          data.push(rp.responses.length.toString());
-          for (const r of rp.responses) {
-            data.push(r.toString());
+          // OR-proofs array: length + per-bit (proof0, proof1)
+          data.push(rp.bitOrProofs.length.toString());
+          for (const orProof of rp.bitOrProofs) {
+            // proof0
+            data.push(orProof.proof0.nonceCommitment.x.toString());
+            data.push(orProof.proof0.nonceCommitment.y.toString());
+            data.push(orProof.proof0.challenge.toString());
+            data.push(orProof.proof0.response.toString());
+            // proof1
+            data.push(orProof.proof1.nonceCommitment.x.toString());
+            data.push(orProof.proof1.nonceCommitment.y.toString());
+            data.push(orProof.proof1.challenge.toString());
+            data.push(orProof.proof1.response.toString());
           }
+          // aggregate challenge
+          data.push(rp.challenge.toString());
           // numBits
           data.push(rp.numBits.toString());
           return data;

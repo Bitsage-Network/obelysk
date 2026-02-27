@@ -87,13 +87,38 @@ describe('CONTRACTS', () => {
     expect(CONTRACTS.sepolia.STEALTH_REGISTRY).toMatch(/^0x[0-9a-fA-F]+$/);
   });
 
-  it('all mainnet addresses are 0x0 (not yet deployed)', () => {
-    const mainnetContracts = CONTRACTS.mainnet;
-    for (const [name, address] of Object.entries(mainnetContracts)) {
-      expect(
-        address === '0x0',
-        `mainnet.${name} should be 0x0 (not yet deployed), got: ${address}`,
-      ).toBe(true);
+  it('deployed mainnet contracts are valid non-zero hex', () => {
+    const deployedContracts: ContractName[] = [
+      'SAGE_TOKEN',
+      'PRIVACY_ROUTER',
+      'CONFIDENTIAL_TRANSFER',
+      'SAGE_PRIVACY_POOL',
+      'ETH_PRIVACY_POOL',
+      'STRK_PRIVACY_POOL',
+      'WBTC_PRIVACY_POOL',
+      'USDC_PRIVACY_POOL',
+      'VM31_POOL',
+      'VM31_VERIFIER',
+      'VM31_BRIDGE',
+    ];
+    for (const name of deployedContracts) {
+      const addr = CONTRACTS.mainnet[name];
+      expect(isValidHex(addr), `mainnet.${name} should be valid hex`).toBe(true);
+      expect(addr, `mainnet.${name} should not be 0x0`).not.toBe('0x0');
+    }
+  });
+
+  it('undeployed mainnet contracts are 0x0', () => {
+    const undeployedContracts: ContractName[] = [
+      'STEALTH_REGISTRY',
+      'DARK_POOL',
+      'SHIELDED_SWAP_ROUTER',
+      'SESSION_MANAGER',
+      'STAKING',
+      'JOB_MANAGER',
+    ];
+    for (const name of undeployedContracts) {
+      expect(CONTRACTS.mainnet[name]).toBe('0x0');
     }
   });
 
@@ -127,9 +152,10 @@ describe('getContractAddress()', () => {
     expect(addr).toBe(CONTRACTS.devnet.SAGE_TOKEN);
   });
 
-  it('returns 0x0 for mainnet contracts (not yet deployed)', () => {
+  it('returns deployed address for mainnet SAGE_TOKEN', () => {
     const addr = getContractAddress('mainnet', 'SAGE_TOKEN');
-    expect(addr).toBe('0x0');
+    expect(isValidHex(addr)).toBe(true);
+    expect(addr).not.toBe('0x0');
   });
 });
 
@@ -218,9 +244,10 @@ describe('getTokenAddressForSymbol()', () => {
     expect(addr).toBe('0x0');
   });
 
-  it('returns 0x0 for SAGE on mainnet (not deployed)', () => {
+  it('returns deployed SAGE address on mainnet', () => {
     const addr = getTokenAddressForSymbol('mainnet', 'SAGE');
-    expect(addr).toBe('0x0');
+    expect(isValidHex(addr)).toBe(true);
+    expect(addr).not.toBe('0x0');
   });
 });
 
@@ -252,9 +279,10 @@ describe('PRIVACY_POOL_FOR_TOKEN', () => {
     expect(PRIVACY_POOL_FOR_TOKEN.sepolia.USDC).toBe(CONTRACTS.sepolia.USDC_PRIVACY_POOL);
   });
 
-  it('all mainnet pools are 0x0', () => {
+  it('all mainnet pools are deployed (non-zero)', () => {
     for (const [token, addr] of Object.entries(PRIVACY_POOL_FOR_TOKEN.mainnet)) {
-      expect(addr).toBe('0x0');
+      expect(isValidHex(addr), `mainnet pool for ${token} should be valid hex`).toBe(true);
+      expect(addr, `mainnet pool for ${token} should not be 0x0`).not.toBe('0x0');
     }
   });
 });
@@ -274,14 +302,16 @@ describe('getPrivacyPoolAddress()', () => {
     expect(addr).toBe('0x0');
   });
 
-  it('returns 0x0 for mainnet (not deployed)', () => {
+  it('returns deployed address for mainnet SAGE pool', () => {
     const addr = getPrivacyPoolAddress('mainnet', 'SAGE');
-    expect(addr).toBe('0x0');
+    expect(isValidHex(addr)).toBe(true);
+    expect(addr).not.toBe('0x0');
   });
 
-  it('returns 0x0 for unknown network', () => {
+  it('returns fallback for devnet (uses sepolia pools)', () => {
     const addr = getPrivacyPoolAddress('devnet' as NetworkType, 'SAGE');
-    expect(addr).toBe('0x0');
+    // devnet falls back to sepolia which has deployed pools
+    expect(isValidHex(addr)).toBe(true);
   });
 });
 

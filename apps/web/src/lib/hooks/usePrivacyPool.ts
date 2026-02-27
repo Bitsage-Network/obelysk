@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useAccount, useContract } from "@starknet-react/core";
 import { Contract, CallData, uint256, hash, RpcProvider, events, cairo } from "starknet";
 
@@ -161,11 +161,25 @@ const PRIVACY_POOLS_ABI = [
 const SAGE_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_SAGE_TOKEN_ADDRESS || "0x0") as `0x${string}`;
 const PRIVACY_POOLS_ADDRESS = (process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS || "0x0") as `0x${string}`;
 
+// Resolve network from env — NEVER silently fall back to sepolia.
+// If NEXT_PUBLIC_STARKNET_NETWORK is unset the caller must supply a network
+// via the NetworkContext (useNetwork hook) which detects the wallet chain.
+function resolveNetworkStrict(): NetworkType {
+  const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
+  if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
+    throw new Error(
+      "[usePrivacyPool] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
+      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
+    );
+  }
+  return env;
+}
+
 // RPC URL for fetching transaction receipts
-const RPC_URL = getRpcUrl((process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia");
+const RPC_URL = getRpcUrl(resolveNetworkStrict());
 
 // Network for pool address lookups
-const DEFAULT_NETWORK: NetworkType = (process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType) || "sepolia";
+const DEFAULT_NETWORK: NetworkType = resolveNetworkStrict();
 
 // Per-network hardcoded pool addresses — bypass all lookup machinery.
 const HARDCODED_POOLS_BY_NETWORK: Record<string, Record<string, string>> = {
@@ -202,9 +216,16 @@ const HARDCODED_TOKENS_BY_NETWORK: Record<string, Record<string, string>> = {
   },
 };
 
-// Resolve for current network
-const HARDCODED_POOLS = HARDCODED_POOLS_BY_NETWORK[DEFAULT_NETWORK] || HARDCODED_POOLS_BY_NETWORK.sepolia;
-const HARDCODED_TOKENS = HARDCODED_TOKENS_BY_NETWORK[DEFAULT_NETWORK] || HARDCODED_TOKENS_BY_NETWORK.sepolia;
+// Resolve for current network — never silently fall back to sepolia
+const HARDCODED_POOLS = HARDCODED_POOLS_BY_NETWORK[DEFAULT_NETWORK];
+const HARDCODED_TOKENS = HARDCODED_TOKENS_BY_NETWORK[DEFAULT_NETWORK];
+
+if (!HARDCODED_POOLS || !HARDCODED_TOKENS) {
+  throw new Error(
+    `[usePrivacyPool] No hardcoded pool/token addresses for network "${DEFAULT_NETWORK}". ` +
+    `Add entries to HARDCODED_POOLS_BY_NETWORK / HARDCODED_TOKENS_BY_NETWORK.`
+  );
+}
 
 // PPDepositExecuted event selector (keccak hash of event name)
 const PP_DEPOSIT_EVENT_KEY = hash.getSelectorFromName("PPDepositExecuted");
@@ -231,7 +252,7 @@ async function fetchLeafIndexFromReceipt(
     // Check finality_status for newer starknet.js versions
     const finality = "finality_status" in receipt ? receipt.finality_status : undefined;
     if (finality !== "ACCEPTED_ON_L2" && finality !== "ACCEPTED_ON_L1") {
-      console.warn("Transaction not yet accepted:", finality);
+      // Transaction not yet accepted — skip silently (privacy: no log output)
       return null;
     }
 
@@ -256,10 +277,10 @@ async function fetchLeafIndexFromReceipt(
       }
     }
 
-    console.warn("PPDepositExecuted event not found in receipt");
+    // PPDepositExecuted event not found — skip silently (privacy: no log output)
     return null;
   } catch (error) {
-    console.error("Failed to fetch leafIndex from receipt:", error instanceof Error ? error.message : "Unknown error");
+    // Failed to fetch leafIndex — silently return null (privacy: no log output)
     return null;
   }
 }
@@ -368,8 +389,9 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
   } = usePrivacyKeys();
 
   // Local key state - keys must be unlocked to use
+  // Private key stored in useRef (not useState) to prevent exposure via React DevTools
   const [publicKey, setPublicKey] = useState<ECPoint | null>(null);
-  const [privateKey, setPrivateKey] = useState<bigint | null>(null);
+  const privateKeyRef = useRef<bigint | null>(null);
   const [isKeysDerived, setIsKeysDerived] = useState(false);
 
   // Contracts
@@ -436,16 +458,16 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
       if (keyPair) {
         setPublicKey(keyPair.publicKey);
-        setPrivateKey(keyPair.privateKey);
+        privateKeyRef.current = keyPair.privateKey;
         setIsKeysDerived(true);
       } else {
         throw new Error("Failed to unlock keys - no keypair returned");
       }
     } catch (error) {
-      console.error("Failed to derive privacy keys:", error instanceof Error ? error.message : "Unknown error");
+      // Privacy key derivation failed — silently update state (privacy: no log output)
       setIsKeysDerived(false);
       setPublicKey(null);
-      setPrivateKey(null);
+      privateKeyRef.current = null;
       throw error;
     }
   }, [hasKeys, initializeKeys, unlockKeys]);
@@ -478,7 +500,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
             globalRoot: root?.toString() || "0x0",
           };
         } catch (e) {
-          console.warn("Failed to fetch on-chain stats:", e instanceof Error ? e.message : "Unknown error");
+          // On-chain stats fetch failed — silently skip (privacy: no log output)
         }
       }
 
@@ -488,7 +510,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         yourNotes: notes,
       });
     } catch (error) {
-      console.error("Failed to refresh pool stats:", error instanceof Error ? error.message : "Unknown error");
+      // Pool stats refresh failed — silently skip (privacy: no log output)
     }
   }, [address, privacyPoolsContract]);
 
@@ -506,8 +528,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
       const assetId = ASSET_ID_FOR_TOKEN[tokenSymbol] || "0x0";
       const decimals = TOKEN_METADATA[tokenSymbol as keyof typeof TOKEN_METADATA]?.decimals ?? 18;
 
-      // DEBUG: visible in browser console
-      console.log(`[PrivacyPool] v2 deposit: token=${tokenSymbol}, pool=${poolAddress}, tokenAddr=${tokenAddress}`);
+      // Privacy: pool address and token details intentionally not logged
 
       if (poolAddress === "0x0") {
         throw new Error(`Privacy pool not deployed for ${tokenSymbol} on ${DEFAULT_NETWORK}`);
@@ -518,7 +539,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
       // Get keys - unlock if needed
       let currentPublicKey = publicKey;
-      let currentPrivateKey = privateKey;
+      let currentPrivateKey = privateKeyRef.current;
 
       if (!currentPublicKey || !currentPrivateKey) {
         // Initialize keys if they don't exist
@@ -537,7 +558,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         // Update local state
         setPublicKey(currentPublicKey);
-        setPrivateKey(currentPrivateKey);
+        privateKeyRef.current = currentPrivateKey;
         setIsKeysDerived(true);
       }
 
@@ -636,7 +657,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
           needsApproval = currentAllowance < amountWei;
 
         } catch (err) {
-          console.warn("Could not check allowance, will include approve:", err instanceof Error ? err.message : "Unknown error");
+          // Allowance check failed — silently fall back to include approval (privacy: no log output)
           needsApproval = true;
         }
 
@@ -776,7 +797,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
             await refreshStats();
           }
         } catch (err) {
-          console.warn("[PrivacyPool] Error fetching leafIndex:", err instanceof Error ? err.message : err);
+          // leafIndex fetch error — silently skip (privacy: no log output)
         }
 
         // Invalidate local Merkle tree cache so next withdrawal picks up this deposit
@@ -786,7 +807,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         return txHash;
 
       } catch (error) {
-        console.error("Deposit failed:", error instanceof Error ? error.message : "Unknown error");
+        // Deposit failed — error surfaced via state (privacy: no log output)
         const errorMessage = error instanceof Error ? error.message : "Deposit failed";
         setDepositState({
           phase: "error",
@@ -802,7 +823,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         throw error;
       }
     },
-    [account, address, publicKey, privateKey, hasKeys, initializeKeys, unlockKeys, refreshStats]
+    [account, address, publicKey, hasKeys, initializeKeys, unlockKeys, refreshStats]
   );
 
   // Withdraw operation
@@ -822,7 +843,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
       }
 
       // Get keys - unlock if needed
-      let currentPrivateKey = privateKey;
+      let currentPrivateKey = privateKeyRef.current;
 
       if (!currentPrivateKey) {
         if (!hasKeys) {
@@ -838,7 +859,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         // Update local state
         setPublicKey(keyPair.publicKey);
-        setPrivateKey(currentPrivateKey);
+        privateKeyRef.current = currentPrivateKey;
         setIsKeysDerived(true);
       }
 
@@ -1006,7 +1027,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
 
         return txHash;
       } catch (error) {
-        console.error("Withdrawal failed:", error instanceof Error ? error.message : "Unknown error");
+        // Withdrawal failed — error surfaced via state (privacy: no log output)
         const errorMessage = error instanceof Error ? error.message : "Withdrawal failed";
         setWithdrawState({
           isWithdrawing: false,
@@ -1018,7 +1039,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         throw error;
       }
     },
-    [account, address, privateKey, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats, network]
+    [account, address, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats, network]
   );
 
   // Auto-refresh on mount
