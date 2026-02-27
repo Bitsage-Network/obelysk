@@ -176,29 +176,31 @@ export function useGardenBridge(network: GardenNetwork) {
           requiredConfirmations: 0,
         });
 
-        // Store stealth key data in IndexedDB for later claiming
+        // Only store non-sensitive metadata (order correlation).
+        // Stealth private key material (ephemeralPK, sharedSecretHash, stealthPK)
+        // is NOT persisted to avoid XSS exfiltration. The auto-continue useEffect
+        // handles VM31 deposit when the bridge completes within the same session.
         if (stealthData) {
           try {
-            const stealthRecord = {
+            const stealthRef = {
               orderId: gardenOrder.order_id,
-              ephemeralPK: {
-                x: stealthData.ephemeralPublicKey.x.toString(),
-                y: stealthData.ephemeralPublicKey.y.toString(),
-              },
-              sharedSecretHash: stealthData.sharedSecretHash.toString(),
-              stealthPK: {
-                x: stealthData.stealthPublicKey.x.toString(),
-                y: stealthData.stealthPublicKey.y.toString(),
-              },
               createdAt: Date.now(),
+              // Only a blinded commitment hint — not the actual secret
+              hint: stealthData.sharedSecretHash.toString().slice(0, 8),
             };
-            // Store in localStorage as IndexedDB may not be available in all contexts
-            const existing = JSON.parse(localStorage.getItem("obelysk_stealth_keys") || "[]");
-            existing.push(stealthRecord);
-            localStorage.setItem("obelysk_stealth_keys", JSON.stringify(existing));
+            let existing: unknown[];
+            try {
+              const raw = JSON.parse(localStorage.getItem("obelysk_stealth_refs") || "[]");
+              existing = Array.isArray(raw) ? raw : [];
+            } catch {
+              existing = []; // Corrupted storage — silently reset
+            }
+            // Keep at most 20 entries to bound storage
+            if (existing.length >= 20) existing.shift();
+            existing.push(stealthRef);
+            localStorage.setItem("obelysk_stealth_refs", JSON.stringify(existing));
           } catch {
-            // Non-fatal — stealth data storage failure doesn't block the bridge
-            // Stealth key persistence failed — non-fatal
+            // Non-fatal — ref storage failure doesn't block the bridge
           }
         }
 

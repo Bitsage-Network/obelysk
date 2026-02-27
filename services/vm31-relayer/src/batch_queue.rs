@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use rand::seq::SliceRandom;
 use rand::thread_rng;
 use tokio::sync::{mpsc, Mutex};
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use stwo_ml::privacy::tx_builder::PendingTx;
@@ -95,13 +95,17 @@ impl BatchQueue {
             let mut txs: Vec<PendingTx> = pending.drain(..).map(|q| q.tx).collect();
             Self::shuffle_txs(&mut txs);
             info!(batch_id = %batch_id, tx_count = txs.len(), "batch queue size-triggered flush (shuffled)");
-            let _ = self
+            if self
                 .trigger_tx
                 .send(ReadyBatch {
                     batch_id: batch_id.clone(),
                     transactions: txs,
                 })
-                .await;
+                .await
+                .is_err()
+            {
+                error!(batch_id = %batch_id, "batch channel closed: size-triggered batch dropped");
+            }
             return (Some(batch_id), 0);
         }
         (None, len)
@@ -112,24 +116,40 @@ impl BatchQueue {
         self.pending.lock().await.len()
     }
 
-    /// Forcibly flushes the queue regardless of size or min_batch_size.
-    /// Returns `None` if the queue is empty.
+    /// Forcibly flushes the queue. Enforces min_batch_size to prevent
+    /// single-tx batches that defeat mixing privacy.
+    /// Returns `None` if the queue is empty or below min_batch_size.
     pub async fn force_flush(&self) -> Option<String> {
         let mut pending = self.pending.lock().await;
         if pending.is_empty() {
+            return None;
+        }
+        // Enforce min_batch_size even for force flushes — a 1-tx batch
+        // provides zero anonymity set, defeating the privacy guarantee.
+        if pending.len() < self.min_batch_size {
+            info!(
+                pending = pending.len(),
+                min = self.min_batch_size,
+                "force_flush rejected: below min_batch_size"
+            );
             return None;
         }
         let batch_id = Uuid::new_v4().to_string();
         let mut txs: Vec<PendingTx> = pending.drain(..).map(|q| q.tx).collect();
         Self::shuffle_txs(&mut txs);
         info!(batch_id = %batch_id, tx_count = txs.len(), "batch queue force-flushed (shuffled)");
-        let _ = self
+        if self
             .trigger_tx
             .send(ReadyBatch {
                 batch_id: batch_id.clone(),
                 transactions: txs,
             })
-            .await;
+            .await
+            .is_err()
+        {
+            error!(batch_id = %batch_id, "batch channel closed: force-flushed batch dropped");
+            return None;
+        }
         Some(batch_id)
     }
 

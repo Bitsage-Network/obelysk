@@ -201,11 +201,13 @@ pub fn derive_stealth_spending_key(
     let shared_secret_point = ec_mul(viewing_key, ephemeral_pubkey);
 
     // Derive stealth spending key
-    // sk_stealth = sk_spend + H(S)
+    // sk_stealth = sk_spend + H(S)  (mod N, curve order)
     let shared_secret_scalar = hash_point_to_scalar(shared_secret_point);
 
-    // Modular addition (simplified - in production use proper field arithmetic)
-    spending_key + shared_secret_scalar
+    // CRITICAL: Must use mod N (curve order), NOT felt252 mod P (field prime).
+    // Raw felt252 + wraps mod P which differs from N by ~2^192. If the sum
+    // exceeds N but stays below P, the derived key is invalid for EC operations.
+    add_mod_n(spending_key, shared_secret_scalar)
 }
 
 /// Verify that a stealth address matches expected derivation (PUBLIC verification)

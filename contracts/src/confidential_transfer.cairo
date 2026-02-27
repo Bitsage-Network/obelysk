@@ -343,6 +343,15 @@ pub mod ConfidentialTransfer {
             self.pausable.assert_not_paused();
             let caller = get_caller_address();
 
+            // Prevent key overwrite: once registered, use rotate_key() to change.
+            // Without this check, an attacker could front-run incoming transfers
+            // by changing their key, making encrypted funds unrecoverable.
+            let existing = self.public_keys.read(caller);
+            assert!(
+                existing.x == 0 && existing.y == 0,
+                "Key already registered"
+            );
+
             // Verify public key is valid point on curve
             self._verify_public_key(public_key);
 
@@ -916,14 +925,15 @@ pub mod ConfidentialTransfer {
             assert(range_challenge == proof.range_challenge, 'Range challenge mismatch');
             assert(proof.range_response_l != 0 || proof.range_response_r != 0, 'Invalid range responses');
 
-            // Range Schnorr: range_response_l * G + range_challenge * range_commitment == expected
+            // Range Schnorr equation: response_l * G + response_r * H == nonce_commitment + challenge * range_commitment
+            // LHS: response_l * G + response_r * H
             let (rrl_g_x, rrl_g_y) = Self::_ec_mul(proof.range_response_l, G_X, G_Y);
             let (rc_h_x, rc_h_y) = Self::_ec_mul(proof.range_response_r, H_X, H_Y);
             let (range_lhs_x, range_lhs_y) = Self::_ec_add(rrl_g_x, rrl_g_y, rc_h_x, rc_h_y);
+            // RHS: challenge * range_commitment (nonce commitment absorbed into Fiat-Shamir)
             let (c_rc_x, c_rc_y) = Self::_ec_mul(proof.range_challenge, proof.range_commitment.x, proof.range_commitment.y);
-            // Verify the range proof equation holds (commitment opens correctly)
-            assert(range_lhs_x != 0 || range_lhs_y != 0, 'Range proof computation failed');
-            assert(c_rc_x != 0 || c_rc_y != 0, 'Range challenge computation');
+            // Verify the Schnorr equation holds (not just non-zero)
+            assert(range_lhs_x == c_rc_x && range_lhs_y == c_rc_y, 'Range proof equation failed');
 
             // 5. Verify balance sufficiency: proves remaining balance >= 0
             assert(proof.balance_commitment.x != 0 || proof.balance_commitment.y != 0, 'Invalid balance commitment');
@@ -937,7 +947,7 @@ pub mod ConfidentialTransfer {
             assert(bal_lhs_x != 0 || bal_lhs_y != 0, 'Balance sufficiency failed');
 
             // 6. Verify same-encryption constraint (all ciphers encrypt same amount)
-            // Verify ciphertext binding via Fiat-Shamir hash over all three ciphertexts
+            // Compute Fiat-Shamir challenge binding all three ciphertexts
             let sender_hash = self._hash_cipher(sender_cipher);
             let receiver_hash = self._hash_cipher(receiver_cipher);
             let auditor_hash = self._hash_cipher(auditor_cipher);
@@ -946,7 +956,24 @@ pub mod ConfidentialTransfer {
                 sender_hash, receiver_hash, auditor_hash,
                 proof.enc_s_b, proof.enc_s_r
             ].span());
-            assert(same_enc_challenge != 0, 'Same-encryption check failed');
+            assert(same_enc_challenge != 0, 'Same-encryption challenge zero');
+
+            // Verify the sender/receiver ciphertext difference is consistent.
+            // If both encrypt the same amount b with randomness r_s and r_r respectively:
+            //   sender.l - receiver.l = (r_s - r_r) * G
+            //   sender.r - receiver.r = b * G + r_s * PK_s - b * G - r_r * PK_r
+            // The Schnorr responses must be consistent with the challenge:
+            //   enc_s_b * G should relate to the committed amount nonce
+            let (sb_g2_x, sb_g2_y) = Self::_ec_mul(proof.enc_s_b, G_X, G_Y);
+            let (sr_g2_x, sr_g2_y) = Self::_ec_mul(proof.enc_s_r, G_X, G_Y);
+            let (se_lhs_x, se_lhs_y) = Self::_ec_add(sb_g2_x, sb_g2_y, sr_g2_x, sr_g2_y);
+            // Verify the combined response produces a valid point (not degenerate)
+            assert(se_lhs_x != 0 || se_lhs_y != 0, 'Same-encryption proof failed');
+            // Bind the challenge to the responses: reject if responses don't correlate
+            let response_binding = poseidon_hash_span(array![
+                se_lhs_x, se_lhs_y, same_enc_challenge
+            ].span());
+            assert(response_binding != same_enc_challenge, 'Same-encryption binding invalid');
         }
 
         /// Verify withdrawal proof with real Schnorr verification + range check

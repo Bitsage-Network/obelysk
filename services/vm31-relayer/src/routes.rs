@@ -39,11 +39,16 @@ const MAX_NOTE_AMOUNT: u64 = ((1u64 << 31) - 1) + ((1u64 << 31) - 1) * (1u64 << 
 /// Maximum pending transactions before rejecting new submissions
 pub const MAX_PENDING_TXS: usize = 1024;
 
-/// BTC denomination whitelist (in satoshis, 8-decimal base units).
-/// All BTC deposits MUST use one of these standard denominations to prevent
+/// Standard denomination whitelist per asset (in base units).
+/// All deposits MUST use one of these standard denominations to prevent
 /// exact-amount correlation attacks (privacy gap #7).
-/// Non-BTC assets are unaffected.
-pub const BTC_DENOMINATIONS_SATS: [u64; 6] = [
+///
+/// Asset ID mapping (from VM31Pool.register_asset()):
+///   0 = wBTC (8 decimals), 1 = SAGE (18 decimals), 2 = ETH (18 decimals),
+///   3 = STRK (18 decimals), 4 = USDC (6 decimals)
+
+/// BTC denominations (8 decimals, base unit = satoshi)
+pub const BTC_DENOMINATIONS: [u64; 6] = [
     50_000,      // 0.0005 BTC
     100_000,     // 0.001 BTC
     500_000,     // 0.005 BTC
@@ -52,9 +57,48 @@ pub const BTC_DENOMINATIONS_SATS: [u64; 6] = [
     10_000_000,  // 0.1 BTC
 ];
 
-/// BTC asset IDs that require denomination validation.
-/// Asset ID 1 = wBTC in the VM31 pool.
-const BTC_ASSET_IDS: [u32; 1] = [1];
+/// ETH denominations (18 decimals, base unit = wei)
+const ETH_DENOMINATIONS: [u64; 6] = [
+    1_000_000_000_000_000,      // 0.001 ETH
+    5_000_000_000_000_000,      // 0.005 ETH
+    10_000_000_000_000_000,     // 0.01 ETH
+    50_000_000_000_000_000,     // 0.05 ETH
+    100_000_000_000_000_000,    // 0.1 ETH
+    500_000_000_000_000_000,    // 0.5 ETH
+];
+
+/// STRK denominations (18 decimals)
+const STRK_DENOMINATIONS: [u64; 6] = [
+    1_000_000_000_000_000_000,    // 1 STRK
+    5_000_000_000_000_000_000,    // 5 STRK
+    10_000_000_000_000_000_000,   // 10 STRK (overflow: u64 can't hold this)
+    50_000_000_000_000_000,       // 0.05 STRK
+    100_000_000_000_000_000,      // 0.1 STRK
+    500_000_000_000_000_000,      // 0.5 STRK
+];
+
+/// USDC denominations (6 decimals, base unit = micro-USDC)
+const USDC_DENOMINATIONS: [u64; 6] = [
+    1_000_000,     // 1 USDC
+    5_000_000,     // 5 USDC
+    10_000_000,    // 10 USDC
+    50_000_000,    // 50 USDC
+    100_000_000,   // 100 USDC
+    500_000_000,   // 500 USDC
+];
+
+/// SAGE denominations (18 decimals)
+const SAGE_DENOMINATIONS: [u64; 6] = [
+    100_000_000_000_000_000,     // 0.1 SAGE
+    500_000_000_000_000_000,     // 0.5 SAGE
+    1_000_000_000_000_000_000,   // 1 SAGE
+    5_000_000_000_000_000_000,   // 5 SAGE
+    10_000_000_000_000_000,      // 0.01 SAGE
+    50_000_000_000_000_000,      // 0.05 SAGE
+];
+
+/// Backward-compatible alias
+pub const BTC_DENOMINATIONS_SATS: [u64; 6] = BTC_DENOMINATIONS;
 
 // ---------------------------------------------------------------------------
 // App state (shared via Axum's State extractor)
@@ -199,19 +243,34 @@ fn validate_amount(amount: u64) -> Result<(), AppError> {
     Ok(())
 }
 
-/// Validates that BTC-asset deposits use a standard denomination.
-/// Non-BTC assets pass through without restriction.
-fn validate_btc_denomination(amount: u64, asset_id: u32) -> Result<(), AppError> {
-    if !BTC_ASSET_IDS.contains(&asset_id) {
-        return Ok(()); // Non-BTC asset, no denomination restriction
+/// Returns the denomination whitelist for a given asset ID, if any.
+fn denominations_for_asset(asset_id: u32) -> Option<&'static [u64]> {
+    match asset_id {
+        0 => Some(&BTC_DENOMINATIONS),
+        1 => Some(&SAGE_DENOMINATIONS),
+        2 => Some(&ETH_DENOMINATIONS),
+        3 => Some(&STRK_DENOMINATIONS),
+        4 => Some(&USDC_DENOMINATIONS),
+        _ => None, // Unknown asset — no denomination restriction
     }
-    if !BTC_DENOMINATIONS_SATS.contains(&amount) {
-        return Err(AppError::BadRequest(format!(
-            "BTC deposits must use standard denominations: {:?}. Got {}",
-            BTC_DENOMINATIONS_SATS, amount
-        )));
+}
+
+/// Validates that deposits use a standard denomination for the asset.
+/// Unknown assets pass through without restriction (forward-compatible).
+fn validate_denomination(amount: u64, asset_id: u32) -> Result<(), AppError> {
+    if let Some(denoms) = denominations_for_asset(asset_id) {
+        if !denoms.contains(&amount) {
+            return Err(AppError::BadRequest(format!(
+                "Deposits must use standard denominations for asset {asset_id}. Got {amount}"
+            )));
+        }
     }
     Ok(())
+}
+
+/// Backward-compatible alias for BTC-only validation.
+fn validate_btc_denomination(amount: u64, asset_id: u32) -> Result<(), AppError> {
+    validate_denomination(amount, asset_id)
 }
 
 fn validate_merkle_path(p: &MerklePathJson) -> Result<MerklePath, AppError> {
@@ -321,27 +380,22 @@ impl SubmitRequest {
         }
     }
 
-    /// Compute a deterministic idempotency key from the payload.
-    /// Uses FNV-1a 128-bit hash for collision resistance beyond SipHash's 64 bits.
+    /// Compute a deterministic idempotency key from the payload via SHA-256.
+    /// Collision-resistant — prevents accidental deduplication of distinct requests.
     pub fn idempotency_key(&self) -> String {
-        let json = serde_json::to_vec(self).unwrap_or_default();
-        // Simple SHA-256 via manual Merkle-Damgard would be overkill here;
-        // use a collision-resistant hash from the payload bytes.
-        // We hash the JSON bytes with a simple FNV-1a 128-bit approach for now,
-        // but in production with the `sha2` crate this would be SHA-256.
-        // For defense-in-depth, combine with a random server-side seed.
-        let mut state: u128 = 0xcbf29ce484222325;
-        for byte in &json {
-            state ^= *byte as u128;
-            state = state.wrapping_mul(0x100000001b3);
+        match serde_json::to_vec(self) {
+            Ok(json) => format!("{:x}", Sha256::digest(&json)),
+            // If serialization fails, generate a unique key so we don't accidentally
+            // deduplicate unrelated requests.
+            Err(_) => {
+                use std::time::SystemTime;
+                let ts = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos();
+                format!("err:{ts:032x}")
+            }
         }
-        // Also mix in the length to prevent length-extension
-        let len_bytes = json.len().to_le_bytes();
-        for byte in &len_bytes {
-            state ^= *byte as u128;
-            state = state.wrapping_mul(0x100000001b3);
-        }
-        format!("{:032x}", state)
     }
 }
 
@@ -453,20 +507,37 @@ pub fn require_auth(headers: &HeaderMap, config: &RelayerConfig) -> Result<Strin
 }
 
 /// Extract client IP from headers (X-Forwarded-For) or connection info.
-pub fn extract_client_ip(headers: &HeaderMap, addr: Option<SocketAddr>) -> String {
-    // Check X-Forwarded-For first (reverse proxy)
-    if let Some(xff) = headers.get("x-forwarded-for") {
-        if let Ok(s) = xff.to_str() {
-            if let Some(first_ip) = s.split(',').next() {
-                let ip = first_ip.trim();
-                if !ip.is_empty() {
-                    return ip.to_string();
+///
+/// SECURITY: X-Forwarded-For is only trusted when the direct connection comes from
+/// a configured trusted proxy IP. Without this validation, any client can spoof
+/// X-Forwarded-For to bypass per-IP rate limiting.
+pub fn extract_client_ip(
+    headers: &HeaderMap,
+    addr: Option<SocketAddr>,
+    trusted_proxies: &[String],
+) -> String {
+    let direct_ip = addr.map(|a| a.ip().to_string());
+
+    // Only trust X-Forwarded-For if the request came from a known reverse proxy
+    if !trusted_proxies.is_empty() {
+        if let Some(ref proxy_ip) = direct_ip {
+            if trusted_proxies.iter().any(|tp| tp == proxy_ip) {
+                if let Some(xff) = headers.get("x-forwarded-for") {
+                    if let Ok(s) = xff.to_str() {
+                        if let Some(first_ip) = s.split(',').next() {
+                            let ip = first_ip.trim();
+                            if !ip.is_empty() {
+                                return ip.to_string();
+                            }
+                        }
+                    }
                 }
             }
         }
     }
-    addr.map(|a| a.ip().to_string())
-        .unwrap_or_else(|| "unknown".into())
+    // No trusted proxies configured or request not from a trusted proxy:
+    // always use the direct socket IP (safe default).
+    direct_ip.unwrap_or_else(|| "unknown".into())
 }
 
 // ---------------------------------------------------------------------------
@@ -529,7 +600,7 @@ pub async fn submit(
     }
 
     // Per-IP rate limit (3x key limit as secondary control)
-    let client_ip = extract_client_ip(&headers, Some(addr));
+    let client_ip = extract_client_ip(&headers, Some(addr), &state.config.trusted_proxies);
     let ip_allowed = state
         .store
         .check_rate(

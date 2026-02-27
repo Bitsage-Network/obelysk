@@ -27,10 +27,19 @@ let noteEncryptionKey: CryptoKey | null = null;
 /**
  * Set the note encryption key (derived from KEK) for at-rest note encryption.
  * Called when privacy keys are unlocked.
+ *
+ * On first unlock, migrates any plaintext notes to encrypted storage.
+ * Also flushes any notes that were queued while the KEK was unavailable.
  */
 export async function setNoteEncryptionKey(kek: CryptoKey): Promise<void> {
   // Use the KEK directly for note encryption — it's already AES-GCM 256
   noteEncryptionKey = kek;
+
+  // Migrate plaintext notes to encrypted storage
+  await _migratePlaintextNotes();
+
+  // Flush any queued notes that were waiting for KEK
+  await _flushPendingNoteQueue();
 }
 
 /**
@@ -38,6 +47,79 @@ export async function setNoteEncryptionKey(kek: CryptoKey): Promise<void> {
  */
 export function clearNoteEncryptionKey(): void {
   noteEncryptionKey = null;
+}
+
+// Queue for notes submitted before KEK is available.
+// These are held in memory (never written plaintext to IndexedDB)
+// and flushed to encrypted storage once the KEK is set.
+const pendingNoteQueue: Array<{ address: string; note: PrivacyNote }> = [];
+
+/** Queue a note for later encrypted persistence. */
+function queueNoteSave(address: string, note: PrivacyNote): void {
+  pendingNoteQueue.push({ address, note });
+}
+
+/** Flush all queued notes to encrypted IndexedDB storage. */
+async function _flushPendingNoteQueue(): Promise<void> {
+  if (!noteEncryptionKey) return;
+  while (pendingNoteQueue.length > 0) {
+    const entry = pendingNoteQueue.shift()!;
+    // saveNote will now use the encryption key since it's set
+    await saveNote(entry.address, entry.note);
+  }
+}
+
+/**
+ * Migrate any plaintext note records in IndexedDB to encrypted storage.
+ * Runs once when KEK becomes available. Plaintext records are identified
+ * by the absence of the `encrypted` flag.
+ */
+async function _migratePlaintextNotes(): Promise<void> {
+  if (!noteEncryptionKey) return;
+
+  const db = await openDB();
+  const tx = db.transaction(NOTE_STORE_NAME, "readwrite");
+  const store = tx.objectStore(NOTE_STORE_NAME);
+
+  const allRecords = await new Promise<any[]>((resolve, reject) => {
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+
+  for (const rec of allRecords) {
+    // Skip already-encrypted records
+    if (rec.encrypted) continue;
+
+    // This is a plaintext record — encrypt it in place
+    const { address, ...noteData } = rec;
+    if (!address || !noteData.commitment) continue;
+
+    try {
+      const { ciphertext, iv } = await encryptNotePayload(noteData as PrivacyNote);
+      const encryptedRecord = {
+        commitment: noteData.commitment,
+        address,
+        spent: noteData.spent ?? false,
+        encryptedPayload: ciphertext,
+        payloadIv: iv,
+        encrypted: true,
+      };
+
+      // Overwrite the plaintext record with the encrypted version
+      // Use a fresh transaction since the previous one may have auto-committed
+      const writeTx = db.transaction(NOTE_STORE_NAME, "readwrite");
+      const writeStore = writeTx.objectStore(NOTE_STORE_NAME);
+      await new Promise<void>((resolve, reject) => {
+        const request = writeStore.put(encryptedRecord);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } catch {
+      // Skip records that fail to migrate — they'll be picked up next unlock
+      continue;
+    }
+  }
 }
 
 /** Encrypt a JSON payload with the note encryption key. */
@@ -362,30 +444,32 @@ interface StoredNote extends PrivacyNote {
 }
 
 // Save a privacy note (encrypted at rest when KEK is available)
+// If no KEK is set, the note is queued in memory and flushed when KEK becomes available.
+// Notes are NEVER written to IndexedDB in plaintext.
 export async function saveNote(
   address: string,
   note: PrivacyNote
 ): Promise<void> {
+  if (!noteEncryptionKey) {
+    // Queue in memory — never persist plaintext to IndexedDB
+    queueNoteSave(address, note);
+    return;
+  }
+
   const db = await openDB();
   const tx = db.transaction(NOTE_STORE_NAME, "readwrite");
   const store = tx.objectStore(NOTE_STORE_NAME);
 
-  let record: object;
-  if (noteEncryptionKey) {
-    // Encrypt sensitive note data; keep index fields plaintext for queries
-    const { ciphertext, iv } = await encryptNotePayload(note);
-    record = {
-      commitment: note.commitment,
-      address,
-      spent: note.spent,
-      encryptedPayload: ciphertext,
-      payloadIv: iv,
-      encrypted: true,
-    };
-  } else {
-    // Fallback: store plaintext (backward compat / pre-unlock)
-    record = { ...note, address } as StoredNote;
-  }
+  // Encrypt sensitive note data; keep index fields plaintext for queries
+  const { ciphertext, iv } = await encryptNotePayload(note);
+  const record = {
+    commitment: note.commitment,
+    address,
+    spent: note.spent,
+    encryptedPayload: ciphertext,
+    payloadIv: iv,
+    encrypted: true,
+  };
 
   await new Promise<void>((resolve, reject) => {
     const request = store.put(record);
@@ -589,7 +673,7 @@ export async function exportKeys(
     {
       name: "PBKDF2",
       salt: saltBuffer,
-      iterations: 100000,
+      iterations: 600000,
       hash: "SHA-256",
     },
     keyMaterial,
@@ -661,7 +745,7 @@ export async function importKeys(
     {
       name: "PBKDF2",
       salt: saltBuffer,
-      iterations: 100000,
+      iterations: 600000,
       hash: "SHA-256",
     },
     keyMaterial,

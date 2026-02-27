@@ -50,6 +50,11 @@ pub struct RelayerConfig {
     // CORS
     pub allowed_origins: Vec<String>,
 
+    // Trusted proxy IPs for X-Forwarded-For validation.
+    // When non-empty, X-Forwarded-For is only trusted if the request came from one of these IPs.
+    // When empty, X-Forwarded-For is IGNORED and the direct socket IP is always used.
+    pub trusted_proxies: Vec<String>,
+
     // Tree sync
     pub tree_cache_path: Option<String>,
     pub tree_sync_interval_secs: u64,
@@ -132,6 +137,13 @@ impl RelayerConfig {
         // Storage encryption key (optional, enables at-rest encryption)
         let storage_key = parse_hex_key_32("VM31_STORAGE_KEY")?;
 
+        let trusted_proxies = env::var("VM31_TRUSTED_PROXIES")
+            .unwrap_or_default()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+
         let tree_cache_path = env::var("VM31_TREE_CACHE_PATH").ok().filter(|s| !s.is_empty());
         let tree_sync_interval_secs: u64 = parse_env_or("VM31_TREE_SYNC_INTERVAL", 15)?;
         if tree_sync_interval_secs == 0 {
@@ -163,6 +175,7 @@ impl RelayerConfig {
             redis_url,
             rate_limit_per_min,
             allowed_origins,
+            trusted_proxies,
             tree_cache_path,
             tree_sync_interval_secs,
         })
