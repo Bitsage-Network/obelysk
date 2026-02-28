@@ -241,7 +241,9 @@ export const CONTRACTS = {
     REFERRAL_SYSTEM: "0x0",
     ADDRESS_REGISTRY: "0x0",
     DYNAMIC_PRICING: "0x0",
-    SHIELDED_SWAP_ROUTER: "0x0",
+    // Shielded Swap Router — deployed 2026-02-28
+    // Class hash: 0x04d87268dfc6008434ca39698196522db6d39c71d03123d8f15ab3715d8375d3
+    SHIELDED_SWAP_ROUTER: "0x05a7f8a6ab74ee6ab41169118ca2ea21070dc6594bae5a39f5bb9ac50629725b",
 
     // Confidential Transfer — deployed 2026-02-26
     // Class hash: 0x5399d938717e3f3887d2e96c01332aa256e6ed9e7c114c6c4ce050d316234b9
@@ -257,8 +259,12 @@ export const CONTRACTS = {
     WBTC_PRIVACY_POOL: "0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2",
     USDC_PRIVACY_POOL: "0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b",
 
-    STEALTH_REGISTRY: "0x0",
-    DARK_POOL: "0x0",
+    // Stealth Registry — deployed 2026-02-28
+    // Class hash: 0x00c56bc123430b5ffe10da0893eacc84e59ad62b5acc706a9b01a6bfb7904fbb
+    STEALTH_REGISTRY: "0x077ee4c38201b4e45b643f4af56ff6daf780260e9c8a281f3536fb711afcaea8",
+    // Dark Pool Auction — deployed 2026-02-28
+    // Class hash: 0x0563d4a5d412fcc14264088763f126c9518476a299f4459cf2b2fbcf168efd41
+    DARK_POOL: "0x0230b5822556f0d9afca7b02f01e37cb9cf2a7e8d590a9020e9bbca183ea7727",
 
     // VM31 UTXO Privacy — deployed 2026-02-27
     VM31_POOL: "0x0230eb355e54a98b4511d86585d45d6a5b9075d0ec254877485047b6d651400d",
