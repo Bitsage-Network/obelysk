@@ -108,7 +108,7 @@ export const EKUBO_CORE = {
 // Shielded swap router — deployed per network
 export const SHIELDED_SWAP_ROUTER = {
   sepolia: "0x056b76b42487b943a0d33f5787437ee08af9fd61e1926de9602b3cfb5392f1d6",
-  mainnet: "0x0",
+  mainnet: "0x05a7f8a6ab74ee6ab41169118ca2ea21070dc6594bae5a39f5bb9ac50629725b",
 } as const;
 
 // Per-token privacy pool instances (each initialized with a single ERC20)
@@ -327,7 +327,7 @@ export function buildShieldedSwapCalls(
     SHIELDED_SWAP_ROUTER[network as keyof typeof SHIELDED_SWAP_ROUTER] ||
     SHIELDED_SWAP_ROUTER.sepolia;
 
-  if (routerAddress === "0x0") {
+  if ((routerAddress as string) === "0x0") {
     throw new Error(`Shielded swap router not deployed on ${network}`);
   }
 

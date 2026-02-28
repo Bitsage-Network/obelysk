@@ -171,7 +171,7 @@ export function useShieldedSwap(): UseShieldedSwapResult {
   const isRouterDeployed = useMemo(() => {
     const router =
       SHIELDED_SWAP_ROUTER[network as keyof typeof SHIELDED_SWAP_ROUTER];
-    return !!router && router !== "0x0";
+    return !!router && (router as string) !== "0x0";
   }, [network]);
 
   const reset = useCallback(() => {

@@ -100,6 +100,9 @@ describe('CONTRACTS', () => {
       'VM31_POOL',
       'VM31_VERIFIER',
       'VM31_BRIDGE',
+      'STEALTH_REGISTRY',
+      'DARK_POOL',
+      'SHIELDED_SWAP_ROUTER',
     ];
     for (const name of deployedContracts) {
       const addr = CONTRACTS.mainnet[name];
@@ -110,9 +113,6 @@ describe('CONTRACTS', () => {
 
   it('undeployed mainnet contracts are 0x0', () => {
     const undeployedContracts: ContractName[] = [
-      'STEALTH_REGISTRY',
-      'DARK_POOL',
-      'SHIELDED_SWAP_ROUTER',
       'SESSION_MANAGER',
       'STAKING',
       'JOB_MANAGER',
