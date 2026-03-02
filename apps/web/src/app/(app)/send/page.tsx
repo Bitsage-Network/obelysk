@@ -193,6 +193,13 @@ function SendPageInner() {
   const [amount, setAmount] = useState("");
   const [privacyMode, setPrivacyMode] = useState(false);
 
+  // Refetch balances after deposit or withdrawal confirms
+  useEffect(() => {
+    if (depositState.phase === "confirmed" || withdrawState?.phase === "confirmed") {
+      onChainBalances.refetchAll();
+    }
+  }, [depositState.phase, withdrawState?.phase]);
+
   // Send mode: "public" | "private" | "stealth"
   type SendMode = "public" | "private" | "stealth";
   const initialMode = searchParams.get("mode") === "stealth" ? "stealth" : "public";

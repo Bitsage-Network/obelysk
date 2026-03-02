@@ -10,19 +10,28 @@
 import { useMemo } from 'react';
 import { useAccount, useReadContract } from '@starknet-react/core';
 import { Abi } from 'starknet';
+import { useNetwork } from '@/lib/contexts/NetworkContext';
+import { EXTERNAL_TOKENS } from '@/lib/contracts/addresses';
 
 // ============================================================================
-// Token Addresses (Starknet Sepolia)
+// Token Addresses (same on sepolia + mainnet except USDC)
 // ============================================================================
 
 export const QUOTE_TOKEN_ADDRESSES = {
-  // Native ETH on Starknet Sepolia
   ETH: '0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7',
-  // STRK token on Sepolia
   STRK: '0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d',
-  // USDC on Sepolia (Circle native)
   USDC: '0x053b40A647CEDfca6cA84f542A0fe36736031905A9639a7f19A3C1e66bFd5080',
 } as const;
+
+function getQuoteTokenAddress(token: QuoteToken, network: string): string {
+  const ext = EXTERNAL_TOKENS[network as keyof typeof EXTERNAL_TOKENS];
+  if (ext) {
+    if (token === 'ETH') return ext.ETH || QUOTE_TOKEN_ADDRESSES.ETH;
+    if (token === 'STRK') return ext.STRK || QUOTE_TOKEN_ADDRESSES.STRK;
+    if (token === 'USDC') return ext.USDC || QUOTE_TOKEN_ADDRESSES.USDC;
+  }
+  return QUOTE_TOKEN_ADDRESSES[token];
+}
 
 export type QuoteToken = keyof typeof QUOTE_TOKEN_ADDRESSES;
 
@@ -120,8 +129,9 @@ export function useQuoteBalance(
   address?: string
 ): QuoteBalanceResult {
   const { address: connectedAddress } = useAccount();
+  const { network } = useNetwork();
   const targetAddress = address || connectedAddress;
-  const tokenAddress = QUOTE_TOKEN_ADDRESSES[token];
+  const tokenAddress = getQuoteTokenAddress(token, network);
   const decimals = TOKEN_DECIMALS[token];
 
   const { data, isLoading, error, refetch } = useReadContract({

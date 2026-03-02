@@ -461,3 +461,183 @@ export function generateBalanceProof(
     response,
   };
 }
+
+// ============================================================================
+// Cairo-compatible 32-bit Range Proof (matches bit_proofs.cairo verifier)
+// ============================================================================
+
+// Domain separators matching Cairo constants (felt252 short strings)
+const RANGE_PROOF_DOMAIN = 0x6f62656c79736b2d72616e67652d70726f6f662d7631n;
+const BIT_PROOF_DOMAIN = 0x6f62656c79736b2d6269742d70726f6f662d7631n;
+
+const RANGE_BITS_32 = 32;
+
+/** Per-bit OR proof matching Cairo's BitProof struct */
+interface CairoBitProof {
+  a0: ECPoint; // Nonce commitment for branch 0
+  c0: bigint;  // Challenge for branch 0
+  s0: bigint;  // Response for branch 0
+  a1: ECPoint; // Nonce commitment for branch 1
+  c1: bigint;  // Challenge for branch 1
+  s1: bigint;  // Response for branch 1
+}
+
+/** Range proof matching Cairo's RangeProof32 struct */
+export interface CairoRangeProof32 {
+  bitCommitments: ECPoint[];  // 32 Pedersen commitments
+  bitProofs: CairoBitProof[]; // 32 OR proofs
+  aggregateBlinding: bigint;  // sum(r_i * 2^i)
+  valueCommitment: ECPoint;   // V = amount * G + aggregateBlinding * H
+}
+
+/**
+ * Generate a 32-bit range proof compatible with Cairo's verify_range_proof_32.
+ *
+ * Creates bit-decomposition Pedersen commitments C_i = b_i * G + r_i * H
+ * with OR-sigma proofs that each C_i commits to 0 or 1, matching
+ * the Cairo verifier's exact challenge derivation:
+ *   master_challenge = poseidon([RANGE_PROOF_DOMAIN, V.x, V.y, C0.x, C0.y, ...])
+ *   per_bit_challenge = poseidon([BIT_PROOF_DOMAIN, master_challenge, i])
+ *
+ * @param amount Value to prove in range [0, 2^32)
+ * @param blinding The blinding factor used in the value commitment V = amount*G + blinding*H
+ * @returns CairoRangeProof32 serializable to 321 felt252s
+ */
+export function generateCairoRangeProof32(
+  amount: bigint,
+  blinding: bigint,
+): CairoRangeProof32 {
+  if (amount < 0n || amount >= (1n << 32n)) {
+    throw new Error(`Amount ${amount} out of 32-bit range [0, 2^32)`);
+  }
+
+  const G = getGenerator();
+  const H = getPedersenH();
+
+  const bitCommitments: ECPoint[] = [];
+  const blindings: bigint[] = [];
+
+  // Step 1: Create per-bit Pedersen commitments C_i = b_i * G + r_i * H
+  for (let i = 0; i < RANGE_BITS_32; i++) {
+    const bit = (amount >> BigInt(i)) & 1n;
+    // Derive per-bit blinding deterministically
+    const r_i = mod(poseidonHash([blinding, BigInt(i), 0n]), CURVE_ORDER);
+    blindings.push(r_i);
+
+    const rH = scalarMult(r_i, H);
+    const C_i = bit === 1n ? addPoints(G, rH) : rH;
+    bitCommitments.push(C_i);
+  }
+
+  // Step 2: Compute aggregate blinding = sum(r_i * 2^i) FIRST
+  // This determines the value commitment that sum(2^i * C_i) actually equals
+  let aggregateBlinding = 0n;
+  for (let i = 0; i < RANGE_BITS_32; i++) {
+    aggregateBlinding = mod(aggregateBlinding + blindings[i] * (1n << BigInt(i)), CURVE_ORDER);
+  }
+
+  // Value commitment V = amount * G + aggregateBlinding * H
+  // This MUST match sum(2^i * C_i) for the verifier's aggregate check
+  const valueCommitment = addPoints(scalarMult(amount, G), scalarMult(aggregateBlinding, H));
+
+  // Step 3: Compute master challenge matching Cairo's compute_range_challenge
+  // poseidon([RANGE_PROOF_DOMAIN, V.x, V.y, C0.x, C0.y, ..., C31.x, C31.y])
+  const masterInputs: bigint[] = [RANGE_PROOF_DOMAIN, valueCommitment.x, valueCommitment.y];
+  for (const c of bitCommitments) {
+    masterInputs.push(c.x, c.y);
+  }
+  const masterChallenge = mod(poseidonHash(masterInputs), CURVE_ORDER);
+
+  // Step 4: Generate OR proofs for each bit
+  const bitProofs: CairoBitProof[] = [];
+
+  for (let i = 0; i < RANGE_BITS_32; i++) {
+    const bit = (amount >> BigInt(i)) & 1n;
+    const r_i = blindings[i];
+    const C_i = bitCommitments[i];
+
+    // Per-bit challenge: poseidon([BIT_PROOF_DOMAIN, master_challenge, i]) mod n
+    const perBitChallenge = mod(
+      poseidonHash([BIT_PROOF_DOMAIN, masterChallenge, BigInt(i)]),
+      CURVE_ORDER
+    );
+
+    // Choose simulated challenge and real nonce deterministically
+    const c_sim = mod(poseidonHash([blinding, BigInt(i), 3n]), CURVE_ORDER);
+    const k_real = mod(poseidonHash([blinding, BigInt(i), 2n]), CURVE_ORDER);
+
+    // c_real = perBitChallenge - c_sim (mod n)
+    const c_real = mod(perBitChallenge - c_sim, CURVE_ORDER);
+
+    // Real branch: A_real = k_real * H, s_real = k_real + c_real * r_i
+    const A_real = scalarMult(k_real, H);
+    const s_real = mod(k_real + c_real * r_i, CURVE_ORDER);
+
+    // Simulated branch: pick s_sim, compute A_sim = s_sim * H - c_sim * target
+    const s_sim = mod(poseidonHash([blinding, BigInt(i), 4n]), CURVE_ORDER);
+
+    let proof: CairoBitProof;
+
+    if (bit === 0n) {
+      // Branch 0 is real (C_i = r_i * H, proving "commits to 0")
+      // Branch 1 is simulated (target = C_i - G)
+      const target1 = addPoints(C_i, negatePoint(G));
+      const s1H = scalarMult(s_sim, H);
+      const c1T = scalarMult(c_sim, target1);
+      const A_sim = addPoints(s1H, negatePoint(c1T));
+
+      proof = {
+        a0: A_real, c0: c_real, s0: s_real,
+        a1: A_sim,  c1: c_sim,  s1: s_sim,
+      };
+    } else {
+      // Branch 0 is simulated (target = C_i, proving "commits to 0" — simulated)
+      // Branch 1 is real (C_i - G = r_i * H, proving "commits to 1")
+      const s0H = scalarMult(s_sim, H);
+      const c0T = scalarMult(c_sim, C_i);
+      const A_sim = addPoints(s0H, negatePoint(c0T));
+
+      proof = {
+        a0: A_sim,  c0: c_sim,  s0: s_sim,
+        a1: A_real, c1: c_real, s1: s_real,
+      };
+    }
+
+    bitProofs.push(proof);
+  }
+
+  return { bitCommitments, bitProofs, aggregateBlinding, valueCommitment };
+}
+
+/**
+ * Serialize a CairoRangeProof32 to 321 felt252 strings matching
+ * the format expected by deserialize_range_proof_32 in bit_proofs.cairo.
+ *
+ * Format: [32 commitments (x,y) = 64] + [32 proofs (a0_x,a0_y,c0,s0,a1_x,a1_y,c1,s1) = 256] + [1 aggregate_blinding]
+ */
+export function serializeCairoRangeProof32(proof: CairoRangeProof32): string[] {
+  const data: string[] = [];
+
+  // 32 bit commitments (64 felt252s)
+  for (const c of proof.bitCommitments) {
+    data.push("0x" + c.x.toString(16));
+    data.push("0x" + c.y.toString(16));
+  }
+
+  // 32 bit proofs (256 felt252s)
+  for (const bp of proof.bitProofs) {
+    data.push("0x" + bp.a0.x.toString(16));
+    data.push("0x" + bp.a0.y.toString(16));
+    data.push("0x" + bp.c0.toString(16));
+    data.push("0x" + bp.s0.toString(16));
+    data.push("0x" + bp.a1.x.toString(16));
+    data.push("0x" + bp.a1.y.toString(16));
+    data.push("0x" + bp.c1.toString(16));
+    data.push("0x" + bp.s1.toString(16));
+  }
+
+  // 1 aggregate blinding
+  data.push("0x" + proof.aggregateBlinding.toString(16));
+
+  return data; // Total: 64 + 256 + 1 = 321 strings
+}

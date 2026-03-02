@@ -13,6 +13,8 @@ import { cn } from "@/lib/utils";
 import { useOTCOrderbookDepth, useOTCLastTrade } from "@/lib/contracts";
 import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
 import { usePragmaPrice } from "@/lib/hooks/usePragmaOracle";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import type { NetworkType } from "@/lib/contracts/addresses";
 
 interface TradingPair {
   id: string;
@@ -46,17 +48,18 @@ const PAIR_ID_MAP: Record<string, number> = {
 
 export function OrderBook({ pairId, pair, onOrderClick }: OrderBookProps) {
   const [precision, setPrecision] = useState(4);
-  const numericPairId = PAIR_ID_MAP[pairId] ?? 1;
+  const { network } = useNetwork();
+  const numericPairId = PAIR_ID_MAP[pairId] ?? 0;
 
   // Pure on-chain data using get_orderbook_depth for full depth
-  const { data: depthData, isLoading, isFetching } = useOTCOrderbookDepth(numericPairId, 15);
-  const { data: lastTradeData } = useOTCLastTrade(numericPairId);
+  const { data: depthData, isLoading, isFetching } = useOTCOrderbookDepth(numericPairId, 15, network as NetworkType);
+  const { data: lastTradeData } = useOTCLastTrade(numericPairId, network as NetworkType);
 
   // On-chain polling for real-time trade notifications
   const { isConnected: wsConnected } = useTradingEvents(numericPairId);
 
   // Fetch STRK/USD price from Pragma Oracle for USD conversion
-  const { data: strkUsdPrice, isLoading: priceLoading } = usePragmaPrice('STRK_USD');
+  const { data: strkUsdPrice, isLoading: priceLoading } = usePragmaPrice('STRK_USD', network as NetworkType);
   const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0;
 
   const isRefetching = isFetching && !isLoading;

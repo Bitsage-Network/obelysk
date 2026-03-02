@@ -14,6 +14,8 @@ import { useAccount, useProvider } from "@starknet-react/core";
 import { useOTCUserOrders, buildCancelOrderCall, useBitSageTransaction, getContractAddresses } from "@/lib/contracts";
 import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
 import { useToast } from "@/lib/providers/ToastProvider";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import type { NetworkType } from "@/lib/contracts/addresses";
 
 interface TradingPair {
   id: string;
@@ -101,13 +103,14 @@ interface RawOrderData {
 export function MyOrders({ pairId, pair }: MyOrdersProps) {
   const { address, isConnected } = useAccount();
   const { provider } = useProvider();
+  const { network } = useNetwork();
   const [activeTab, setActiveTab] = useState<TabType>("open");
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const { sendTransactionAsync } = useBitSageTransaction();
   const { success: toastSuccess, error: toastError } = useToast();
 
   // Pure on-chain: get user's order IDs from contract
-  const { data: orderIds, isLoading: idsLoading, refetch, isFetching } = useOTCUserOrders(address);
+  const { data: orderIds, isLoading: idsLoading, refetch, isFetching } = useOTCUserOrders(address, network as NetworkType);
   const isRefetching = isFetching && !idsLoading;
 
   // State for fetched order details
@@ -143,7 +146,7 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
       }
 
       setDetailsLoading(true);
-      const addresses = getContractAddresses("sepolia");
+      const addresses = getContractAddresses(network as NetworkType);
 
       try {
         // Fetch each order's details

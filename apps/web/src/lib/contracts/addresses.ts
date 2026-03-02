@@ -236,7 +236,9 @@ export const CONTRACTS = {
     // OracleWrapper — deployed 2026-03-02, Pragma Oracle integration
     // Class hash: 0xb9e7e377e6faca3fa8b8ff75178f5d9e1ac281e666e9ebdf6c1d3966f623b0
     ORACLE_WRAPPER: "0x05de278683be29c3cb8c1471d3819ead37934cb2362f72551c3bd95fb9bffc4c",
-    OTC_ORDERBOOK: "0x0",
+    // OTCOrderbook — deployed 2026-03-02, SAGE/USDC + SAGE/STRK pairs
+    // Class hash: 0x07b7d1d9e7c896cbec12857bdf24fd8268ec572dc1da9c0f681ca8df758b7758
+    OTC_ORDERBOOK: "0x04165f8fe590e94d7f12e77af72577123b24cbd01101a62b53c3e119fb8bb119",
     PRIVACY_POOLS: "0x0",
     CONFIDENTIAL_SWAP: "0x0",
     MIXING_ROUTER: "0x0",

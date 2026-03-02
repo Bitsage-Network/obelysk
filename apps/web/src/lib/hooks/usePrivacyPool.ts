@@ -40,6 +40,11 @@ import {
 } from "../crypto/nullifier";
 
 import {
+  generateCairoRangeProof32,
+  serializeCairoRangeProof32,
+} from "../crypto/rangeProof";
+
+import {
   // Key storage
   saveNote,
   getUnspentNotes,
@@ -586,27 +591,28 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         const noteData = createNote(amountWei);
         const nullifierSecret = noteData.nullifierSecret;
 
-        // Create ElGamal encrypted amount commitment
-        const encryptionRandomness = randomScalar();
+        // Generate Cairo-compatible 32-bit range proof (321 felt252s)
+        // The range proof verifier requires the committed value to fit in [0, 2^32).
+        // Scale down the wei amount: divide by 10^14 to get ~4 decimal precision.
+        // Supports deposits up to ~429,496 tokens (2^32 * 10^14 / 10^18).
+        const RANGE_PROOF_SCALE = 10n ** 14n;
+        const scaledAmount = amountWei / RANGE_PROOF_SCALE;
+        if (scaledAmount >= (1n << 32n)) {
+          throw new Error("Deposit amount too large for 32-bit range proof");
+        }
 
-        // Encrypt: C1 = r * G, C2 = amount * H + r * PK
-        const encryptedAmount = elgamalEncrypt(
-          amountWei,
-          currentPublicKey,
-          encryptionRandomness
-        );
+        // The blinding seed derives per-bit blindings; the proof returns
+        // the correct valueCommitment = amount*G + aggregateBlinding*H
+        const blindingSeed = randomScalar();
+        const rangeProof = generateCairoRangeProof32(scaledAmount, blindingSeed);
+        const rangeProofData = serializeCairoRangeProof32(rangeProof);
 
-        // Contract expects C2 (encrypted amount)
+        // Use the proof's valueCommitment as amount_commitment
+        // This ensures sum(2^i * C_i) == amount_commitment (aggregate check passes)
         const amountCommitment = {
-          x: "0x" + encryptedAmount.c2_x.toString(16),
-          y: "0x" + encryptedAmount.c2_y.toString(16),
+          x: "0x" + rangeProof.valueCommitment.x.toString(16),
+          y: "0x" + rangeProof.valueCommitment.y.toString(16),
         };
-
-        // Generate range proof data
-        const rangeProofData: string[] = [
-          "0x" + amountWei.toString(16),
-          "0x" + encryptionRandomness.toString(16),
-        ];
 
         const commitmentFelt = commitmentToFelt(noteData.commitment);
 

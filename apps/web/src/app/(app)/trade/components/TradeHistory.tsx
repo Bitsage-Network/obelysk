@@ -12,6 +12,8 @@ import { Loader2, Info, ShieldCheck, Radio } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOTCTradeHistory, useOTCLastTrade } from "@/lib/contracts";
 import { useTradingEvents } from "@/lib/hooks/useProtocolEvents";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import type { NetworkType } from "@/lib/contracts/addresses";
 
 interface TradingPair {
   id: string;
@@ -43,18 +45,19 @@ const PAIR_ID_MAP: Record<string, number> = {
 };
 
 export function TradeHistory({ pairId, pair }: TradeHistoryProps) {
-  const numericPairId = PAIR_ID_MAP[pairId] ?? 1;
+  const { network } = useNetwork();
+  const numericPairId = PAIR_ID_MAP[pairId] ?? 0;
 
   // Pure on-chain: get trade history directly from contract
   const {
     data: tradeHistoryData,
     isLoading: historyLoading,
     isFetching
-  } = useOTCTradeHistory(numericPairId, 0, 20);
+  } = useOTCTradeHistory(numericPairId, 0, 20, network as NetworkType);
   const isRefetching = isFetching && !historyLoading;
 
   // Also get last trade for faster initial display
-  const { data: lastTradeData } = useOTCLastTrade(numericPairId);
+  const { data: lastTradeData } = useOTCLastTrade(numericPairId, network as NetworkType);
 
   // On-chain polling for real-time trade updates
   const { isConnected: wsConnected, recentTrades: wsTrades } = useTradingEvents(numericPairId);
