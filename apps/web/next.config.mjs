@@ -1,3 +1,5 @@
+const isDev = process.env.NODE_ENV === "development";
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
@@ -21,11 +23,13 @@ const nextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'wasm-unsafe-eval'",
+              isDev
+                ? "script-src 'self' 'unsafe-eval' 'unsafe-inline' 'wasm-unsafe-eval'"
+                : "script-src 'self' 'wasm-unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              "connect-src 'self' https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com",
+              `connect-src 'self' ${isDev ? "ws://localhost:* " : ""}https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

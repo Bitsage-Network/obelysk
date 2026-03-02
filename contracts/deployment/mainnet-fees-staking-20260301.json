@@ -1,0 +1,89 @@
+{
+  "network": "mainnet",
+  "deployed_at": "2026-03-01",
+  "owner": "0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660",
+  "rpc": "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/GUBwFqKhSgn4mwVbN6Sbn",
+  "tools": {
+    "scarb": "2.12.0",
+    "sncast": "0.54.1",
+    "cairo": "2.12.0"
+  },
+
+  "declarations": {
+    "ShieldedSwapRouter": {
+      "class_hash": "0x38cef3fd4a98b98083b3cca087efc31b95875575087f9423d88b7d1779f4b79",
+      "tx_hash": "0x6157fa358500ff21e1456abf974ee002f297c3f97418f997d96f1983ec7c55",
+      "previous_class_hash": "0x04d87268dfc6008434ca39698196522db6d39c71d03123d8f15ab3715d8375d3",
+      "contract_address": "0x05a7f8a6ab74ee6ab41169118ca2ea21070dc6594bae5a39f5bb9ac50629725b",
+      "changes": "Added swap_fee_bps, fee_recipient, accumulated_fees (per-token Map), fee deduction in locked() callback, admin functions (set_swap_fee_bps, set_fee_recipient, collect_fees, get_swap_fee_info)",
+      "upgrade_status": "declared — needs schedule_upgrade + 48h + execute_upgrade"
+    },
+    "DarkPoolAuction": {
+      "class_hash": "0x534771577c63adaac3f999a4fb320eb7cdf55dabd06a6e72fca44f667d323d1",
+      "tx_hash": "0x15fc9356216e81fd52fa439d4fe7ceda6e47eadb2035c0d73a8ff25554de326",
+      "previous_class_hash": "0x0563d4a5d412fcc14264088763f126c9518476a299f4459cf2b2fbcf168efd41",
+      "contract_address": "0x0230b5822556f0d9afca7b02f01e37cb9cf2a7e8d590a9020e9bbca183ea7727",
+      "changes": "Added withdrawal_fee_bps, fee_recipient, accumulated_fees (per-asset Map), fee deduction in withdraw(), admin functions (set_withdrawal_fee_bps, set_fee_recipient, collect_fees, get_fee_info)",
+      "upgrade_status": "declared — needs schedule_upgrade + 48h + execute_upgrade"
+    },
+    "PrivacyPools": {
+      "class_hash": "0x3726a3cd5e7f7fae32bc6f38cef113dd5f3699e4ab92dcbd25aa76c0a885098",
+      "tx_hash": "0x68602afe1c74786366d116605925abbc1cb5f49aa19b6108b4b766f34cff0d",
+      "previous_class_hash": "0x26ca3c2b684ae9c8d43b225050a63b8e617cc8290b8e771c7b253df0fab4bb",
+      "contract_addresses": [
+        "0x0224977344d123eb5c20fd088f15b62d0541f8282f4a23dd87bdf9839aac724f",
+        "0x06d0b41c96809796faa02a5eac2f74e090effd09ccab7274054b90aa671e82b5",
+        "0x02c348e89b355691ba5e4ece681fd6b497f8ab2ba670fa5842208b251a3c9cf1",
+        "0x030fcfd4ae4f022e720e52f54359258a02517e11701c153ae46ab2cf10d5e5e2",
+        "0x05d36d7fd19d094ee0fd454e461061d68eb9f4fd0b241e2d1c94320b46d4d59b"
+      ],
+      "changes": "Added withdrawal_fee_bps, fee_recipient, accumulated_fees, fee deduction in pp_withdraw(), admin functions (set_withdrawal_fee_bps, set_fee_recipient, collect_fees, get_fee_info)",
+      "upgrade_status": "declared — needs schedule_upgrade + 48h + execute_upgrade on each of 5 pool instances"
+    }
+  },
+
+  "deployments": {
+    "ProverStaking": {
+      "source_repo": "BitSage-Cairo-Smart-Contracts",
+      "class_hash": "0x5b5e162892d3eaca1b365ae52b410c444d3dc319c2724cf7c309e1592acb9c1",
+      "declare_tx": "0xded1fa3fc5f2bdf574cd9c1a9445cd813538a761b9c40da5d0f6c796d593ab",
+      "contract_address": "0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3",
+      "deploy_tx": "0x05fa25ee6422a0df5e7c46e9f5886d4b2a7a3ac07212cae26d237657140dee31",
+      "constructor": {
+        "owner": "0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660",
+        "sage_token": "0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799",
+        "treasury": "0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660"
+      },
+      "verified": "get_stake() returns default WorkerStake (contract responding)"
+    }
+  },
+
+  "post_deploy": {
+    "sage_approve_staking": {
+      "description": "Treasury (deployer) approved ProverStaking to spend 10M SAGE for claim_rewards()",
+      "contract": "0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799",
+      "function": "approve",
+      "spender": "0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3",
+      "amount": "10000000000000000000000000",
+      "tx_hash": "0x025a3aff4b80bc8d3af5d91d6574b04fbfc4e59fd598cd4aedcd52e234a0026f",
+      "verified": "allowance() returns 10000000000000000000000000"
+    }
+  },
+
+  "fee_infrastructure_notes": {
+    "defaults": "All fees start at 0 bps (zero) — no disruption to existing users on upgrade",
+    "max_cap": "500 bps (5%) enforced on-chain in all 3 contracts",
+    "pattern": "Fees accumulate in contract until owner calls collect_fees(). CEI pattern maintained.",
+    "activation_sequence": [
+      "1. schedule_upgrade(new_class_hash) on each contract",
+      "2. Wait 48 hours (172800 seconds)",
+      "3. execute_upgrade() on each contract",
+      "4. set_fee_recipient(address) on each contract",
+      "5. set_withdrawal_fee_bps(bps) or set_swap_fee_bps(bps) to activate fees"
+    ]
+  },
+
+  "frontend_changes": {
+    "addresses.ts": "mainnet STAKING set to 0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3"
+  }
+}
