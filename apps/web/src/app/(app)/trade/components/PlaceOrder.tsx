@@ -18,6 +18,8 @@ import { getAssetBySymbol, parseAssetAmount } from "@/lib/contracts/assets";
 import { getTradingPairById, getEstimatedMarketPrice } from "@/lib/hooks/useTradingPairs";
 import { useToast } from "@/lib/providers/ToastProvider";
 import { usePragmaPrice } from "@/lib/hooks/usePragmaOracle";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import type { NetworkType } from "@/lib/contracts/addresses";
 import type { Call } from "starknet";
 
 interface TradingPair {
@@ -42,17 +44,17 @@ type OrderSide = "buy" | "sell";
 type OrderType = "limit" | "market";
 
 // Map pair ID strings to numeric IDs used by the contract
-// IMPORTANT: These must match the on-chain pair IDs in the OTC orderbook contract
-// pair_id 0 = Mock STRK (deprecated), pair_id 1 = Real STRK (active)
+// Must match contract pair IDs: 0=SAGE_USDC, 1=SAGE_STRK, 2=SAGE_ETH, 3=STRK_USDC
 const PAIR_ID_MAP: Record<string, number> = {
-  "SAGE_STRK": 1,  // Uses real STRK token on sepolia
-  "SAGE_USDC": 2,  // Not yet active
-  "SAGE_ETH": 3,   // Not yet active
-  "STRK_USDC": 4,  // Not yet active
+  "SAGE_USDC": 0,
+  "SAGE_STRK": 1,
+  "SAGE_ETH": 2,
+  "STRK_USDC": 3,
 };
 
 export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialSide }: PlaceOrderProps) {
   const { address, isConnected } = useAccount();
+  const { network } = useNetwork();
   const [side, setSide] = useState<OrderSide>(initialSide || "buy");
   const [orderType, setOrderType] = useState<OrderType>("limit");
   const [price, setPrice] = useState(initialPrice || "");
@@ -66,11 +68,11 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
   const tradingPairConfig = useMemo(() => getTradingPairById(pairId), [pairId]);
 
   // Fetch STRK/USD price from Pragma Oracle for USD conversion
-  const { data: strkUsdPrice } = usePragmaPrice('STRK_USD');
+  const { data: strkUsdPrice } = usePragmaPrice('STRK_USD', network as NetworkType);
   const strkToUsd = strkUsdPrice?.price && strkUsdPrice.price > 0 ? strkUsdPrice.price : 0;
 
   // Get real balance from contract
-  const { data: sageBalance } = useSageBalance(address);
+  const { data: sageBalance } = useSageBalance(address, network as NetworkType);
 
   // Get quote token balance (ETH/STRK/USDC)
   const { balanceFormatted: quoteBalance, isLoading: quoteLoading } = useQuoteBalanceForPair(pairId, address);
@@ -212,7 +214,7 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
       }
 
       // Get OTC orderbook address for approval
-      const addresses = getContractAddresses("sepolia");
+      const addresses = getContractAddresses(network as NetworkType);
       const calls: Call[] = [];
 
       // First approve the OTC orderbook to spend tokens
