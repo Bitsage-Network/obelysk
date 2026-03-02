@@ -153,6 +153,20 @@ pub trait IShieldedSwapRouter<TContractState> {
     /// View: get the Ekubo Core address
     fn get_ekubo_core(self: @TContractState) -> ContractAddress;
 
+    // ===================== Fee Functions =====================
+
+    /// Admin: set swap fee in basis points (max 500 = 5%)
+    fn set_swap_fee_bps(ref self: TContractState, bps: u128);
+
+    /// Admin: set fee recipient address
+    fn set_fee_recipient(ref self: TContractState, recipient: ContractAddress);
+
+    /// Admin: collect accumulated fees for a specific token
+    fn collect_fees(ref self: TContractState, token: ContractAddress);
+
+    /// View: get swap fee info (bps, recipient)
+    fn get_swap_fee_info(self: @TContractState) -> (u128, ContractAddress);
+
     // ===================== Timelocked Upgrade Functions =====================
 
     /// Schedule an upgrade to a new implementation class
@@ -301,6 +315,11 @@ pub mod ShieldedSwapRouter {
         swap_count: u64,
         is_locked: bool, // reentrancy guard
 
+        // ================ Fees ================
+        swap_fee_bps: u128,
+        fee_recipient: ContractAddress,
+        accumulated_fees: Map<ContractAddress, u256>,  // per-token fees
+
         // ================ Timelocked Upgrade ================
         pending_upgrade: ClassHash,
         upgrade_scheduled_at: u64,
@@ -319,6 +338,16 @@ pub mod ShieldedSwapRouter {
         UpgradeScheduled: UpgradeScheduled,
         UpgradeExecuted: UpgradeExecuted,
         UpgradeCancelled: UpgradeCancelled,
+        FeesCollected: FeesCollected,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct FeesCollected {
+        #[key]
+        token: ContractAddress,
+        recipient: ContractAddress,
+        amount: u256,
+        timestamp: u64,
     }
 
     // ========================================================================
@@ -461,10 +490,21 @@ pub mod ShieldedSwapRouter {
             core.withdraw(output_token, self_address, output_amount_u128);
 
             // ================================================================
-            // Step 5: Deposit output tokens into destination privacy pool
+            // Step 4b: Deduct swap fee from output
+            // ================================================================
+            let fee_bps: u256 = self.swap_fee_bps.read().into();
+            let fee_amount = (output_amount_u256 * fee_bps) / 10000_u256;
+            let net_amount = output_amount_u256 - fee_amount;
+            if fee_amount > 0 {
+                let prev = self.accumulated_fees.read(output_token);
+                self.accumulated_fees.write(output_token, prev + fee_amount);
+            }
+
+            // ================================================================
+            // Step 5: Deposit net output tokens into destination privacy pool
             // ================================================================
             let output_erc20 = IERC20Dispatcher { contract_address: output_token };
-            output_erc20.approve(request.dest_pool, output_amount_u256);
+            output_erc20.approve(request.dest_pool, net_amount);
 
             let dest_pool = IPrivacyPoolDispatcher {
                 contract_address: request.dest_pool
@@ -473,7 +513,7 @@ pub mod ShieldedSwapRouter {
                 request.deposit_commitment,
                 request.deposit_amount_commitment,
                 request.deposit_asset_id,
-                output_amount_u256,
+                net_amount,
                 request.deposit_range_proof,
             );
 
@@ -490,7 +530,7 @@ pub mod ShieldedSwapRouter {
                 input_token,
                 output_token,
                 input_amount,
-                output_amount: output_amount_u256,
+                output_amount: net_amount,
                 timestamp: get_block_timestamp(),
             });
 
@@ -533,6 +573,46 @@ pub mod ShieldedSwapRouter {
         /// View: Ekubo Core address
         fn get_ekubo_core(self: @ContractState) -> ContractAddress {
             self.ekubo_core.read()
+        }
+
+        // ====================================================================
+        // Fee Functions
+        // ====================================================================
+
+        fn set_swap_fee_bps(ref self: ContractState, bps: u128) {
+            self._assert_owner();
+            assert!(bps <= 500, "Fee exceeds 5% cap");
+            self.swap_fee_bps.write(bps);
+        }
+
+        fn set_fee_recipient(ref self: ContractState, recipient: ContractAddress) {
+            self._assert_owner();
+            assert!(!recipient.is_zero(), "Fee recipient cannot be zero");
+            self.fee_recipient.write(recipient);
+        }
+
+        fn collect_fees(ref self: ContractState, token: ContractAddress) {
+            self._assert_owner();
+            let fees = self.accumulated_fees.read(token);
+            assert!(fees > 0, "No fees to collect");
+            let recipient = self.fee_recipient.read();
+            assert!(!recipient.is_zero(), "Fee recipient not set");
+
+            self.accumulated_fees.write(token, 0);
+
+            let erc20 = IERC20Dispatcher { contract_address: token };
+            erc20.transfer(recipient, fees);
+
+            self.emit(FeesCollected {
+                token,
+                recipient,
+                amount: fees,
+                timestamp: get_block_timestamp(),
+            });
+        }
+
+        fn get_swap_fee_info(self: @ContractState) -> (u128, ContractAddress) {
+            (self.swap_fee_bps.read(), self.fee_recipient.read())
         }
 
         // ====================================================================

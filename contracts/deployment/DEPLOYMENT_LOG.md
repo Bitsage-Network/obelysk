@@ -126,3 +126,79 @@ Owner/Deployer (Braavos): `0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a
 - `addresses.ts`: All mainnet addresses populated (CONTRACTS.mainnet, PRIVACY_POOL_FOR_TOKEN.mainnet, EXTERNAL_TOKENS.mainnet)
 - `usePrivacyPool.ts`: HARDCODED_POOLS_BY_NETWORK.mainnet + HARDCODED_TOKENS_BY_NETWORK.mainnet added
 - Network selection: `NEXT_PUBLIC_STARKNET_NETWORK=mainnet` activates mainnet paths
+
+---
+
+## Starknet Mainnet — 2026-03-01 (Fee Infrastructure + ProverStaking)
+
+Protocol fee parameters added to 3 existing contracts (PrivacyPools, ShieldedSwapRouter, DarkPoolAuction)
+and ProverStaking deployed fresh to mainnet.
+
+**Deployer**: `0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660` (Braavos)
+**RPC**: Alchemy v0_10
+**Full record**: `deployment/mainnet-fees-staking-20260301.json`
+
+### Fee Infrastructure — Contract Changes
+
+All 3 contracts received identical fee patterns:
+- Storage: `withdrawal_fee_bps` (u16), `fee_recipient` (ContractAddress), `accumulated_fees` (u256 or Map)
+- Fee deduction before token transfer out (CEI pattern maintained)
+- Admin functions: `set_*_fee_bps()` (max 500 = 5% cap), `set_fee_recipient()`, `collect_fees()`, `get_fee_info()`
+- Event: `FeesCollected { recipient, amount, timestamp }`
+- **Default: 0 bps** — upgrade doesn't change behavior until owner explicitly sets fee
+
+#### PrivacyPools (5 instances) — Withdrawal Fee
+- **File**: `contracts/src/privacy_pools.cairo`
+- **New Class Hash**: `0x3726a3cd5e7f7fae32bc6f38cef113dd5f3699e4ab92dcbd25aa76c0a885098`
+- **Declare TX**: [`0x0068602a...`](https://starkscan.co/tx/0x0068602afe1c74786366d116605925abbc1cb5f49aa19b6108b4b766f34cff0d)
+- **Previous Class**: `0x26ca3c2b684ae9c8d43b225050a63b8e617cc8290b8e771c7b253df0fab4bb`
+- **Fee location**: `pp_withdraw()` — deducts `amount * fee_bps / 10000` before transfer
+- **Upgrade needed on**: All 5 pool instances (SAGE, ETH, STRK, wBTC, USDC)
+
+#### ShieldedSwapRouter — Swap Fee
+- **File**: `contracts/src/shielded_swap_router.cairo`
+- **New Class Hash**: `0x38cef3fd4a98b98083b3cca087efc31b95875575087f9423d88b7d1779f4b79`
+- **Declare TX**: [`0x006157fa...`](https://starkscan.co/tx/0x006157fa358500ff21e1456abf974ee002f297c3f97418f997d96f1983ec7c55)
+- **Previous Class**: `0x04d87268dfc6008434ca39698196522db6d39c71d03123d8f15ab3715d8375d3`
+- **Contract**: `0x05a7f8a6ab74ee6ab41169118ca2ea21070dc6594bae5a39f5bb9ac50629725b`
+- **Fee location**: `locked()` callback — deducts from output amount before depositing into dest pool
+- **Per-token**: `accumulated_fees` is `Map<ContractAddress, u256>` (one balance per output token)
+
+#### DarkPoolAuction — Withdrawal Fee
+- **File**: `contracts/src/dark_pool_auction.cairo`
+- **New Class Hash**: `0x534771577c63adaac3f999a4fb320eb7cdf55dabd06a6e72fca44f667d323d1`
+- **Declare TX**: [`0x015fc935...`](https://starkscan.co/tx/0x015fc9356216e81fd52fa439d4fe7ceda6e47eadb2035c0d73a8ff25554de326)
+- **Previous Class**: `0x0563d4a5d412fcc14264088763f126c9518476a299f4459cf2b2fbcf168efd41`
+- **Contract**: `0x0230b5822556f0d9afca7b02f01e37cb9cf2a7e8d590a9020e9bbca183ea7727`
+- **Fee location**: `withdraw()` — deducts before token transfer out
+- **Per-asset**: `accumulated_fees` is `Map<felt252, u256>` (one balance per asset_id)
+
+### Upgrade Activation Sequence
+```
+# For each contract (7 total: 5 pools + swap router + dark pool):
+sncast -p mainnet invoke --url <RPC> --contract-address <ADDR> --function schedule_upgrade --calldata <NEW_CLASS_HASH>
+# Wait 48 hours (172800 seconds)
+sncast -p mainnet invoke --url <RPC> --contract-address <ADDR> --function execute_upgrade
+
+# After upgrade, activate fees:
+sncast -p mainnet invoke --url <RPC> --contract-address <ADDR> --function set_fee_recipient --calldata <RECIPIENT>
+sncast -p mainnet invoke --url <RPC> --contract-address <ADDR> --function set_withdrawal_fee_bps --calldata <BPS>
+```
+
+### ProverStaking (Fresh Deploy)
+- **Source**: `BitSage-Cairo-Smart-Contracts/src/staking/prover_staking.cairo`
+- **Class Hash**: `0x5b5e162892d3eaca1b365ae52b410c444d3dc319c2724cf7c309e1592acb9c1`
+- **Contract Address**: `0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3`
+- **Declare TX**: [`0x00ded1fa...`](https://starkscan.co/tx/0x00ded1fa3fc5f2bdf574cd9c1a9445cd813538a761b9c40da5d0f6c796d593ab)
+- **Deploy TX**: [`0x05fa25ee...`](https://starkscan.co/tx/0x05fa25ee6422a0df5e7c46e9f5886d4b2a7a3ac07212cae26d237657140dee31)
+- **Constructor Args**: owner=deployer, sage_token=`0x0098d5...c799`, treasury=deployer
+- **Features**: SAGE staking at 15% APY, GPU tier min-stakes, slashing, timelocked upgrades
+- **Verified**: `get_stake(deployer)` returns default WorkerStake (contract responding)
+
+### Post-Deploy: SAGE Approval for Staking Rewards
+- Treasury (deployer) approved ProverStaking to spend 10,000,000 SAGE
+- **TX**: [`0x025a3aff...`](https://starkscan.co/tx/0x025a3aff4b80bc8d3af5d91d6574b04fbfc4e59fd598cd4aedcd52e234a0026f)
+- **Verified**: `allowance(deployer, staking) = 10,000,000e18`
+
+### Frontend Updates
+- `addresses.ts`: mainnet `STAKING` set to `0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3`

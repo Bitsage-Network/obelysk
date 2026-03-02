@@ -258,6 +258,12 @@ pub trait IDarkPoolAuction<TContractState> {
         signature: Array<felt252>,
     );
 
+    // --- Fees ---
+    fn set_withdrawal_fee_bps(ref self: TContractState, bps: u16);
+    fn set_fee_recipient(ref self: TContractState, recipient: ContractAddress);
+    fn collect_fees(ref self: TContractState, asset: felt252);
+    fn get_fee_info(self: @TContractState) -> (u16, ContractAddress);
+
     // --- Admin ---
     fn add_trading_pair(ref self: TContractState, give: felt252, want: felt252);
     fn add_asset(ref self: TContractState, asset_id: felt252, token: ContractAddress);
@@ -395,6 +401,11 @@ pub mod DarkPoolAuction {
         // Reentrancy guard
         reentrancy_locked: bool,
 
+        // Fees
+        withdrawal_fee_bps: u16,                        // basis points (max 500 = 5%)
+        fee_recipient: ContractAddress,                  // where collected fees are sent
+        accumulated_fees: Map<felt252, u256>,             // per-asset fee balance
+
         // Fill claims (prevent double-claim)
         order_claimed: Map<u256, bool>,
 
@@ -444,6 +455,16 @@ pub mod DarkPoolAuction {
         PairSettled: PairSettled,
         SessionKeyRegistered: SessionKeyRegistered,
         SessionKeyRevoked: SessionKeyRevoked,
+        FeesCollected: FeesCollected,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct FeesCollected {
+        #[key]
+        pub asset: felt252,
+        pub recipient: ContractAddress,
+        pub amount: u256,
+        pub timestamp: u64,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -1025,17 +1046,26 @@ pub mod DarkPoolAuction {
             // Update AE hint for the new (reduced) balance
             self.balance_hint.write((caller, asset), ae_hint);
 
+            // Fee deduction
+            let fee_bps: u256 = self.withdrawal_fee_bps.read().into();
+            let fee_amount = (amount * fee_bps) / 10000_u256;
+            let net_amount = amount - fee_amount;
+            if fee_amount > 0 {
+                let prev = self.accumulated_fees.read(asset);
+                self.accumulated_fees.write(asset, prev + fee_amount);
+            }
+
             // Transfer tokens out (after state update — checks-effects-interactions)
             let token_addr = self.asset_tokens.read(asset);
             assert!(!token_addr.is_zero(), "Asset not supported");
 
             let token = IERC20Dispatcher { contract_address: token_addr };
-            let success = token.transfer(caller, amount);
+            let success = token.transfer(caller, net_amount);
             assert!(success, "Token transfer failed");
 
             self.reentrancy_locked.write(false);
 
-            self.emit(Withdrawn { trader: caller, asset, amount });
+            self.emit(Withdrawn { trader: caller, asset, amount: net_amount });
         }
 
         fn get_encrypted_balance(
@@ -1263,6 +1293,49 @@ pub mod DarkPoolAuction {
             // 6. The call is now authorized — we don't dispatch internally,
             //    the relay submits the actual call separately in the same multicall.
             //    This entrypoint just validates authorization.
+        }
+
+        // --------------------------------------------------------------------
+        // Fees
+        // --------------------------------------------------------------------
+
+        fn set_withdrawal_fee_bps(ref self: ContractState, bps: u16) {
+            self.ownable.assert_only_owner();
+            assert!(bps <= 500, "Fee exceeds 5% cap");
+            self.withdrawal_fee_bps.write(bps);
+        }
+
+        fn set_fee_recipient(ref self: ContractState, recipient: ContractAddress) {
+            self.ownable.assert_only_owner();
+            assert!(!recipient.is_zero(), "Fee recipient cannot be zero");
+            self.fee_recipient.write(recipient);
+        }
+
+        fn collect_fees(ref self: ContractState, asset: felt252) {
+            self.ownable.assert_only_owner();
+            let fees = self.accumulated_fees.read(asset);
+            assert!(fees > 0, "No fees to collect");
+            let recipient = self.fee_recipient.read();
+            assert!(!recipient.is_zero(), "Fee recipient not set");
+
+            self.accumulated_fees.write(asset, 0);
+
+            let token_addr = self.asset_tokens.read(asset);
+            assert!(!token_addr.is_zero(), "Asset not supported");
+
+            let token = IERC20Dispatcher { contract_address: token_addr };
+            token.transfer(recipient, fees);
+
+            self.emit(FeesCollected {
+                asset,
+                recipient,
+                amount: fees,
+                timestamp: get_block_timestamp(),
+            });
+        }
+
+        fn get_fee_info(self: @ContractState) -> (u16, ContractAddress) {
+            (self.withdrawal_fee_bps.read(), self.fee_recipient.read())
         }
 
         // --------------------------------------------------------------------

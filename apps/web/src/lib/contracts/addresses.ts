@@ -202,8 +202,9 @@ export const CONTRACTS = {
     // Class hash: 0x5e17a261a36e447ffdc2771d8b9fd73e92fe630900c1b106a4e8ffaf44ab5b7
     SAGE_TOKEN: "0x0098d563900789f934e610b67482ae58793a2efc373ba3a45af94cdbf931c799",
 
-    // Not yet deployed on mainnet
-    STAKING: "0x0",
+    // ProverStaking — deployed 2026-02-27
+    // Class hash: 0x5b5e162892d3eaca1b365ae52b410c444d3dc319c2724cf7c309e1592acb9c1
+    STAKING: "0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3",
     WORKER_STAKING: "0x0",
     VALIDATOR_REGISTRY: "0x0",
     JOB_MANAGER: "0x0",
@@ -232,7 +233,9 @@ export const CONTRACTS = {
     REWARD_VESTING: "0x0",
     LINEAR_VESTING: "0x0",
     MILESTONE_VESTING: "0x0",
-    ORACLE_WRAPPER: "0x0",
+    // OracleWrapper — deployed 2026-03-02, Pragma Oracle integration
+    // Class hash: 0xb9e7e377e6faca3fa8b8ff75178f5d9e1ac281e666e9ebdf6c1d3966f623b0
+    ORACLE_WRAPPER: "0x05de278683be29c3cb8c1471d3819ead37934cb2362f72551c3bd95fb9bffc4c",
     OTC_ORDERBOOK: "0x0",
     PRIVACY_POOLS: "0x0",
     CONFIDENTIAL_SWAP: "0x0",

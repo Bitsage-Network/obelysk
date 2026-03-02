@@ -203,7 +203,7 @@ function StakePageInner({
   // On-chain contract hooks
   const { data: onChainBalance } = useSageBalance(address);
   const { data: onChainStakeInfo } = useOnChainStakeInfo(address);
-  const contracts = getContractAddresses("sepolia");
+  const contracts = getContractAddresses(network);
 
   // Transaction hook for on-chain staking
   const { send: sendTransaction, isPending: txPending, data: txData } = useSendTransaction({});
@@ -269,9 +269,9 @@ function StakePageInner({
 
     try {
       // First approve the staking contract to spend SAGE tokens
-      const approveCall = buildApproveCall(contracts.STAKING, amountBigInt, "sepolia");
+      const approveCall = buildApproveCall(contracts.STAKING, amountBigInt, network);
       // Then stake (GPU tier 0 = Consumer, TEE = false for now)
-      const stakeCall = buildStakeCall(amountBigInt, 0, false, "sepolia");
+      const stakeCall = buildStakeCall(amountBigInt, 0, false, network);
 
       // Send both calls atomically
       await sendTransaction([approveCall, stakeCall]);
@@ -288,7 +288,7 @@ function StakePageInner({
     setTxHash(null);
 
     try {
-      const unstakeCall = buildUnstakeCall(amountBigInt, "sepolia");
+      const unstakeCall = buildUnstakeCall(amountBigInt, network);
       await sendTransaction([unstakeCall]);
     } catch (err: unknown) {
       console.error("Unstake transaction failed:", err);

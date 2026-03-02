@@ -351,6 +351,12 @@ pub trait IPrivacyPools<TContractState> {
     fn pause(ref self: TContractState);
     fn unpause(ref self: TContractState);
 
+    // --- Fees ---
+    fn set_withdrawal_fee_bps(ref self: TContractState, bps: u16);
+    fn set_fee_recipient(ref self: TContractState, recipient: ContractAddress);
+    fn collect_fees(ref self: TContractState);
+    fn get_fee_info(self: @TContractState) -> (u16, ContractAddress, u256);
+
     // --- Upgrade ---
     fn schedule_upgrade(ref self: TContractState, new_class_hash: starknet::ClassHash);
     fn execute_upgrade(ref self: TContractState);
@@ -476,6 +482,11 @@ pub mod PrivacyPools {
 
         // --- Reentrancy guard ---
         reentrancy_locked: bool,
+
+        // --- Fees ---
+        withdrawal_fee_bps: u16,          // basis points (50 = 0.50%), max 500 (5%)
+        fee_recipient: ContractAddress,    // where collected fees are sent
+        accumulated_fees: u256,            // unclaimed fee balance
     }
 
     // =========================================================================
@@ -506,6 +517,7 @@ pub mod PrivacyPools {
         UpgradeScheduled: UpgradeScheduled,
         UpgradeExecuted: UpgradeExecuted,
         UpgradeCancelled: UpgradeCancelled,
+        FeesCollected: FeesCollected,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -698,6 +710,13 @@ pub mod PrivacyPools {
         cancelled_class_hash: ClassHash,
         cancelled_at: u64,
         canceller: ContractAddress,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct FeesCollected {
+        recipient: ContractAddress,
+        amount: u256,
+        timestamp: u64,
     }
 
     // =========================================================================
@@ -1323,16 +1342,24 @@ pub mod PrivacyPools {
                 self.total_volume_withdrawn.read() + proof.amount
             );
 
+            // Fee deduction
+            let fee_bps: u256 = self.withdrawal_fee_bps.read().into();
+            let fee_amount = (proof.amount * fee_bps) / 10000_u256;
+            let net_amount = proof.amount - fee_amount;
+            if fee_amount > 0 {
+                self.accumulated_fees.write(self.accumulated_fees.read() + fee_amount);
+            }
+
             // Interaction: External call AFTER all state updates
             let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
-            sage_token.transfer(proof.recipient, proof.amount);
+            sage_token.transfer(proof.recipient, net_amount);
 
             self.reentrancy_locked.write(false);
 
             self.emit(PPWithdrawalExecuted {
                 nullifier: proof.nullifier,
                 recipient: proof.recipient,
-                amount: proof.amount,
+                amount: net_amount,
                 compliance_level,
                 association_set_id,
                 timestamp: get_block_timestamp(),
@@ -1503,6 +1530,47 @@ pub mod PrivacyPools {
             self._only_owner();
             self.paused.write(false);
             self.emit(Unpaused { by: get_caller_address(), timestamp: get_block_timestamp() });
+        }
+
+        // --- Fees ---
+
+        fn set_withdrawal_fee_bps(ref self: ContractState, bps: u16) {
+            self._only_owner();
+            assert!(bps <= 500, "Fee exceeds 5% cap");
+            self.withdrawal_fee_bps.write(bps);
+        }
+
+        fn set_fee_recipient(ref self: ContractState, recipient: ContractAddress) {
+            self._only_owner();
+            assert!(!recipient.is_zero(), "Fee recipient cannot be zero");
+            self.fee_recipient.write(recipient);
+        }
+
+        fn collect_fees(ref self: ContractState) {
+            self._only_owner();
+            let fees = self.accumulated_fees.read();
+            assert!(fees > 0, "No fees to collect");
+            let recipient = self.fee_recipient.read();
+            assert!(!recipient.is_zero(), "Fee recipient not set");
+
+            self.accumulated_fees.write(0);
+
+            let sage_token = IERC20Dispatcher { contract_address: self.sage_token.read() };
+            sage_token.transfer(recipient, fees);
+
+            self.emit(FeesCollected {
+                recipient,
+                amount: fees,
+                timestamp: get_block_timestamp(),
+            });
+        }
+
+        fn get_fee_info(self: @ContractState) -> (u16, ContractAddress, u256) {
+            (
+                self.withdrawal_fee_bps.read(),
+                self.fee_recipient.read(),
+                self.accumulated_fees.read(),
+            )
         }
 
         // --- Upgrade ---
