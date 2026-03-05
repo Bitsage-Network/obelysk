@@ -15,6 +15,7 @@ import { RpcProvider, CallData } from "starknet";
 import {
   encrypt,
   randomScalar,
+  isOnCurve,
   type ECPoint,
   type ElGamalCiphertext,
   // ZK Proofs
@@ -83,11 +84,13 @@ export interface TransferProof {
   enc_s_b: string;
   enc_s_r: string;
   range_commitment: { x: string; y: string };
+  range_nonce: { x: string; y: string };
   range_challenge: string;
   range_response_l: string;
   range_response_r: string;
   balance_commitment: { x: string; y: string };
   balance_response: string;
+  balance_nonce: { x: string; y: string };
 }
 
 // Hook return type
@@ -120,7 +123,8 @@ function generateProofForTransfer(
   publicKey: ECPoint,
   amount: bigint,
   balance: bigint,
-  randomness: bigint
+  randomness: bigint,
+  senderCipher?: { l_x: bigint; l_y: bigint; r_x: bigint; r_y: bigint },
 ): TransferProof {
   // Use the proper ZK proof generation
   const zkProof = generateZKTransferProof(
@@ -128,7 +132,9 @@ function generateProofForTransfer(
     publicKey,
     amount,
     balance,
-    randomness
+    randomness,
+    undefined, // oldBlinding
+    senderCipher,
   );
 
   // Convert to contract format
@@ -154,6 +160,10 @@ function generateProofForTransfer(
       x: zkProof.range_commitment.x.toString(),
       y: zkProof.range_commitment.y.toString(),
     },
+    range_nonce: {
+      x: zkProof.range_nonce.x.toString(),
+      y: zkProof.range_nonce.y.toString(),
+    },
     range_challenge: zkProof.range_challenge.toString(),
     range_response_l: zkProof.range_response_l.toString(),
     range_response_r: zkProof.range_response_r.toString(),
@@ -162,6 +172,10 @@ function generateProofForTransfer(
       y: zkProof.balance_commitment.y.toString(),
     },
     balance_response: zkProof.balance_response.toString(),
+    balance_nonce: {
+      x: zkProof.balance_nonce.x.toString(),
+      y: zkProof.balance_nonce.y.toString(),
+    },
   };
 }
 
@@ -385,6 +399,9 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         if (receiverPk.x === 0n && receiverPk.y === 0n) {
           throw new Error("Receiver not registered");
         }
+        if (!isOnCurve(receiverPk)) {
+          throw new Error("Receiver public key is not on the Stark curve");
+        }
 
         // Get auditor public key
         const auditorPkResult = await provider.callContract({
@@ -396,6 +413,9 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
           x: BigInt(auditorPkResult[0] || "0"),
           y: BigInt(auditorPkResult[1] || "0"),
         };
+        if (!isOnCurve(auditorPk)) {
+          throw new Error("Auditor public key is not on the Stark curve");
+        }
 
         // Generate randomness (same for all ciphertexts - same-encryption constraint)
         const randomness = randomScalar();
@@ -409,12 +429,14 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         const currentBalance = state.balances[asset];
 
         // Generate proper ZK proof with ownership, range, and balance proofs
+        // Pass sender ciphertext context for Fiat-Shamir binding
         const proof = generateProofForTransfer(
           keyPair.privateKey,
           keyPair.publicKey,
           amount,
           currentBalance,
-          randomness
+          randomness,
+          { l_x: senderCipher.c1_x, l_y: senderCipher.c1_y, r_x: senderCipher.c2_x, r_y: senderCipher.c2_y },
         );
 
         // Create AE hints

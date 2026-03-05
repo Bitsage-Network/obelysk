@@ -53,10 +53,11 @@ pub struct ECPointFelt {
     pub y: felt252,
 }
 
-/// Balance proof (simplified — full ZK via STWO in production)
+/// Balance proof — Schnorr proof of knowledge of commitment opening
 #[derive(Copy, Drop, Serde)]
 pub struct BalanceProof {
     pub commitment: ECPointFelt,
+    pub nonce: ECPointFelt,      // Nonce commitment A = k*G (must be bound into challenge)
     pub challenge: felt252,
     pub response: felt252,
 }
@@ -427,6 +428,15 @@ pub mod DarkPoolAuction {
         // Outside execution nonces (anti-replay)
         outside_nonce_used: Map<felt252, bool>,
 
+        // Stored balance proofs for re-verification at settlement
+        order_bp_commitment_x: Map<u256, felt252>,
+        order_bp_commitment_y: Map<u256, felt252>,
+        order_bp_challenge: Map<u256, felt252>,
+        order_bp_response: Map<u256, felt252>,
+        order_bp_nonce_x: Map<u256, felt252>,
+        order_bp_nonce_y: Map<u256, felt252>,
+        order_bp_give_asset: Map<u256, felt252>,
+
         // Timelocked upgrade
         pending_upgrade: ClassHash,
         upgrade_scheduled_at: u64,
@@ -665,6 +675,15 @@ pub mod DarkPoolAuction {
             // Verify balance proof
             self._verify_balance_proof(@balance_proof, caller, give_asset);
 
+            // Store balance proof for re-verification at settlement
+            self.order_bp_commitment_x.write(self.order_count.read() + 1, balance_proof.commitment.x);
+            self.order_bp_commitment_y.write(self.order_count.read() + 1, balance_proof.commitment.y);
+            self.order_bp_challenge.write(self.order_count.read() + 1, balance_proof.challenge);
+            self.order_bp_response.write(self.order_count.read() + 1, balance_proof.response);
+            self.order_bp_nonce_x.write(self.order_count.read() + 1, balance_proof.nonce.x);
+            self.order_bp_nonce_y.write(self.order_count.read() + 1, balance_proof.nonce.y);
+            self.order_bp_give_asset.write(self.order_count.read() + 1, give_asset);
+
             // Create order
             let order_id = self.order_count.read() + 1;
             self.order_count.write(order_id);
@@ -848,6 +867,32 @@ pub mod DarkPoolAuction {
                     self.locked_commitment_x.write(order_id, 0);
                     self.locked_commitment_y.write(order_id, 0);
                 } else if order.status == OrderStatus::Revealed {
+                    // Re-verify balance proof at settlement time
+                    let stored_bp = BalanceProof {
+                        commitment: ECPointFelt {
+                            x: self.order_bp_commitment_x.read(order_id),
+                            y: self.order_bp_commitment_y.read(order_id),
+                        },
+                        challenge: self.order_bp_challenge.read(order_id),
+                        response: self.order_bp_response.read(order_id),
+                        nonce: ECPointFelt {
+                            x: self.order_bp_nonce_x.read(order_id),
+                            y: self.order_bp_nonce_y.read(order_id),
+                        },
+                    };
+                    let bp_asset = self.order_bp_give_asset.read(order_id);
+
+                    // If balance proof no longer verifies, skip order (graceful degradation)
+                    let bp_valid = self._try_verify_balance_proof(@stored_bp, order.trader, bp_asset);
+                    if !bp_valid {
+                        order.status = OrderStatus::Expired;
+                        self.orders.write(order_id, order);
+                        self.locked_commitment_x.write(order_id, 0);
+                        self.locked_commitment_y.write(order_id, 0);
+                        i += 1;
+                        continue;
+                    }
+
                     let revealed = self.revealed_orders.read(order_id);
 
                     // Track unique pairs
@@ -1575,6 +1620,66 @@ pub mod DarkPoolAuction {
         /// Verify balance proof with full Schnorr verification
         /// Proves knowledge of opening (value, blinding) for the Pedersen commitment
         /// Verification: response*G + challenge*commitment == expected
+        /// Non-panicking balance proof verification for settlement re-check.
+        /// Returns false instead of panicking if proof is invalid.
+        fn _try_verify_balance_proof(
+            self: @ContractState,
+            proof: @BalanceProof,
+            trader: ContractAddress,
+            asset: felt252,
+        ) -> bool {
+            if *proof.challenge == 0 || *proof.response == 0 {
+                return false;
+            }
+            let commit_pt = Self::_to_native((*proof.commitment).x, (*proof.commitment).y);
+            if commit_pt.is_none() {
+                return false;
+            }
+            let nonce_pt = Self::_to_native((*proof.nonce).x, (*proof.nonce).y);
+            if nonce_pt.is_none() {
+                return false;
+            }
+            // Challenge must bind nonce + commitment + context
+            let expected_challenge = poseidon_hash_span(
+                array![
+                    (*proof.nonce).x,
+                    (*proof.nonce).y,
+                    (*proof.commitment).x,
+                    (*proof.commitment).y,
+                    trader.into(),
+                    asset,
+                ].span()
+            );
+            if expected_challenge != *proof.challenge {
+                return false;
+            }
+            let g_x: felt252 = 0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca;
+            let g_y: felt252 = 0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f;
+            let g_native = EcPointTrait::new(g_x, g_y).unwrap();
+            let g_nz: NonZeroEcPoint = g_native.try_into().unwrap();
+            let g_ec: EcPoint = g_nz.into();
+            let response_g = g_ec.mul(*proof.response);
+
+            let commit_nz_opt: Option<NonZeroEcPoint> = commit_pt.unwrap().try_into();
+            if commit_nz_opt.is_none() {
+                return false;
+            }
+            let commit_ec: EcPoint = commit_nz_opt.unwrap().into();
+            let challenge_c = commit_ec.mul(*proof.challenge);
+
+            let nonce_nz_opt: Option<NonZeroEcPoint> = nonce_pt.unwrap().try_into();
+            if nonce_nz_opt.is_none() {
+                return false;
+            }
+            let nonce_ec: EcPoint = nonce_nz_opt.unwrap().into();
+            let rhs = nonce_ec + challenge_c;
+
+            // Must check EQUALITY, not just non-zero
+            let (lhs_x, lhs_y) = Self::_from_native(response_g);
+            let (rhs_x, rhs_y) = Self::_from_native(rhs);
+            lhs_x == rhs_x && lhs_y == rhs_y
+        }
+
         fn _verify_balance_proof(
             self: @ContractState,
             proof: @BalanceProof,
@@ -1584,13 +1689,19 @@ pub mod DarkPoolAuction {
             assert!(*proof.challenge != 0, "Invalid proof: zero challenge");
             assert!(*proof.response != 0, "Invalid proof: zero response");
 
-            // On-curve validation for commitment point
+            // On-curve validation for commitment and nonce points
             let commit_pt = Self::_to_native((*proof.commitment).x, (*proof.commitment).y);
             assert!(commit_pt.is_some(), "Invalid proof: commitment off curve");
+            let nonce_pt = Self::_to_native((*proof.nonce).x, (*proof.nonce).y);
+            assert!(nonce_pt.is_some(), "Invalid proof: nonce off curve");
 
-            // Verify Fiat-Shamir binding: challenge must be derived from commitment + context
+            // CRITICAL: Fiat-Shamir challenge MUST bind the nonce commitment.
+            // Without this, the attacker can choose nonce after seeing the challenge,
+            // trivially satisfying the Schnorr equation.
             let expected_challenge = poseidon_hash_span(
                 array![
+                    (*proof.nonce).x,
+                    (*proof.nonce).y,
                     (*proof.commitment).x,
                     (*proof.commitment).y,
                     trader.into(),
@@ -1599,8 +1710,7 @@ pub mod DarkPoolAuction {
             );
             assert!(expected_challenge == *proof.challenge, "Invalid proof: challenge mismatch");
 
-            // Schnorr equation: response*G + challenge*commitment
-            // Verifies the prover knows the discrete log of the commitment
+            // Schnorr equation: response*G == nonce + challenge*commitment
             let g_x: felt252 = 0x1ef15c18599971b7beced415a40f0c7deacfd9b0d1819e03d723d8bc943cfca;
             let g_y: felt252 = 0x5668060aa49730b7be4801df46ec62de53ecd11abe43a32873000c36e8dc1f;
 
@@ -1615,11 +1725,17 @@ pub mod DarkPoolAuction {
             let commit_ec: EcPoint = commit_nz.into();
             let challenge_c = commit_ec.mul(*proof.challenge);
 
-            // response*G + challenge*commitment
-            let lhs = response_g + challenge_c;
+            // nonce + challenge*commitment (RHS)
+            let nonce_nz: NonZeroEcPoint = nonce_pt.unwrap().try_into().unwrap();
+            let nonce_ec: EcPoint = nonce_nz.into();
+            let rhs = nonce_ec + challenge_c;
 
-            let lhs_nz: Option<NonZeroEcPoint> = lhs.try_into();
-            assert!(lhs_nz.is_some(), "Schnorr equation failed: zero result");
+            // Verify: response*G == nonce + challenge*commitment
+            // Both sides should be the SAME point (not just non-zero)
+            let (lhs_x, lhs_y) = Self::_from_native(response_g);
+            let (rhs_x, rhs_y) = Self::_from_native(rhs);
+            assert!(lhs_x == rhs_x && lhs_y == rhs_y,
+                "Schnorr equation failed: LHS != RHS");
         }
 
         /// Verify Chaum-Pedersen encryption proof: proves ciphertext encrypts `amount`

@@ -104,11 +104,13 @@ export interface TransferProof {
   enc_s_b: bigint;             // Encryption response for blinding
   enc_s_r: bigint;             // Encryption response for randomness
   range_commitment: ECPoint;   // Range proof aggregate commitment
+  range_nonce: ECPoint;        // Nonce commitment A = k_v*G + k_r*H (bound in Fiat-Shamir)
   range_challenge: bigint;     // Range proof challenge
   range_response_l: bigint;    // Range response (lower bits)
   range_response_r: bigint;    // Range response (upper bits)
   balance_commitment: ECPoint; // New balance commitment
   balance_response: bigint;    // Balance proof response
+  balance_nonce: ECPoint;      // Nonce commitment for balance Schnorr (bound in Fiat-Shamir)
 }
 
 // ============================================================================
@@ -146,7 +148,11 @@ function computeChallenge(...inputs: (ECPoint | bigint | string)[]): bigint {
     result = hash.computePoseidonHashOnElements(values);
   }
 
-  return mod(BigInt(result), CURVE_ORDER);
+  // Return raw Poseidon hash — do NOT reduce mod CURVE_ORDER here.
+  // The contract compares raw Poseidon output; EC multiplication handles
+  // scalar reduction internally. Reducing here would cause ~50% of challenges
+  // to mismatch the contract's recomputed value.
+  return BigInt(result);
 }
 
 // ============================================================================
@@ -576,7 +582,8 @@ export function generateTransferProof(
   amount: bigint,
   oldBalance: bigint,
   randomness: bigint,
-  oldBlinding?: bigint
+  oldBlinding?: bigint,
+  senderCipher?: { l_x: bigint; l_y: bigint; r_x: bigint; r_y: bigint },
 ): TransferProof {
   // Validate public key is on curve to prevent invalid proofs
   if (!isOnCurve(publicKey)) {
@@ -595,8 +602,18 @@ export function generateTransferProof(
   const newBalance = oldBalance - amount;
   const newBlinding = randomScalar();
 
-  // 1. Schnorr ownership proof
-  const ownershipProof = generateSchnorrProof(privateKey, publicKey);
+  // 1. Schnorr ownership proof — challenge MUST match contract's Fiat-Shamir:
+  //    poseidon(pk.x, pk.y, A.x, A.y, cipher.l_x, cipher.l_y, cipher.r_x, cipher.r_y)
+  const ownershipK = randomScalar();
+  const ownershipA = scalarMult(ownershipK, g);
+  const cipherCtx = senderCipher ?? { l_x: 0n, l_y: 0n, r_x: 0n, r_y: 0n };
+  const ownershipChallenge = computeChallenge(
+    publicKey, ownershipA,
+    cipherCtx.l_x, cipherCtx.l_y,
+    cipherCtx.r_x, cipherCtx.r_y,
+  );
+  const ownershipResponse = mod(ownershipK + ownershipChallenge * privateKey, CURVE_ORDER);
+  const ownershipProof = { commitment: ownershipA, challenge: ownershipChallenge, response: ownershipResponse };
 
   // 2. Blinding factor proof
   const blindingK = randomScalar();
@@ -611,16 +628,37 @@ export function generateTransferProof(
   const encSB = mod(encK + encChallenge * amount, CURVE_ORDER);
   const encSR = mod(encK + encChallenge * randomness, CURVE_ORDER);
 
-  // 4. Range proof (simplified - using commitment approach)
+  // 4. Range proof with nonce bound in Fiat-Shamir
   const rangeCommitment = commit(amount, randomness);
-  const rangeChallenge = computeChallenge(rangeCommitment, BigInt(amount.toString()));
-  const rangeResponseL = mod(amount + rangeChallenge * randomness, CURVE_ORDER);
-  const rangeResponseR = mod(newBalance + rangeChallenge * newBlinding, CURVE_ORDER);
+  // Generate range nonce: A = k_v*G + k_r*H
+  const rangeKv = randomScalar();
+  const rangeKr = randomScalar();
+  const rangeNonceG = scalarMult(rangeKv, g);
+  const rangeNonceH = scalarMult(rangeKr, h);
+  const rangeNonce = addPoints(rangeNonceG, rangeNonceH);
 
-  // 5. Balance proof
+  // Challenge MUST bind nonce + commitment + ciphertext context (matches contract)
+  const rangeChallenge = computeChallenge(
+    rangeNonce, rangeCommitment, cipherCtx.l_x, cipherCtx.l_y,
+  );
+  // Responses: s_v = k_v + c*v, s_r = k_r + c*r
+  const rangeResponseL = mod(rangeKv + rangeChallenge * amount, CURVE_ORDER);
+  const rangeResponseR = mod(rangeKr + rangeChallenge * randomness, CURVE_ORDER);
+
+  // 5. Balance proof with nonce bound in Fiat-Shamir
   const balanceCommitment = commit(newBalance, newBlinding);
-  const balanceChallenge = computeChallenge(balanceCommitment, rangeCommitment);
-  const balanceResponse = mod(newBlinding + balanceChallenge * actualOldBlinding, CURVE_ORDER);
+  // Generate balance nonce: k*G
+  const balanceK = randomScalar();
+  const balanceNonce = scalarMult(balanceK, g);
+
+  // Challenge binds nonce + commitment + ciphertext + sender PK (matches contract)
+  const balanceChallenge = computeChallenge(
+    balanceNonce, balanceCommitment,
+    cipherCtx.l_x, cipherCtx.l_y,
+    publicKey,
+  );
+  // Response: s = k + c * blinding
+  const balanceResponse = mod(balanceK + balanceChallenge * newBlinding, CURVE_ORDER);
 
   return {
     ownership_a: ownershipProof.commitment,
@@ -632,11 +670,13 @@ export function generateTransferProof(
     enc_s_b: encSB,
     enc_s_r: encSR,
     range_commitment: rangeCommitment,
+    range_nonce: rangeNonce,
     range_challenge: rangeChallenge,
     range_response_l: rangeResponseL,
     range_response_r: rangeResponseR,
     balance_commitment: balanceCommitment,
     balance_response: balanceResponse,
+    balance_nonce: balanceNonce,
   };
 }
 
@@ -654,11 +694,13 @@ export function transferProofToCalldata(proof: TransferProof): object {
     enc_s_b: "0x" + proof.enc_s_b.toString(16),
     enc_s_r: "0x" + proof.enc_s_r.toString(16),
     range_commitment: { x: "0x" + proof.range_commitment.x.toString(16), y: "0x" + proof.range_commitment.y.toString(16) },
+    range_nonce: { x: "0x" + proof.range_nonce.x.toString(16), y: "0x" + proof.range_nonce.y.toString(16) },
     range_challenge: "0x" + proof.range_challenge.toString(16),
     range_response_l: "0x" + proof.range_response_l.toString(16),
     range_response_r: "0x" + proof.range_response_r.toString(16),
     balance_commitment: { x: "0x" + proof.balance_commitment.x.toString(16), y: "0x" + proof.balance_commitment.y.toString(16) },
     balance_response: "0x" + proof.balance_response.toString(16),
+    balance_nonce: { x: "0x" + proof.balance_nonce.x.toString(16), y: "0x" + proof.balance_nonce.y.toString(16) },
   };
 }
 
@@ -689,7 +731,9 @@ export function verifyTransferProof(
     proof.blinding_a,
     proof.enc_a_l,
     proof.range_commitment,
+    proof.range_nonce,
     proof.balance_commitment,
+    proof.balance_nonce,
   ];
 
   for (const point of points) {

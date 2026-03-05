@@ -556,9 +556,19 @@ export class BitSageSessionManager {
 
   // Get remaining spending limit
   async getRemainingLimit(sessionId: string): Promise<bigint> {
-    // This would query the contract
-    // For now, return from local state or fetch
-    return 0n;
+    // Try on-chain read first
+    try {
+      const result = await this.provider.callContract({
+        contractAddress: this.contractAddress,
+        entrypoint: 'get_remaining_limit',
+        calldata: [sessionId],
+      });
+      return BigInt(result[0] || "0");
+    } catch {
+      // Fall back: local storage doesn't track spending limits,
+      // so return 0 to signal unknown (caller should retry on-chain)
+      return 0n;
+    }
   }
 
   // ============================================================

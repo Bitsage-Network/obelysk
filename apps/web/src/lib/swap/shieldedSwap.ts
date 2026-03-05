@@ -282,16 +282,41 @@ export async function estimateSwapOutput(
 
     const expectedOutput = BigInt(result.toString());
 
-    // Price impact estimation: compare actual output vs. expected at pool's spot price.
-    // Since amountIn and expectedOutput are different tokens, we measure impact as
-    // the deviation from the pool's marginal rate (quote returns post-impact output).
-    // A better approximation: compare output with a tiny quote to get the spot rate.
-    // For now, use the fee-adjusted ratio as a proxy (0 impact for small swaps).
-    const priceImpact = 0; // TODO: implement proper price impact via spot-rate comparison
+    // Price impact: compare actual rate to spot rate (tiny-amount quote)
+    let priceImpact = 0;
+    try {
+      const spotAmount = 10n ** 15n; // small reference amount for spot rate
+      if (amountIn > spotAmount) {
+        const spotResult = await contract.call("quote", [
+          {
+            token0: poolKey.token0,
+            token1: poolKey.token1,
+            fee: poolKey.fee,
+            tick_spacing: poolKey.tick_spacing,
+            extension: poolKey.extension,
+          },
+          spotAmount.toString(),
+          isToken1,
+        ]);
+        const spotOutput = BigInt(spotResult.toString());
+        // spotRate = spotOutput / spotAmount, actualRate = expectedOutput / amountIn
+        // impact = abs(1 - actualRate / spotRate)
+        const actualRateScaled = expectedOutput * spotAmount;
+        const spotRateScaled = spotOutput * amountIn;
+        if (spotRateScaled > 0n) {
+          const diff = actualRateScaled > spotRateScaled
+            ? actualRateScaled - spotRateScaled
+            : spotRateScaled - actualRateScaled;
+          priceImpact = Number(diff * 10000n / spotRateScaled) / 10000;
+        }
+      }
+    } catch {
+      // If spot quote fails, leave impact as 0
+    }
 
     return {
       expectedOutput,
-      priceImpact: Math.abs(priceImpact),
+      priceImpact,
       fee: (amountIn * BigInt(poolKey.fee)) / (2n ** 128n),
       route: `${inputToken} → Ekubo → ${outputToken}`,
     };

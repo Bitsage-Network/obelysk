@@ -138,6 +138,8 @@ pub struct ConfidentialOrder {
 pub struct RateProof {
     /// Commitment to rate: C_r = rG + bH
     pub rate_commitment: ECPoint,
+    /// Nonce commitment for Schnorr verification
+    pub nonce_commitment: ECPoint,
     /// Proof that give * rate = want (Schnorr-style)
     pub challenge: felt252,
     pub response_give: felt252,
@@ -148,12 +150,20 @@ pub struct RateProof {
 /// Range proof for encrypted amount (simplified Bulletproof-style)
 #[derive(Drop, Serde)]
 pub struct SwapRangeProof {
-    /// Bit commitments for range proof
+    /// Bit commitments: C_i = b_i*G + r_i*H for each bit
     pub bit_commitments: Array<ECPoint>,
-    /// Challenge
+    /// Aggregate Fiat-Shamir challenge
     pub challenge: felt252,
-    /// Responses for each bit
-    pub responses: Array<felt252>,
+    /// OR-sigma proof data per bit (6 values each: a0_x, a0_y, c0, s0, a1_x, a1_y, c1, s1)
+    /// For bit i: proves C_i commits to 0 or 1
+    pub or_proof_a0: Array<ECPoint>,   // nonce commitment for branch 0
+    pub or_proof_c0: Array<felt252>,   // challenge for branch 0
+    pub or_proof_s0: Array<felt252>,   // response for branch 0
+    pub or_proof_a1: Array<ECPoint>,   // nonce commitment for branch 1
+    pub or_proof_c1: Array<felt252>,   // challenge for branch 1
+    pub or_proof_s1: Array<felt252>,   // response for branch 1
+    /// Value commitment: V = amount*G + aggregateBlinding*H
+    pub value_commitment: ECPoint,
     /// Number of bits proven
     pub num_bits: u8,
 }
@@ -163,6 +173,8 @@ pub struct SwapRangeProof {
 pub struct BalanceProof {
     /// Commitment to balance difference
     pub balance_commitment: ECPoint,
+    /// Nonce commitment for Schnorr verification
+    pub nonce_commitment: ECPoint,
     /// Proof that balance >= amount
     pub challenge: felt252,
     pub response: felt252,
@@ -244,9 +256,11 @@ pub fn verify_rate_proof(
     // 2. encrypted_want commits to give * rate
     // 3. rate_commitment commits to rate
 
-    // Reconstruct challenge input
+    // Reconstruct challenge input — MUST include nonce_commitment to prevent forgery
     let mut challenge_input: Array<felt252> = array![];
     challenge_input.append(RATE_PROOF_DOMAIN);
+    challenge_input.append((*proof.nonce_commitment).x);
+    challenge_input.append((*proof.nonce_commitment).y);
     challenge_input.append(*encrypted_give.c1_x);
     challenge_input.append(*encrypted_give.c1_y);
     challenge_input.append(*encrypted_give.c2_x);
@@ -265,24 +279,37 @@ pub fn verify_rate_proof(
         return false;
     }
 
-    // Verify response equations
-    // s_g * G + s_r * rate_commitment + s_b * H = challenge * (some commitment) + (announcement)
-    // This is a simplified verification - full implementation would have complete Schnorr
-
-    // For now, verify non-zero responses and valid commitment
+    // Verify non-zero responses and valid commitment
     if *proof.response_give == 0 || *proof.response_rate == 0 {
         return false;
     }
 
-    if is_zero(*proof.rate_commitment) {
+    if is_zero(*proof.rate_commitment) || is_zero(*proof.nonce_commitment) {
         return false;
     }
 
-    true
+    // Schnorr verification: response_give * G + response_rate * rate_commitment == nonce_commitment + challenge * L1
+    let g = generator();
+    let lhs_1 = ec_mul(*proof.response_give, g);
+    let lhs_2 = ec_mul(*proof.response_rate, *proof.rate_commitment);
+    let lhs = ec_add(lhs_1, lhs_2);
+
+    let L1 = ECPoint { x: *encrypted_give.c2_x, y: *encrypted_give.c2_y };
+    let c_L1 = ec_mul(expected_challenge, L1);
+    let rhs = ec_add(*proof.nonce_commitment, c_L1);
+
+    lhs.x == rhs.x && lhs.y == rhs.y
 }
 
-/// Verify range proof for encrypted amount
-/// Proves that the encrypted value is in range [0, 2^num_bits)
+/// Verify range proof for encrypted amount using OR-sigma protocol.
+/// Proves that the encrypted value is in range [0, 2^num_bits).
+///
+/// For each bit i, the prover supplies an OR-sigma proof that C_i commits to 0 or 1:
+///   Branch 0: s0*H == a0 + c0*C_i          (C_i opens to 0 with blinding)
+///   Branch 1: s1*H == a1 + c1*(C_i - G)    (C_i - G opens to 0 with blinding)
+///   Constraint: c0 + c1 == per_bit_challenge (Fiat-Shamir for bit i)
+///
+/// Then: sum(2^i * C_i) == value_commitment, proving bit decomposition is consistent.
 pub fn verify_swap_range_proof(
     encrypted_amount: @ElGamalCiphertext,
     proof: @SwapRangeProof,
@@ -297,18 +324,25 @@ pub fn verify_swap_range_proof(
     if proof.bit_commitments.len() != num_bits {
         return false;
     }
-
-    if proof.responses.len() != num_bits {
+    if proof.or_proof_a0.len() != num_bits
+        || proof.or_proof_c0.len() != num_bits
+        || proof.or_proof_s0.len() != num_bits
+        || proof.or_proof_a1.len() != num_bits
+        || proof.or_proof_c1.len() != num_bits
+        || proof.or_proof_s1.len() != num_bits {
         return false;
     }
 
-    let _g = generator();
+    let g = generator();
+    let h = generator_h();
 
-    // Verify challenge derivation
+    // Compute aggregate challenge from all commitments + ciphertext context
     let mut challenge_input: Array<felt252> = array![];
     challenge_input.append(SWAP_DOMAIN);
     challenge_input.append(*encrypted_amount.c1_x);
+    challenge_input.append(*encrypted_amount.c1_y);
     challenge_input.append(*encrypted_amount.c2_x);
+    challenge_input.append(*encrypted_amount.c2_y);
 
     let mut i: u32 = 0;
     loop {
@@ -327,28 +361,78 @@ pub fn verify_swap_range_proof(
         return false;
     }
 
-    // Verify bit commitment structure
-    // Each bit commitment should be either 0*G+r*H or 1*G+r*H
-    // Simplified verification: check commitments are valid EC points
+    // Verify each bit's OR-sigma proof
     let mut j: u32 = 0;
     loop {
         if j >= num_bits {
-            break true;
+            break;
         }
 
-        let commit = proof.bit_commitments.at(j);
-        if is_zero(*commit) {
-            break false;
+        let commit = *proof.bit_commitments.at(j);
+        if is_zero(commit) {
+            return false;
         }
 
-        // Verify response is non-zero
-        let resp = proof.responses.at(j);
-        if *resp == 0 {
-            break false;
+        let a0 = *proof.or_proof_a0.at(j);
+        let c0 = *proof.or_proof_c0.at(j);
+        let s0 = *proof.or_proof_s0.at(j);
+        let a1 = *proof.or_proof_a1.at(j);
+        let c1 = *proof.or_proof_c1.at(j);
+        let s1 = *proof.or_proof_s1.at(j);
+
+        // Derive per-bit challenge: hash(aggregate_challenge, bit_index, a0, a1)
+        let per_bit_challenge = poseidon_hash_span(
+            array![
+                expected_challenge,
+                j.into(),
+                a0.x, a0.y,
+                a1.x, a1.y,
+            ].span()
+        );
+
+        // Constraint: c0 + c1 == per_bit_challenge (challenge split)
+        if c0 + c1 != per_bit_challenge {
+            return false;
+        }
+
+        // Branch 0: s0*H == a0 + c0*C_i (proves C_i commits to 0)
+        let s0_h = ec_mul(s0, h);
+        let c0_ci = ec_mul(c0, commit);
+        let rhs0 = ec_add(a0, c0_ci);
+        if s0_h.x != rhs0.x || s0_h.y != rhs0.y {
+            return false;
+        }
+
+        // Branch 1: s1*H == a1 + c1*(C_i - G) (proves C_i commits to 1)
+        let neg_g = ECPoint { x: g.x, y: -g.y };
+        let ci_minus_g = ec_add(commit, neg_g);
+        let s1_h = ec_mul(s1, h);
+        let c1_ci_g = ec_mul(c1, ci_minus_g);
+        let rhs1 = ec_add(a1, c1_ci_g);
+        if s1_h.x != rhs1.x || s1_h.y != rhs1.y {
+            return false;
         }
 
         j += 1;
-    }
+    };
+
+    // Verify aggregate: sum(2^i * C_i) == value_commitment
+    let mut aggregate = ECPoint { x: 0, y: 0 };
+    let mut power_of_two: felt252 = 1;
+    let mut k: u32 = 0;
+    loop {
+        if k >= num_bits {
+            break;
+        }
+        let commit = *proof.bit_commitments.at(k);
+        let weighted = ec_mul(power_of_two, commit);
+        aggregate = ec_add(aggregate, weighted);
+        power_of_two = power_of_two * 2;
+        k += 1;
+    };
+
+    // The aggregate must equal the provided value commitment
+    aggregate.x == (*proof.value_commitment).x && aggregate.y == (*proof.value_commitment).y
 }
 
 /// Verify balance proof showing sufficient funds
@@ -369,17 +453,40 @@ pub fn verify_balance_proof(
         return false;
     }
 
-    // Reconstruct and verify challenge
+    if is_zero(*proof.nonce_commitment) {
+        return false;
+    }
+
+    // Reconstruct and verify challenge — MUST include nonce_commitment to prevent forgery
+    // Include FULL ciphertext coordinates (both x and y) to prevent malleability
     let mut challenge_input: Array<felt252> = array![];
     challenge_input.append(SWAP_DOMAIN);
+    challenge_input.append((*proof.nonce_commitment).x);
+    challenge_input.append((*proof.nonce_commitment).y);
     challenge_input.append((*proof.balance_commitment).x);
     challenge_input.append((*proof.balance_commitment).y);
     challenge_input.append(*encrypted_balance.c1_x);
+    challenge_input.append(*encrypted_balance.c1_y);
+    challenge_input.append(*encrypted_balance.c2_x);
+    challenge_input.append(*encrypted_balance.c2_y);
     challenge_input.append(*encrypted_amount.c1_x);
+    challenge_input.append(*encrypted_amount.c1_y);
+    challenge_input.append(*encrypted_amount.c2_x);
+    challenge_input.append(*encrypted_amount.c2_y);
 
     let expected_challenge = poseidon_hash_span(challenge_input.span());
 
-    proof.challenge == @expected_challenge
+    if *proof.challenge != expected_challenge {
+        return false;
+    }
+
+    // Full Schnorr: response * G == nonce_commitment + challenge * balance_commitment
+    let g = generator();
+    let lhs = ec_mul(*proof.response, g);
+    let c_commit = ec_mul(*proof.challenge, *proof.balance_commitment);
+    let rhs = ec_add(*proof.nonce_commitment, c_commit);
+
+    lhs.x == rhs.x && lhs.y == rhs.y
 }
 
 // =============================================================================
@@ -465,9 +572,14 @@ pub fn create_rate_proof(
     // Compute rate commitment point
     let rate_point = ec_add(ec_mul(rate, g), ec_mul(blinding, h));
 
-    // Compute challenge (Fiat-Shamir)
+    // Nonce commitment for Schnorr proof
+    let nonce_commitment = ec_mul(randomness, g);
+
+    // Compute challenge (Fiat-Shamir) — must match verify_rate_proof's challenge derivation
+    // NOTE: In production, this function receives the encrypted ciphertexts
+    // and binds to them. Here we use give_amount/want_amount as test proxies.
     let challenge = poseidon_hash_span(
-        array![RATE_PROOF_DOMAIN, give_amount, want_amount, rate, randomness].span()
+        array![RATE_PROOF_DOMAIN, nonce_commitment.x, nonce_commitment.y, give_amount, want_amount, rate, randomness].span()
     );
 
     // Compute responses
@@ -477,6 +589,7 @@ pub fn create_rate_proof(
 
     RateProof {
         rate_commitment: rate_point,
+        nonce_commitment,
         challenge,
         response_give,
         response_rate,
@@ -537,17 +650,28 @@ pub fn estimate_batch_savings(num_swaps: u32) -> (u64, u64, u64) {
     (individual_gas, batch_gas, savings)
 }
 
-/// Check if fill amount meets minimum fill percentage
+/// Check if encrypted fill amount is non-zero (basic check for encrypted orders)
 pub fn meets_min_fill(
     _order: @ConfidentialOrder,
     fill_encrypted: @ElGamalCiphertext,
 ) -> bool {
-    // In production, this would verify the encrypted fill is >= min_fill_pct
-    // of the original order amount using range proofs
-    // For now, return true if fill is non-zero (either c1 or c2 point is non-zero)
     let c1 = ECPoint { x: *fill_encrypted.c1_x, y: *fill_encrypted.c1_y };
     let c2 = ECPoint { x: *fill_encrypted.c2_x, y: *fill_encrypted.c2_y };
     !is_zero(c1) || !is_zero(c2)
+}
+
+/// Check if fill amount meets minimum fill percentage using plaintext amounts.
+/// Use this during reveal/settle phase when amounts are known.
+pub fn meets_min_fill_plaintext(
+    fill_amount: u256,
+    min_fill_pct: u8,
+    original_amount: u256,
+) -> bool {
+    if original_amount == 0 || min_fill_pct == 0 {
+        return fill_amount > 0;
+    }
+    // fill_amount * 100 >= min_fill_pct * original_amount
+    fill_amount * 100 >= min_fill_pct.into() * original_amount
 }
 
 /// Create a zero ciphertext (encryption of 0)
@@ -1790,6 +1914,7 @@ mod tests {
         // Zero proof should fail
         let zero_proof = BalanceProof {
             balance_commitment: ECPoint { x: 0, y: 0 },
+            nonce_commitment: ECPoint { x: 0, y: 0 },
             challenge: 0,
             response: 0,
         };

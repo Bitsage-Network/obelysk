@@ -30,6 +30,12 @@ export const PEDERSEN_H_Y = BigInt(
   "0x1bd58ea52858154de69bf90e446ff200f173d49da444c4f462652ce6b93457e"
 );
 
+// Curve parameter A (Stark curve: y^2 = x^3 + A*x + B)
+export const CURVE_A = BigInt(1);
+export const CURVE_B = BigInt(
+  "0x6f21413efbe40de150e596d72f7a8c5609ad26c15c915c1f4cdfcb99cee9e89"
+);
+
 // Common denominators for privacy pool amounts
 export const PRIVACY_DENOMINATORS = [
   BigInt("100000000000000000000"), // 100 SAGE

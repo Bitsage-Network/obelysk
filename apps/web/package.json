@@ -28,6 +28,7 @@
     "react-dom": "^18.3.1",
     "starknet": "^8.1.2",
     "tailwind-merge": "^2.6.0",
+    "viem": "^2.47.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

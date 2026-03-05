@@ -253,49 +253,33 @@ export async function verifyEthereumSignature(
 }
 
 /**
- * Compute EIP-712 message hash
- *
- * TODO: Implement using ethers.js or viem for proper keccak256-based EIP-712 hashing.
- * EIP-712 requires keccak256, NOT Poseidon. Install ethers (`npm i ethers`) or viem
- * (`npm i viem`) and use their TypedDataEncoder / hashTypedData utilities.
- *
- * Example with ethers v6:
- *   import { TypedDataEncoder } from 'ethers';
- *   return TypedDataEncoder.hash(typedData.domain, typedData.types, typedData.message);
- *
- * Example with viem:
- *   import { hashTypedData } from 'viem';
- *   return hashTypedData({ domain: typedData.domain, types: typedData.types, primaryType: typedData.primaryType, message: typedData.message });
+ * Compute EIP-712 message hash using viem's hashTypedData.
  */
-function computeEIP712Hash(_typedData: ReturnType<typeof buildEIP712TypedData>): string {
-  throw new Error(
-    'computeEIP712Hash is not implemented. EIP-712 requires keccak256 hashing via ethers.js or viem. ' +
-    'Install one of these packages and implement proper EIP-712 hashing.'
-  );
+function computeEIP712Hash(td: ReturnType<typeof buildEIP712TypedData>): string {
+  // Dynamic import would be async; use require for synchronous access.
+  // viem is a peer dependency installed in apps/web.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { hashTypedData } = require('viem') as typeof import('viem');
+  return hashTypedData({
+    domain: td.domain as Parameters<typeof hashTypedData>[0]['domain'],
+    types: td.types,
+    primaryType: td.primaryType,
+    message: td.message,
+  });
 }
 
 /**
- * Recover Ethereum address from signature
- *
- * TODO: Implement using ethers.js or viem for proper ECDSA recovery.
- * Install ethers (`npm i ethers`) or viem (`npm i viem`).
- *
- * Example with ethers v6:
- *   import { recoverAddress } from 'ethers';
- *   return recoverAddress(messageHash, signature.signature);
- *
- * Example with viem:
- *   import { recoverAddress } from 'viem';
- *   return recoverAddress({ hash: messageHash, signature: signature.signature });
+ * Recover Ethereum address from ECDSA signature using viem.
  */
 async function recoverEthereumAddress(
-  _messageHash: string,
-  _signature: MultichainSignature
+  messageHash: string,
+  signature: MultichainSignature
 ): Promise<string> {
-  throw new Error(
-    'recoverEthereumAddress is not implemented. ECDSA recovery requires ethers.js or viem. ' +
-    'Install one of these packages and implement proper address recovery.'
-  );
+  const { recoverAddress } = await import('viem');
+  return recoverAddress({
+    hash: messageHash as `0x${string}`,
+    signature: signature.signature as `0x${string}`,
+  });
 }
 
 /**

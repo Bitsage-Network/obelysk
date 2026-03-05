@@ -428,8 +428,8 @@ export function useDarkPool(): UseDarkPoolResult {
             encrypted,
             privKey,
           );
-        } catch {
-          // MAC failed or hint corrupted — leave as null
+        } catch (err) {
+          console.warn("[DarkPool] AE hint decryption failed:", symbol, err);
         }
       }
 
@@ -438,6 +438,7 @@ export function useDarkPool(): UseDarkPoolResult {
         symbol,
         encrypted,
         decrypted,
+        decryptionError: encrypted != null && hint != null && privKey != null && decrypted == null,
       };
     });
 

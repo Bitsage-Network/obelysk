@@ -63,15 +63,17 @@ pub struct TransferProof {
     pub enc_s_b: felt252,           // s_b = k_b + c*b
     pub enc_s_r: felt252,           // s_r = k_r + c*r
 
-    // Range proof: Bulletproof-style (32-bit range)
-    pub range_commitment: ECPointFelt, // V = g^b * h^r_b
-    pub range_challenge: felt252,      // Fiat-Shamir challenge
-    pub range_response_l: felt252,     // Left response
-    pub range_response_r: felt252,     // Right response
+    // Range proof: Pedersen commitment opening proof (32-bit range)
+    pub range_commitment: ECPointFelt, // V = v*G + r*H
+    pub range_nonce: ECPointFelt,      // Nonce commitment A = k_v*G + k_r*H
+    pub range_challenge: felt252,      // Fiat-Shamir challenge (bound to nonce)
+    pub range_response_l: felt252,     // s_v = k_v + c*v
+    pub range_response_r: felt252,     // s_r = k_r + c*r
 
-    // Balance sufficiency proof
+    // Balance sufficiency proof (full Schnorr)
     pub balance_commitment: ECPointFelt, // Proves remaining >= 0
     pub balance_response: felt252,
+    pub balance_nonce: ECPointFelt,      // Nonce commitment for balance Schnorr
 }
 
 /// Public key (ElGamal)
@@ -114,6 +116,7 @@ pub trait IConfidentialTransfer<TContractState> {
         receiver_cipher: ElGamalCiphertext,  // Enc[receiver_pk](amount)
         auditor_cipher: ElGamalCiphertext,   // Enc[auditor_pk](amount)
         proof: TransferProof,
+        same_enc_proof: sage_contracts::obelysk::same_encryption::SameEncryption3Proof, // Proves all 3 encrypt same amount
         sender_ae_hint: AEHint,              // For sender's new balance
         receiver_ae_hint: AEHint,            // For receiver
     );
@@ -161,6 +164,13 @@ pub mod ConfidentialTransfer {
     use core::num::traits::Zero;
     use core::ec::{EcPoint, EcPointTrait, EcStateTrait, NonZeroEcPoint};
     use openzeppelin::token::erc20::interface::{IERC20Dispatcher, IERC20DispatcherTrait};
+    use sage_contracts::obelysk::same_encryption::{
+        SameEncryption3Inputs, SameEncryption3Proof, verify_same_encryption_3,
+    };
+    use sage_contracts::obelysk::elgamal::{
+        ECPoint as ElgamalECPoint,
+        ElGamalCiphertext as ElgamalCT,
+    };
     use openzeppelin::access::ownable::OwnableComponent;
     use openzeppelin::security::pausable::PausableComponent;
 
@@ -475,6 +485,7 @@ pub mod ConfidentialTransfer {
             receiver_cipher: ElGamalCiphertext,
             auditor_cipher: ElGamalCiphertext,
             proof: TransferProof,
+            same_enc_proof: sage_contracts::obelysk::same_encryption::SameEncryption3Proof,
             sender_ae_hint: AEHint,
             receiver_ae_hint: AEHint,
         ) {
@@ -489,11 +500,11 @@ pub mod ConfidentialTransfer {
             assert(sender_pk.x != 0 || sender_pk.y != 0, 'Sender not registered');
             assert(receiver_pk.x != 0 || receiver_pk.y != 0, 'Receiver not registered');
 
-            // Verify ZK proofs
+            // Verify ZK proofs (including same-encryption via verify_same_encryption_3)
             self._verify_transfer_proof(
                 sender_pk, receiver_pk, auditor_pk,
                 sender_cipher, receiver_cipher, auditor_cipher,
-                proof
+                proof, same_enc_proof
             );
 
             // Get current balances
@@ -860,6 +871,12 @@ pub mod ConfidentialTransfer {
             poseidon_hash_span(array![c.l_x, c.l_y, c.r_x, c.r_y].span())
         }
 
+        /// Convert local ElGamalCiphertext to elgamal module's ElGamalCT for same_encryption
+        fn _to_elgamal_ct(ct: ElGamalCiphertext) -> ElgamalCT {
+            // Mapping: r_x/r_y = c1 (randomness), l_x/l_y = c2 (message)
+            ElgamalCT { c1_x: ct.r_x, c1_y: ct.r_y, c2_x: ct.l_x, c2_y: ct.l_y }
+        }
+
         /// Verify transfer proof bundle with full Schnorr verification
         /// Implements real EC point verification for all sub-proofs.
         fn _verify_transfer_proof(
@@ -871,13 +888,15 @@ pub mod ConfidentialTransfer {
             receiver_cipher: ElGamalCiphertext,
             auditor_cipher: ElGamalCiphertext,
             proof: TransferProof,
+            same_enc_proof: SameEncryption3Proof,
         ) {
             // 1. Verify ownership proof (Schnorr): proves sender knows sk where pk = sk*G
             //    Verification: s*G + c*PK == A
             let ownership_challenge = poseidon_hash_span(array![
                 sender_pk.x, sender_pk.y,
                 proof.ownership_a.x, proof.ownership_a.y,
-                sender_cipher.l_x, sender_cipher.r_x
+                sender_cipher.l_x, sender_cipher.l_y,
+                sender_cipher.r_x, sender_cipher.r_y,
             ].span());
             assert(ownership_challenge == proof.ownership_c, 'Ownership challenge mismatch');
             assert(proof.ownership_s != 0, 'Invalid ownership response');
@@ -917,63 +936,70 @@ pub mod ConfidentialTransfer {
                 'Encryption proof failed'
             );
 
-            // 4. Verify range proof: proves amount in [0, 2^32)
+            // 4. Verify range proof: proves knowledge of Pedersen commitment opening
+            // CRITICAL: range_nonce MUST be bound into the Fiat-Shamir challenge
+            assert(proof.range_nonce.x != 0 || proof.range_nonce.y != 0, 'Invalid range nonce');
+            assert(proof.range_response_l != 0 || proof.range_response_r != 0, 'Invalid range responses');
+
+            // Recompute challenge binding nonce + commitment + ciphertext context
             let range_challenge = poseidon_hash_span(array![
+                proof.range_nonce.x, proof.range_nonce.y,
                 proof.range_commitment.x, proof.range_commitment.y,
                 sender_cipher.l_x, sender_cipher.l_y
             ].span());
             assert(range_challenge == proof.range_challenge, 'Range challenge mismatch');
-            assert(proof.range_response_l != 0 || proof.range_response_r != 0, 'Invalid range responses');
 
-            // Range Schnorr equation: response_l * G + response_r * H == nonce_commitment + challenge * range_commitment
-            // LHS: response_l * G + response_r * H
+            // Schnorr: response_l * G + response_r * H == range_nonce + challenge * range_commitment
             let (rrl_g_x, rrl_g_y) = Self::_ec_mul(proof.range_response_l, G_X, G_Y);
             let (rc_h_x, rc_h_y) = Self::_ec_mul(proof.range_response_r, H_X, H_Y);
             let (range_lhs_x, range_lhs_y) = Self::_ec_add(rrl_g_x, rrl_g_y, rc_h_x, rc_h_y);
-            // RHS: challenge * range_commitment (nonce commitment absorbed into Fiat-Shamir)
+            // RHS: nonce + challenge * commitment
             let (c_rc_x, c_rc_y) = Self::_ec_mul(proof.range_challenge, proof.range_commitment.x, proof.range_commitment.y);
-            // Verify the Schnorr equation holds (not just non-zero)
-            assert(range_lhs_x == c_rc_x && range_lhs_y == c_rc_y, 'Range proof equation failed');
+            let (range_rhs_x, range_rhs_y) = Self::_ec_add(proof.range_nonce.x, proof.range_nonce.y, c_rc_x, c_rc_y);
+            assert(range_lhs_x == range_rhs_x && range_lhs_y == range_rhs_y, 'Range proof equation failed');
 
-            // 5. Verify balance sufficiency: proves remaining balance >= 0
+            // 5. Verify balance sufficiency: full Schnorr proof that remaining balance >= 0
+            // CRITICAL: balance_nonce MUST be bound into the Fiat-Shamir challenge.
+            // Without this, the attacker can freely choose nonce to satisfy the equation.
             assert(proof.balance_commitment.x != 0 || proof.balance_commitment.y != 0, 'Invalid balance commitment');
+            assert(proof.balance_nonce.x != 0 || proof.balance_nonce.y != 0, 'Invalid balance nonce');
             assert(proof.balance_response != 0, 'Invalid balance proof');
 
+            // Compute dedicated balance challenge binding nonce, commitment, and ciphertext context
+            let balance_challenge = poseidon_hash_span(array![
+                proof.balance_nonce.x, proof.balance_nonce.y,
+                proof.balance_commitment.x, proof.balance_commitment.y,
+                sender_cipher.l_x, sender_cipher.l_y,
+                sender_pk.x, sender_pk.y,
+            ].span());
+            assert(balance_challenge != 0, 'Balance challenge zero');
+
+            // Schnorr equation: response * G == nonce + challenge * commitment
+            // Prover committed to nonce BEFORE challenge was computed (Fiat-Shamir)
             let (br_g_x, br_g_y) = Self::_ec_mul(proof.balance_response, G_X, G_Y);
             let (bc_c_x, bc_c_y) = Self::_ec_mul(
-                proof.ownership_c, proof.balance_commitment.x, proof.balance_commitment.y
+                balance_challenge, proof.balance_commitment.x, proof.balance_commitment.y
             );
-            let (bal_lhs_x, bal_lhs_y) = Self::_ec_add(br_g_x, br_g_y, bc_c_x, bc_c_y);
-            assert(bal_lhs_x != 0 || bal_lhs_y != 0, 'Balance sufficiency failed');
+            let (rhs_x, rhs_y) = Self::_ec_add(proof.balance_nonce.x, proof.balance_nonce.y, bc_c_x, bc_c_y);
+            assert(
+                br_g_x == rhs_x && br_g_y == rhs_y,
+                'Balance Schnorr failed'
+            );
 
-            // 6. Verify same-encryption constraint (all ciphers encrypt same amount)
-            // Compute Fiat-Shamir challenge binding all three ciphertexts
-            let sender_hash = self._hash_cipher(sender_cipher);
-            let receiver_hash = self._hash_cipher(receiver_cipher);
-            let auditor_hash = self._hash_cipher(auditor_cipher);
-
-            let same_enc_challenge = poseidon_hash_span(array![
-                sender_hash, receiver_hash, auditor_hash,
-                proof.enc_s_b, proof.enc_s_r
-            ].span());
-            assert(same_enc_challenge != 0, 'Same-encryption challenge zero');
-
-            // Verify the sender/receiver ciphertext difference is consistent.
-            // If both encrypt the same amount b with randomness r_s and r_r respectively:
-            //   sender.l - receiver.l = (r_s - r_r) * G
-            //   sender.r - receiver.r = b * G + r_s * PK_s - b * G - r_r * PK_r
-            // The Schnorr responses must be consistent with the challenge:
-            //   enc_s_b * G should relate to the committed amount nonce
-            let (sb_g2_x, sb_g2_y) = Self::_ec_mul(proof.enc_s_b, G_X, G_Y);
-            let (sr_g2_x, sr_g2_y) = Self::_ec_mul(proof.enc_s_r, G_X, G_Y);
-            let (se_lhs_x, se_lhs_y) = Self::_ec_add(sb_g2_x, sb_g2_y, sr_g2_x, sr_g2_y);
-            // Verify the combined response produces a valid point (not degenerate)
-            assert(se_lhs_x != 0 || se_lhs_y != 0, 'Same-encryption proof failed');
-            // Bind the challenge to the responses: reject if responses don't correlate
-            let response_binding = poseidon_hash_span(array![
-                se_lhs_x, se_lhs_y, same_enc_challenge
-            ].span());
-            assert(response_binding != same_enc_challenge, 'Same-encryption binding invalid');
+            // 6. Verify same-encryption constraint using the proper same_encryption module
+            // Proves all three ciphertexts (sender, receiver, auditor) encrypt the same amount
+            let same_enc_inputs = SameEncryption3Inputs {
+                ct_sender: Self::_to_elgamal_ct(sender_cipher),
+                ct_receiver: Self::_to_elgamal_ct(receiver_cipher),
+                ct_auditor: Self::_to_elgamal_ct(auditor_cipher),
+                pk_sender: ElgamalECPoint { x: sender_pk.x, y: sender_pk.y },
+                pk_receiver: ElgamalECPoint { x: receiver_pk.x, y: receiver_pk.y },
+                pk_auditor: ElgamalECPoint { x: auditor_pk.x, y: auditor_pk.y },
+            };
+            assert(
+                verify_same_encryption_3(same_enc_inputs, same_enc_proof),
+                'Same encryption failed'
+            );
         }
 
         /// Verify withdrawal proof with real Schnorr verification + range check
@@ -984,41 +1010,63 @@ pub mod ConfidentialTransfer {
             amount: u256,
             proof: TransferProof,
         ) {
-            // Verify ownership: Schnorr proof that user controls the account
+            // 1. Verify ownership: Schnorr proof that user controls the account
+            // Challenge includes BOTH x and y of ciphertext for full binding
             let ownership_challenge = poseidon_hash_span(array![
                 pk.x, pk.y,
                 proof.ownership_a.x, proof.ownership_a.y,
-                balance.l_x, balance.r_x
+                balance.l_x, balance.l_y, balance.r_x, balance.r_y
             ].span());
             assert(ownership_challenge == proof.ownership_c, 'Ownership challenge mismatch');
             assert(proof.ownership_s != 0, 'Invalid withdrawal proof');
 
-            // Schnorr equation: s*G + c*PK == A
+            // Schnorr equation: s*G + c*PK == A (point equality, not just non-zero)
             let (sg_x, sg_y) = Self::_ec_mul(proof.ownership_s, G_X, G_Y);
             let (cpk_x, cpk_y) = Self::_ec_mul(proof.ownership_c, pk.x, pk.y);
             let (lhs_x, lhs_y) = Self::_ec_add(sg_x, sg_y, cpk_x, cpk_y);
             assert(lhs_x == proof.ownership_a.x && lhs_y == proof.ownership_a.y, 'Withdrawal Schnorr failed');
 
-            // Verify range: proves remaining balance >= 0
+            // 2. Verify range proof with nonce bound in Fiat-Shamir
+            assert(proof.range_nonce.x != 0 || proof.range_nonce.y != 0, 'Invalid range nonce');
             assert(proof.range_response_l != 0 || proof.range_response_r != 0, 'Invalid range proof');
 
-            // Range Schnorr verification
+            // Recompute range challenge binding nonce + commitment + balance context
+            let range_challenge = poseidon_hash_span(array![
+                proof.range_nonce.x, proof.range_nonce.y,
+                proof.range_commitment.x, proof.range_commitment.y,
+                balance.l_x, balance.l_y
+            ].span());
+            assert(range_challenge == proof.range_challenge, 'Range challenge mismatch');
+
+            // Range Schnorr: response_l*G + response_r*H == range_nonce + challenge*range_commitment
             let (rrl_g_x, rrl_g_y) = Self::_ec_mul(proof.range_response_l, G_X, G_Y);
             let (rrl_h_x, rrl_h_y) = Self::_ec_mul(proof.range_response_r, H_X, H_Y);
             let (range_lhs_x, range_lhs_y) = Self::_ec_add(rrl_g_x, rrl_g_y, rrl_h_x, rrl_h_y);
-            assert(range_lhs_x != 0 || range_lhs_y != 0, 'Range proof computation failed');
+            let (c_rc_x, c_rc_y) = Self::_ec_mul(proof.range_challenge, proof.range_commitment.x, proof.range_commitment.y);
+            let (range_rhs_x, range_rhs_y) = Self::_ec_add(proof.range_nonce.x, proof.range_nonce.y, c_rc_x, c_rc_y);
+            assert(range_lhs_x == range_rhs_x && range_lhs_y == range_rhs_y, 'Range proof equation failed');
 
-            // Verify balance commitment shows sufficient funds
+            // 3. Verify balance sufficiency with nonce bound in Fiat-Shamir
             assert(proof.balance_commitment.x != 0 || proof.balance_commitment.y != 0, 'Invalid balance commitment');
+            assert(proof.balance_nonce.x != 0 || proof.balance_nonce.y != 0, 'Invalid balance nonce');
             assert(proof.balance_response != 0, 'Insufficient balance proof');
 
-            // Balance Schnorr: balance_response*G + c*balance_commitment
+            // Compute dedicated balance challenge binding nonce, commitment, balance, and pk
+            let balance_challenge = poseidon_hash_span(array![
+                proof.balance_nonce.x, proof.balance_nonce.y,
+                proof.balance_commitment.x, proof.balance_commitment.y,
+                balance.l_x, balance.l_y,
+                pk.x, pk.y,
+            ].span());
+            assert(balance_challenge != 0, 'Balance challenge zero');
+
+            // Balance Schnorr: response*G == nonce + challenge*commitment (point equality)
             let (br_g_x, br_g_y) = Self::_ec_mul(proof.balance_response, G_X, G_Y);
             let (bc_c_x, bc_c_y) = Self::_ec_mul(
-                proof.ownership_c, proof.balance_commitment.x, proof.balance_commitment.y
+                balance_challenge, proof.balance_commitment.x, proof.balance_commitment.y
             );
-            let (bal_lhs_x, bal_lhs_y) = Self::_ec_add(br_g_x, br_g_y, bc_c_x, bc_c_y);
-            assert(bal_lhs_x != 0 || bal_lhs_y != 0, 'Balance sufficiency failed');
+            let (rhs_x, rhs_y) = Self::_ec_add(proof.balance_nonce.x, proof.balance_nonce.y, bc_c_x, bc_c_y);
+            assert(br_g_x == rhs_x && br_g_y == rhs_y, 'Balance Schnorr failed');
         }
 
         /// Add supported asset (admin only, called via upgrade)
