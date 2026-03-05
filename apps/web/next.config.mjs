@@ -25,7 +25,7 @@ const nextConfig = {
               "default-src 'self'",
               isDev
                 ? "script-src 'self' 'unsafe-eval' 'unsafe-inline' 'wasm-unsafe-eval'"
-                : "script-src 'self' 'wasm-unsafe-eval'",
+                : "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
