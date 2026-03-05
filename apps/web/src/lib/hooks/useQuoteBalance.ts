@@ -135,7 +135,7 @@ export function useQuoteBalance(
   const decimals = TOKEN_DECIMALS[token];
 
   const { data, isLoading, error, refetch } = useReadContract({
-    address: tokenAddress,
+    address: tokenAddress as `0x${string}`,
     abi: ERC20_ABI,
     functionName: 'balance_of',
     args: targetAddress ? [targetAddress] : undefined,

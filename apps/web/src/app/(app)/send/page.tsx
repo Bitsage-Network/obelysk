@@ -195,10 +195,10 @@ function SendPageInner() {
 
   // Refetch balances after deposit or withdrawal confirms
   useEffect(() => {
-    if (depositState.phase === "confirmed" || withdrawState?.phase === "confirmed") {
+    if (depositState.phase === "confirmed" || (withdrawState?.txHash && !withdrawState?.isWithdrawing)) {
       onChainBalances.refetchAll();
     }
-  }, [depositState.phase, withdrawState?.phase]);
+  }, [depositState.phase, withdrawState?.txHash, withdrawState?.isWithdrawing]);
 
   // Send mode: "public" | "private" | "stealth"
   type SendMode = "public" | "private" | "stealth";

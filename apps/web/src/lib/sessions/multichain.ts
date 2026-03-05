@@ -129,14 +129,14 @@ export function buildCrossChainSessionMessage(
  * Generate a cryptographically secure nonce
  */
 function generateNonce(): string {
-  if (typeof window !== 'undefined' && window.crypto) {
-    const bytes = new Uint8Array(32);
-    window.crypto.getRandomValues(bytes);
-    return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+  const bytes = new Uint8Array(32);
+  if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    // Node.js < 19 fallback — should not happen in modern runtimes
+    for (let i = 0; i < 32; i++) bytes[i] = Math.floor(Math.random() * 256);
   }
-  // Fallback for SSR — use Node.js crypto
-  const { randomBytes } = require('crypto');
-  return '0x' + randomBytes(32).toString('hex');
+  return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
@@ -240,7 +240,7 @@ export async function verifyEthereumSignature(
 
     // Use ethers verifyTypedData or viem's verifyTypedData
     // For now, we'll compute the hash and verify manually
-    const messageHash = computeEIP712Hash(typedData);
+    const messageHash = await computeEIP712Hash(typedData);
 
     // Recover address from signature
     const recoveredAddress = await recoverEthereumAddress(messageHash, signature);
@@ -255,11 +255,8 @@ export async function verifyEthereumSignature(
 /**
  * Compute EIP-712 message hash using viem's hashTypedData.
  */
-function computeEIP712Hash(td: ReturnType<typeof buildEIP712TypedData>): string {
-  // Dynamic import would be async; use require for synchronous access.
-  // viem is a peer dependency installed in apps/web.
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { hashTypedData } = require('viem') as typeof import('viem');
+async function computeEIP712Hash(td: ReturnType<typeof buildEIP712TypedData>): Promise<string> {
+  const { hashTypedData } = await import('viem');
   return hashTypedData({
     domain: td.domain as Parameters<typeof hashTypedData>[0]['domain'],
     types: td.types,
