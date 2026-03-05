@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="400" height="400">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#1e3a8a" />
+      <stop offset="100%" stop-color="#0a1128" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="url(#bg)" />
+
+  <!-- Obelisk -->
+  <g>
+    <!-- Pyramidion (cap) -->
+    <path d="M200,55 L170,135 L230,135 Z" fill="#ffffff" />
+
+    <!-- Shaft - wider columnar taper -->
+    <path d="M170,135 L158,310 L242,310 L230,135 Z" fill="#ffffff" />
+
+    <!-- Base plinth -->
+    <path d="M148,310 L252,310 L258,326 L142,326 Z" fill="#ffffff" />
+
+    <!-- Bottom step -->
+    <rect x="136" y="326" width="128" height="12" rx="1" fill="#ffffff" />
+  </g>
+</svg>
