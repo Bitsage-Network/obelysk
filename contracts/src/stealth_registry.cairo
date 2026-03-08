@@ -175,6 +175,12 @@ pub trait IStealthRegistry<TContractState> {
     // Admin Functions
     // =========================================================================
 
+    /// Admin: Transfer contract ownership
+    fn transfer_ownership(ref self: TContractState, new_owner: ContractAddress);
+
+    /// Get current owner
+    fn owner(self: @TContractState) -> ContractAddress;
+
     /// Pause the registry (emergency)
     fn pause(ref self: TContractState);
 
@@ -848,6 +854,16 @@ mod StealthRegistry {
         // =====================================================================
         // Admin Functions
         // =====================================================================
+
+        fn transfer_ownership(ref self: ContractState, new_owner: ContractAddress) {
+            self._only_owner();
+            assert!(!new_owner.is_zero(), "New owner cannot be zero");
+            self.owner.write(new_owner);
+        }
+
+        fn owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
+        }
 
         fn pause(ref self: ContractState) {
             self._only_owner();

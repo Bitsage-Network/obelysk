@@ -345,6 +345,8 @@ pub trait IPrivacyPools<TContractState> {
     fn get_pp_stats(self: @TContractState) -> (u64, u64, u256, u256);
 
     // --- Admin ---
+    fn transfer_ownership(ref self: TContractState, new_owner: ContractAddress);
+    fn owner(self: @TContractState) -> ContractAddress;
     fn set_ragequit_delay(ref self: TContractState, delay: u64);
     fn set_asp_stake_minimum(ref self: TContractState, minimum: u256);
     fn set_compliance_required(ref self: TContractState, required: bool);
@@ -1503,6 +1505,16 @@ pub mod PrivacyPools {
         }
 
         // --- Admin ---
+
+        fn transfer_ownership(ref self: ContractState, new_owner: ContractAddress) {
+            self._only_owner();
+            assert!(!new_owner.is_zero(), "New owner cannot be zero");
+            self.owner.write(new_owner);
+        }
+
+        fn owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
+        }
 
         fn set_ragequit_delay(ref self: ContractState, delay: u64) {
             self._only_owner();

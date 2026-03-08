@@ -66,10 +66,10 @@ function parseSageAmount(amount: string): bigint {
 // Staking tiers — APR is estimated from on-chain staking config (estimated_apy_bps)
 // These are display tiers for UI, actual APR comes from contract
 const stakingTiers = [
-  { name: "Bronze", min: 100, max: 999, apr: null as number | null, color: "text-orange-400", benefits: ["Basic validation", "Standard rewards"] },
-  { name: "Silver", min: 1000, max: 4999, apr: null as number | null, color: "text-gray-300", benefits: ["Priority jobs", "+15% rewards"] },
-  { name: "Gold", min: 5000, max: 24999, apr: null as number | null, color: "text-yellow-400", benefits: ["Premium jobs", "+25% rewards", "Early access"] },
-  { name: "Diamond", min: 25000, max: Infinity, apr: null as number | null, color: "text-cyan-400", benefits: ["Top-tier jobs", "+40% rewards", "Governance voting", "Network incentives"] },
+  { name: "Bronze", min: 100, max: 999, apr: 15 as number | null, color: "text-orange-400", benefits: ["Basic validation", "Standard rewards"] },
+  { name: "Silver", min: 1000, max: 4999, apr: 17.25 as number | null, color: "text-gray-300", benefits: ["Priority jobs", "+15% rewards"] },
+  { name: "Gold", min: 5000, max: 24999, apr: 18.75 as number | null, color: "text-yellow-400", benefits: ["Premium jobs", "+25% rewards", "Early access"] },
+  { name: "Diamond", min: 25000, max: Infinity, apr: 21 as number | null, color: "text-cyan-400", benefits: ["Top-tier jobs", "+40% rewards", "Governance voting", "Network incentives"] },
 ];
 
 // Default SDK data when SDK not mounted

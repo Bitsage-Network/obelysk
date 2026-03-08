@@ -138,6 +138,12 @@ pub trait IShieldedSwapRouter<TContractState> {
     /// Ekubo ILocker callback — called by Ekubo Core during lock()
     fn locked(ref self: TContractState, id: u32, data: Span<felt252>) -> Span<felt252>;
 
+    /// Admin: Transfer contract ownership
+    fn transfer_ownership(ref self: TContractState, new_owner: ContractAddress);
+
+    /// Get current owner
+    fn owner(self: @TContractState) -> ContractAddress;
+
     /// Admin: register a privacy pool address for a given token
     fn register_pool(ref self: TContractState, token: ContractAddress, pool: ContractAddress);
 
@@ -536,6 +542,16 @@ pub mod ShieldedSwapRouter {
 
             // Return empty — Ekubo expects Span<felt252> return
             ArrayTrait::new().span()
+        }
+
+        fn transfer_ownership(ref self: ContractState, new_owner: ContractAddress) {
+            self._assert_owner();
+            assert!(!new_owner.is_zero(), "New owner cannot be zero");
+            self.owner.write(new_owner);
+        }
+
+        fn owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
         }
 
         /// Admin: register a privacy pool for a token

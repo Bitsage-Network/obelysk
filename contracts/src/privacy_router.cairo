@@ -695,6 +695,12 @@ pub trait IPrivacyRouter<TContractState> {
     /// Get ragequit record by nullifier
     fn get_ragequit_record(self: @TContractState, nullifier: felt252) -> RagequitRecord;
 
+    /// Admin: Transfer contract ownership
+    fn transfer_ownership(ref self: TContractState, new_owner: ContractAddress);
+
+    /// Get current owner
+    fn owner(self: @TContractState) -> ContractAddress;
+
     /// Admin: Set auditor public key (for compliance)
     fn set_auditor_key(ref self: TContractState, auditor_key: ECPoint);
 
@@ -2307,6 +2313,16 @@ mod PrivacyRouter {
         /// Get ragequit record by nullifier
         fn get_ragequit_record(self: @ContractState, nullifier: felt252) -> RagequitRecord {
             self.ragequit_records.read(nullifier)
+        }
+
+        fn transfer_ownership(ref self: ContractState, new_owner: ContractAddress) {
+            self._only_owner();
+            assert!(!new_owner.is_zero(), "New owner cannot be zero");
+            self.owner.write(new_owner);
+        }
+
+        fn owner(self: @ContractState) -> ContractAddress {
+            self.owner.read()
         }
 
         /// @deprecated Use register_auditor() for M-of-N multi-signature auditing

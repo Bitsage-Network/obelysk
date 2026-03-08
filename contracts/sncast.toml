@@ -4,6 +4,10 @@ accounts-file = "deployment/sncast_accounts.json"
 url = "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo"
 
 [sncast.mainnet]
-account = "deployer-mainnet"
+account = "mainnet-deployer"
 accounts-file = "deployment/sncast_accounts.json"
-url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_7/demo"
+url = "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/GUBwFqKhSgn4mwVbN6Sbn"
+
+[sncast.mainnet-v2]
+account = "mainnet-deployer-v2"
+accounts-file = "/Users/vaamx/.obelysk-secrets/accounts.json"
