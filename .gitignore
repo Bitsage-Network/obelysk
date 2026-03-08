@@ -30,6 +30,12 @@ contracts/target/
 **/sncast_accounts.json
 **/starknet_open_zeppelin_accounts.json
 
+# Env files with secrets (beyond the standard .env patterns above)
+.env.mainnet
+.env.production
+**/.env.mainnet
+**/.env.production
+
 # IDE
 .vscode/
 .idea/

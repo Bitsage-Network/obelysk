@@ -15,7 +15,7 @@ import { RpcProvider, Account, hash } from "starknet";
 
 const RPC_URL = "https://api.cartridge.gg/x/starknet/sepolia";
 const DEPLOYER_ADDRESS = "0x0759a4374389b0e3cfcc59d49310b6bc75bb12bbf8ce550eb5c2f026918bb344";
-const DEPLOYER_PK = "REDACTED_SEPOLIA_KEY";
+const DEPLOYER_PK = process.env.DEPLOYER_PRIVATE_KEY || ""; // Set via env var — never hardcode!
 
 const DARK_POOL = "0x02535f64fb17bb54cfa3554d159499bb92720c33eeab5df26178c0638739bc76";
 
