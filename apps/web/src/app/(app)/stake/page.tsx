@@ -1126,7 +1126,7 @@ function StakePageInner({
           { label: "Amount", value: `${pendingTx?.amountFormatted || '0'} SAGE`, isCurrency: true },
           { label: "Action", value: pendingTx?.type === 'stake' ? "Stake" : "Begin Unstake" },
           { label: pendingTx?.type === 'stake' ? "Est. APY" : "Lock Period", value: pendingTx?.type === 'stake' ? `${estimatedApy}%` : lockPeriod },
-          { label: "Network", value: "Starknet Sepolia" },
+          { label: "Network", value: "Starknet Mainnet" },
         ]}
         variant="stake"
         isLoading={txPending}

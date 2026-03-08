@@ -26,6 +26,10 @@ contracts/target/
 *.sierra.json
 *.casm.json
 
+# Starknet accounts (contain private keys!)
+**/sncast_accounts.json
+**/starknet_open_zeppelin_accounts.json
+
 # IDE
 .vscode/
 .idea/

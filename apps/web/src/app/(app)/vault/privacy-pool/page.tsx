@@ -147,7 +147,7 @@ function PrivacyPoolPageInner() {
   const searchParams = useSearchParams();
   const { address, isConnected } = useAccount();
   const { network } = useNetwork();
-  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "https://sepolia.voyager.online";
+  const explorerUrl = NETWORK_CONFIG[network]?.explorerUrl || "https://voyager.online";
 
   /* ─── Local state ────────────────────────────────────────────────── */
   const [activeTab, setActiveTab] = useState<TabType>("deposit");
@@ -556,7 +556,7 @@ function PrivacyPoolPageInner() {
     if (!isConnected) return;
     setIsProcessing(true);
     try {
-      const addresses = getContractAddresses("sepolia");
+      const addresses = getContractAddresses(network);
       const call = buildExecuteRagequitCall(addresses.SAGE_TOKEN, 0);
       await sendTransactionAsync([call]);
       await refetchDeposits();

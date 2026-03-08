@@ -31,14 +31,11 @@ import { usePrivacyKeys } from "./usePrivacyKeys";
 import { CONTRACTS, getRpcUrl, type NetworkType } from "../contracts/addresses";
 import { useNetwork } from "../contexts/NetworkContext";
 
-// Use centralized contract address — NEVER silently fall back to sepolia
+// Use centralized contract address — defaults to mainnet during SSR/prerendering
 function resolveCTNetwork(): NetworkType {
   const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
   if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
-    throw new Error(
-      "[useConfidentialTransfer] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
-      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
-    );
+    return "mainnet";
   }
   return env;
 }

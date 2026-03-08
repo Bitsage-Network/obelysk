@@ -154,7 +154,7 @@ const stats = [
   { label: "Network", value: "Starknet", icon: Layers },
   { label: "Privacy", value: "Dual-Track", icon: Shield },
   { label: "Features Live", value: "7", icon: CheckCircle2 },
-  { label: "Status", value: "Testnet", icon: Activity },
+  { label: "Status", value: "Mainnet", icon: Activity },
 ];
 
 const supportedAssets = [
@@ -1615,7 +1615,7 @@ export default function HomePage() {
           >
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 mb-6">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Testnet Live</span>
+              <span className="text-xs font-medium text-emerald-400 uppercase tracking-wider">Mainnet Live</span>
             </div>
 
             <h2 className="text-4xl md:text-5xl font-bold text-white mb-6 tracking-tight">

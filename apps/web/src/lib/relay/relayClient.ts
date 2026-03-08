@@ -93,6 +93,7 @@ const MAX_PAYLOAD_BYTES = 100_000; // 100KB — generous for any legitimate dark
 
 export class RelayClient {
   private baseUrl: string;
+  private cachedRelayerAddress: string | null = null;
 
   constructor(relayUrl: string) {
     this.baseUrl = validateRelayUrl(relayUrl);
@@ -164,6 +165,28 @@ export class RelayClient {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Get the relayer's on-chain address (needed for signature construction).
+   * Cached after first fetch since the relayer address doesn't change.
+   */
+  async getRelayerAddress(): Promise<string> {
+    if (this.cachedRelayerAddress) return this.cachedRelayerAddress;
+
+    const response = await fetch(`${this.baseUrl}/relayer-address`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      throw new Error("Failed to fetch relayer address");
+    }
+    const data = await response.json();
+    if (typeof data.address !== "string" || !TX_HASH_PATTERN.test(data.address)) {
+      throw new Error("Relay returned invalid relayer address");
+    }
+    this.cachedRelayerAddress = data.address;
+    return data.address;
   }
 
   /**

@@ -657,7 +657,11 @@ export function getTokenAddressForSymbol(
 export function getRpcUrl(network: NetworkType): string {
   if (network === "mainnet") {
     const mainnetRpc = process.env.NEXT_PUBLIC_MAINNET_RPC_URL;
-    if (!mainnetRpc) throw new Error("NEXT_PUBLIC_MAINNET_RPC_URL is required for mainnet");
+    if (!mainnetRpc) {
+      // During SSR/prerendering the env var may not be inlined yet.
+      // Return a placeholder — runtime code will use the actual env var.
+      return process.env.NEXT_PUBLIC_RPC_URL || "https://starknet-mainnet.public.blastapi.io/rpc/v0_7";
+    }
     return mainnetRpc;
   }
   return process.env.NEXT_PUBLIC_RPC_URL || NETWORK_CONFIG[network]?.rpcUrl || NETWORK_CONFIG.sepolia.rpcUrl;

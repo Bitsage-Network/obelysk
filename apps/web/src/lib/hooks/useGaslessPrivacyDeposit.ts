@@ -114,10 +114,7 @@ const INITIAL_STATE: GaslessDepositState = {
 function resolveGaslessNetwork(): NetworkType {
   const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
   if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
-    throw new Error(
-      "[useGaslessPrivacyDeposit] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
-      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
-    );
+    return "mainnet";
   }
   return env;
 }

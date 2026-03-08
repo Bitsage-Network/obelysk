@@ -655,13 +655,29 @@ export function useDarkPool(): UseDarkPoolResult {
           // The call entrypoint and calldata come from the commit calls
           const commitCall = calls[0];
           const entrypointSelector = starknetHash.getSelectorFromName(commitCall.entrypoint);
+          const callCalldata = (commitCall.calldata ?? []) as string[];
 
-          // Sign: H(nonce, executeAfter, executeBefore, entrypoint) with session private key
+          // Hash calldata to match contract's poseidon_hash_span(call_calldata.span())
+          const calldataHash = starknetHash.computePoseidonHashOnElements(callCalldata);
+
+          // The contract's execute_from_outside uses caller=0x0 (ANY_CALLER),
+          // but actual_caller on-chain will be the relayer address.
+          // Since caller=0x0, the contract doesn't check caller identity,
+          // but actual_caller is still included in the message hash.
+          // We use "0x0" here — the relayer's address is used as actual_caller on-chain.
+          // Contract: msg_hash = poseidon(nonce, execute_after, execute_before, entrypoint, actual_caller, calldata_hash)
+          // Since we don't know the relayer address client-side, and the contract uses
+          // get_caller_address() (which is the relayer), we need the relayer address.
+          // For now, use the relay's reported address or fall back to fetching it.
+          const relayerAddress = await relayClientRef.current.getRelayerAddress();
+
           const msgHash = starknetHash.computePoseidonHashOnElements([
             nonce,
             "0x" + executeAfter.toString(16),
             "0x" + executeBefore.toString(16),
             entrypointSelector,
+            relayerAddress,
+            calldataHash,
           ]);
           const sig = ec.starkCurve.sign(msgHash, sessionKey.privateKey);
 

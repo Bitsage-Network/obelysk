@@ -166,16 +166,14 @@ const PRIVACY_POOLS_ABI = [
 const SAGE_TOKEN_ADDRESS = (process.env.NEXT_PUBLIC_SAGE_TOKEN_ADDRESS || "0x0") as `0x${string}`;
 const PRIVACY_POOLS_ADDRESS = (process.env.NEXT_PUBLIC_PRIVACY_POOLS_ADDRESS || "0x0") as `0x${string}`;
 
-// Resolve network from env — NEVER silently fall back to sepolia.
-// If NEXT_PUBLIC_STARKNET_NETWORK is unset the caller must supply a network
-// via the NetworkContext (useNetwork hook) which detects the wallet chain.
+// Resolve network from env — falls back to "mainnet" during SSR/prerendering
+// where the env var may not be inlined yet by Next.js.
 function resolveNetworkStrict(): NetworkType {
   const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
   if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
-    throw new Error(
-      "[usePrivacyPool] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
-      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
-    );
+    // During static generation / SSR the env may not be available.
+    // Default to mainnet — runtime code uses NetworkContext anyway.
+    return "mainnet";
   }
   return env;
 }

@@ -94,7 +94,10 @@ export async function submitRelay(payload: RelayPayload): Promise<RelayResult> {
       ],
     };
 
-    // 3. Build the actual dark pool calls (submitted alongside auth in a multicall)
+    // 3. Build the actual dark pool calls (submitted alongside auth in a multicall).
+    // The execute_from_outside call is authorization-only — it validates the session
+    // key signature but doesn't dispatch internally. The operation calls run in the
+    // same tx from the relayer, which hides the user's identity on-chain.
     const operationCalls: Call[] = payload.outsideExecution.calls.map((c) => ({
       contractAddress: c.contractAddress,
       entrypoint: c.entrypoint,

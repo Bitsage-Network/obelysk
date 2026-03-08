@@ -25,6 +25,8 @@ const ALLOWED_ORIGINS = [
   "https://obelysk.xyz",
   "https://www.obelysk.xyz",
   /^https:\/\/.*\.obelysk\.xyz$/,
+  "https://obelysk.bitsage.network",
+  /^https:\/\/.*\.bitsage\.network$/,
 ];
 if (process.env.NODE_ENV === "development") {
   ALLOWED_ORIGINS.push("http://localhost:3000" as unknown as RegExp);
@@ -79,6 +81,19 @@ function requireApiKey(
 
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", uptime: Math.floor((Date.now() - startTime) / 1000) });
+});
+
+// ==========================================================================
+// Relayer address (for client-side signature construction)
+// ==========================================================================
+
+app.get("/relayer-address", (_req, res) => {
+  const address = config.relayAccountAddress;
+  if (!address) {
+    res.status(503).json({ error: "Relayer not configured" });
+    return;
+  }
+  res.json({ address });
 });
 
 // ==========================================================================
@@ -158,7 +173,7 @@ app.post("/relay", requireApiKey, async (req, res) => {
 
 app.get("/status/:txHash", requireApiKey, async (req, res) => {
   // Validate txHash format to prevent injection
-  const txHash = req.params.txHash;
+  const txHash = req.params.txHash as string;
   if (!/^0x[a-fA-F0-9]{1,64}$/.test(txHash)) {
     res.status(400).json({ status: "error", error: "Invalid transaction hash format" });
     return;

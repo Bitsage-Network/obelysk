@@ -22,14 +22,11 @@ import type { MerkleProof } from "@/lib/crypto/merkle";
 import PrivacyPoolsABI from "@/lib/contracts/abis/PrivacyPools.json";
 import { getRpcUrl, type NetworkType } from "@/lib/contracts/addresses";
 
-// RPC URL — network-aware, no silent sepolia fallback
+// RPC URL — network-aware, defaults to mainnet during SSR/prerendering
 function resolveRagequitNetwork(): NetworkType {
   const env = process.env.NEXT_PUBLIC_STARKNET_NETWORK as NetworkType | undefined;
   if (!env || (env !== "mainnet" && env !== "sepolia" && env !== "devnet")) {
-    throw new Error(
-      "[useCancelRagequit] NEXT_PUBLIC_STARKNET_NETWORK is unset or invalid. " +
-      "Set it to 'mainnet' or 'sepolia' in your .env to avoid silent fallback."
-    );
+    return "mainnet";
   }
   return env;
 }

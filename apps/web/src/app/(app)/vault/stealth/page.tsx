@@ -34,6 +34,8 @@ import { useAccount } from "@starknet-react/core";
 import { RpcProvider } from "starknet";
 import { useStealthOnChain, type ClaimParams } from "@/lib/hooks/useStealthOnChain";
 import { usePrivacyKeys } from "@/lib/hooks/usePrivacyKeys";
+import { useNetwork } from "@/lib/contexts/NetworkContext";
+import { CONTRACTS, getRpcUrl } from "@/lib/contracts/addresses";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
@@ -62,6 +64,7 @@ const stagger = {
 
 export default function StealthAddressesPage() {
   const { address } = useAccount();
+  const { network } = useNetwork();
   const { hasKeys, initializeKeys, unlockKeys } = usePrivacyKeys();
   const [showSpendingKey, setShowSpendingKey] = useState(false);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
@@ -97,9 +100,9 @@ export default function StealthAddressesPage() {
     (async () => {
       try {
         const { RpcProvider } = await import("starknet");
-        const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
+        const provider = new RpcProvider({ nodeUrl: getRpcUrl(network) });
         const result = await provider.callContract({
-          contractAddress: "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59",
+          contractAddress: CONTRACTS[network].STEALTH_REGISTRY,
           entrypoint: "get_meta_address",
           calldata: [address],
         });
@@ -131,10 +134,10 @@ export default function StealthAddressesPage() {
     try {
       // Pre-flight: check on-chain if already registered to avoid RPC error
       const { RpcProvider } = await import("starknet");
-      const provider = new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/demo" });
+      const provider = new RpcProvider({ nodeUrl: getRpcUrl(network) });
       try {
         const existing = await provider.callContract({
-          contractAddress: "0x02ab118a1527e3e00882d4bf75a479deccd7f16e2bc89417d54cb97cb9e2dc59",
+          contractAddress: CONTRACTS[network].STEALTH_REGISTRY,
           entrypoint: "get_meta_address",
           calldata: [address],
         });
@@ -313,7 +316,7 @@ export default function StealthAddressesPage() {
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
             </span>
             <span className="text-gray-500 font-medium">Stealth Registry</span>
-            <span className="text-emerald-400/70 font-mono">Live on Sepolia</span>
+            <span className="text-emerald-400/70 font-mono">Live on {network === "mainnet" ? "Mainnet" : "Sepolia"}</span>
           </div>
           <span className="text-[10px] text-gray-600 font-mono">STRK</span>
         </motion.div>

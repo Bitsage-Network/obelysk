@@ -202,3 +202,38 @@ sncast -p mainnet invoke --url <RPC> --contract-address <ADDR> --function set_wi
 
 ### Frontend Updates
 - `addresses.ts`: mainnet `STAKING` set to `0x07d2ecff4a4d7ca6c75df367d8dbc7cc12ea583f88813f7020832a7cf7f293e3`
+
+---
+
+## Starknet Mainnet — 2026-03-07 (DarkPool Asset + Pair Registration)
+
+DarkPool contract was deployed 2026-02-28 but `add_asset` and `add_trading_pair` were never called.
+All 5 assets and 5 trading pairs registered.
+
+**Deployer**: `0x01f9ebd4b60101259df3ac877a27a1a017e7961995fa913be1a6f189af664660` (Braavos)
+
+### Assets Registered (add_asset)
+| Asset | ID | Token Address | TX |
+|-------|------|---------------|-----|
+| SAGE | 0x0 | `0x0098d563...c799` | [`0x0655c36d...`](https://starkscan.co/tx/0x0655c36dee8e29f6a6dfb239cf57487e21a12b873f956a3c3db7ba916154d075) |
+| ETH | 0x1 | `0x049d3657...dc7` | [`0x03531e5d...`](https://starkscan.co/tx/0x03531e5df57bd904e8b38d2a749082072d54f6cbf620a8d883ca0009a01ef569) |
+| STRK | 0x2 | `0x04718f5a...938d` | [`0x056bd216...`](https://starkscan.co/tx/0x056bd216fb65bd75d853897e73a79c0cda6faa886c25fac6274ab323c0b4e807) |
+| USDC | 0x3 | `0x053c9125...8a8` | [`0x0233fe63...`](https://starkscan.co/tx/0x0233fe634a0611ae06613ec185f94e479a8273afe41a332ca054ac8484416993) |
+| wBTC | 0x4 | `0x03fe2b97...7ac` | [`0x01d4601b...`](https://starkscan.co/tx/0x01d4601be71174c97fd91542232a41cd16031a8d2ded3a87c6b7c048145f29c9) |
+
+### Trading Pairs Registered (add_trading_pair)
+| Pair | Give | Want | TX |
+|------|------|------|-----|
+| ETH/STRK | 0x1 | 0x2 | [`0x06e4a5d7...`](https://starkscan.co/tx/0x06e4a5d7049783c31e05432990309305e1bdb1efa6ebf83f28d5e8e0a86e8851) |
+| ETH/USDC | 0x1 | 0x3 | [`0x0251b317...`](https://starkscan.co/tx/0x0251b317b157bf4e2269583045623c53c962a51ddf6b36b5e23fc0f2ddff1ab5) |
+| wBTC/ETH | 0x4 | 0x1 | [`0x05ae6a21...`](https://starkscan.co/tx/0x05ae6a2187fb59d4459e3ed4ed59bbbf0f4d726ba3d7d6321513c6b5dcda4857) |
+| wBTC/STRK | 0x4 | 0x2 | [`0x07ab397d...`](https://starkscan.co/tx/0x07ab397de338fe7e6b3c8bb4df1e6d45efc04949962697af96297c24d8977305) |
+| wBTC/USDC | 0x4 | 0x3 | [`0x011fe96a...`](https://starkscan.co/tx/0x011fe96ae18a9ec81fab744771c68ac4aed90817fcbb36865e8dfacbc64466b7) |
+
+### Vercel Env Vars Set (Production)
+- `NEXT_PUBLIC_STARKNET_NETWORK=mainnet`
+- `NEXT_PUBLIC_MAINNET_RPC_URL` (Alchemy v0_7)
+- `NEXT_PUBLIC_RPC_URL` (Alchemy v0_7)
+- `NEXT_PUBLIC_AVNU_API_KEY`
+- `NEXT_PUBLIC_DEMO_MODE=false`
+- `NEXT_PUBLIC_RELAY_URL` — NOT YET SET (relay service not deployed)

@@ -208,7 +208,7 @@ export default function ConnectPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-gray-500">Connected Address</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-medium">
-                    Sepolia
+                    Mainnet
                   </span>
                 </div>
                 <p className="text-xs text-white font-mono mt-1 truncate">{address}</p>

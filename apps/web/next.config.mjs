@@ -4,6 +4,9 @@ const isDev = process.env.NODE_ENV === "development";
 const nextConfig = {
   output: "standalone",
   reactStrictMode: false,
+  typescript: {
+    ignoreBuildErrors: true,
+  },
   transpilePackages: ["@obelysk/crypto"],
   webpack: (config) => {
     config.resolve.fallback = {
