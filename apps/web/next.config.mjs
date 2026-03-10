@@ -30,11 +30,11 @@ const nextConfig = {
               "default-src 'self'",
               isDev
                 ? "script-src 'self' 'unsafe-eval' 'unsafe-inline' 'wasm-unsafe-eval'"
-                : "script-src 'self' 'wasm-unsafe-eval'",
+                : "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              `connect-src 'self' ${isDev ? "ws://localhost:* " : ""}https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com https://*.ingest.sentry.io`,
+              `connect-src 'self' ${isDev ? "ws://localhost:* " : ""}https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
