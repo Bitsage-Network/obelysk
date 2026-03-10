@@ -232,6 +232,7 @@ export function usePrivacyNetworkGraph(address: string | undefined) {
     queryKey: ['privacyNetworkGraph', address],
     queryFn: async () => {
       if (!address) {
+        // eslint-disable-next-line no-console
         console.warn('[NetworkGraph] No address provided');
         return { ...EMPTY_NETWORK_GRAPH, is_unavailable: true };
       }
@@ -239,6 +240,7 @@ export function usePrivacyNetworkGraph(address: string | undefined) {
         const response = await getPrivacyNetworkGraph(address);
         return { ...response.data, is_unavailable: false };
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.warn('[NetworkGraph] API unavailable - returning empty graph (not mock data)');
         return { ...EMPTY_NETWORK_GRAPH, is_unavailable: true };
       }

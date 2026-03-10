@@ -818,7 +818,7 @@ export function useDarkPool(): UseDarkPoolResult {
     };
 
     revealAll();
-  }, [currentEpoch?.phase, stage, contractAddress, sendAsync, refreshOrders, account, address]);
+  }, [currentEpoch?.phase, currentEpoch, stage, contractAddress, sendAsync, refreshOrders, account, address]);
 
   // --------------------------------------------------------------------------
   // Cancel Order
@@ -980,7 +980,8 @@ export function useDarkPool(): UseDarkPoolResult {
         setStage("error");
       }
     },
-    [address, account, contractAddress, network, unlockKeys, sendAsync, refreshBalances, refreshOrders, balances],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- balances is an object that changes every render; the function reads it but we don't want to re-create on every balance update
+    [address, account, contractAddress, network, unlockKeys, sendAsync, refreshBalances, refreshOrders],
   );
 
   // --------------------------------------------------------------------------

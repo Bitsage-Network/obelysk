@@ -164,6 +164,7 @@ export function validateEnv(): { valid: boolean; errors: string[] } {
     }
     // Only warn for devnet, don't fail
     if (devnetErrors.length > 0) {
+      // eslint-disable-next-line no-console
       console.warn(`[ENV] Devnet contract addresses not set: ${devnetErrors.join(', ')}`);
     }
   }
@@ -187,6 +188,7 @@ export function getEnvConfig(): EnvConfig {
 
   // Log warnings in development
   if (!valid && process.env.NODE_ENV === 'development') {
+    // eslint-disable-next-line no-console
     console.warn('[ENV] Environment validation warnings:', errors);
   }
 
@@ -282,6 +284,7 @@ export function logEnvConfig(): void {
     return;
   }
 
+  // eslint-disable-next-line no-console
   console.log('[ENV] Configuration loaded:', {
     network: config.network,
     apiUrl: config.apiUrl,
@@ -310,6 +313,7 @@ if (typeof window !== 'undefined') {
   // Client-side: validate and log
   const { valid, errors } = validateEnv();
   if (!valid) {
+    // eslint-disable-next-line no-console
     console.warn('[ENV] Missing environment variables:', errors);
   }
 }

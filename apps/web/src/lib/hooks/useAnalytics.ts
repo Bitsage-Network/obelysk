@@ -154,8 +154,10 @@ async function fetchAnalyticsData(timeRange: TimeRange): Promise<AnalyticsData &
       return { ...data, isDataUnavailable: false };
     }
 
+    // eslint-disable-next-line no-console
     console.warn("[Analytics] API returned non-OK status:", response.status);
   } catch (err) {
+    // eslint-disable-next-line no-console
     console.warn("[Analytics] API unavailable:", err instanceof Error ? err.message : err);
   }
 

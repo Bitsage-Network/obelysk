@@ -107,6 +107,7 @@ export function BitSageSDKProvider({ children }: BitSageSDKProviderProps) {
         // Suppress initial connection errors - they're expected during startup
         if (process.env.NODE_ENV === 'development') {
           // Only log in dev, not as error
+          // eslint-disable-next-line no-console
           console.debug('[SDK WebSocket] Connection attempt:', error.message);
         }
       },

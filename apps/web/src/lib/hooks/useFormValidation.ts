@@ -136,6 +136,7 @@ export function useFormValidation<T extends Record<string, string>>(
       };
     }
     return state as FormState<T>;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- config is an object param that would cause infinite re-init; initial state only needs to be computed once
   }, []);
 
   const [formState, setFormState] = useState<FormState<T>>(initialState);

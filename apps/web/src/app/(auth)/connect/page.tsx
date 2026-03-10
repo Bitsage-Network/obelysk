@@ -380,6 +380,7 @@ export default function ConnectPage() {
                   <div className="flex items-center gap-2 sm:gap-3">
                     <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-surface-card flex items-center justify-center">
                       {connector.icon ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={typeof connector.icon === 'string' ? connector.icon : connector.icon.dark}
                           alt={connector.name}

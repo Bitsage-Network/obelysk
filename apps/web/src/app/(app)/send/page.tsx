@@ -198,6 +198,7 @@ function SendPageInner() {
     if (depositState.phase === "confirmed" || withdrawState?.phase === "confirmed") {
       onChainBalances.refetchAll();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- onChainBalances is an object ref that changes every render; we only want to refetch when phase changes
   }, [depositState.phase, withdrawState?.phase]);
 
   // Send mode: "public" | "private" | "stealth"
@@ -262,6 +263,7 @@ function SendPageInner() {
       setUsePrivateBalance(false);
       if (sendMode === "private") setSendMode("public");
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sendMode is read but intentionally excluded; adding it would re-run the effect when switching modes, defeating its purpose
   }, [hasPrivacyPool]);
 
   // Build asset balances from on-chain data

@@ -18,6 +18,7 @@ const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3030/ws/prover'
 const IS_DEV = process.env.NODE_ENV === 'development';
 const debugLog = (message: string, ...args: unknown[]) => {
   if (IS_DEV) {
+    // eslint-disable-next-line no-console
     console.log(message, ...args);
   }
 };

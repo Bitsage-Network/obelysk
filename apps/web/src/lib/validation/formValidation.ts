@@ -337,6 +337,7 @@ export function useFormValidation(config: FormConfig) {
       };
     }
     return fields;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fieldConfigs is an object param; initial state only computed once on mount
   }, []);
 
   const [formState, setFormState] = useState<FormState>({
@@ -454,6 +455,7 @@ export function useFormValidation(config: FormConfig) {
     }
 
     return validators;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- formState is accessed for current values but adding it would cause infinite recreation of validators
   }, [fieldConfigs, validateField]);
 
   // Set field value
@@ -615,6 +617,7 @@ export function useFormValidation(config: FormConfig) {
     if (validateOnMount) {
       validateAll();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- validateAll is intentionally excluded; we only want to validate once on mount when flag is true
   }, [validateOnMount]);
 
   return {
@@ -711,6 +714,7 @@ export function useFieldValidation(
     if (validateOnMount && value) {
       validate(value);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- validate and value intentionally excluded; only want to run on mount
   }, [validateOnMount]);
 
   return {

@@ -29,7 +29,9 @@ export function initializeWarningSuppression() {
   isInitialized = true;
 
   // Store original console methods
+  // eslint-disable-next-line no-console
   const originalWarn = console.warn;
+  // eslint-disable-next-line no-console
   const originalLog = console.log;
   const originalError = console.error;
 
@@ -45,6 +47,7 @@ export function initializeWarningSuppression() {
   };
 
   // Filter warnings
+  // eslint-disable-next-line no-console
   console.warn = (...args: unknown[]) => {
     if (!shouldSuppress(args)) {
       originalWarn.apply(console, args);
@@ -52,6 +55,7 @@ export function initializeWarningSuppression() {
   };
 
   // The starknet library logs warnings via console.log with a WARN prefix
+  // eslint-disable-next-line no-console
   console.log = (...args: unknown[]) => {
     if (!shouldSuppress(args)) {
       originalLog.apply(console, args);

@@ -115,7 +115,7 @@ export default function StealthAddressesPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [address]);
+  }, [address, network]);
 
   // Merge: prefer react-query data, fall back to direct RPC data
   const resolvedMetaAddress = metaAddressData || directMetaAddress;

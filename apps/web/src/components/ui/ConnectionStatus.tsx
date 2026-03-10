@@ -37,6 +37,7 @@ export function ConnectionStatus({
     if (wasOffline && isOnline && queueSize > 0) {
       handleRetry();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleRetry is defined inline below and changes every render; the effect intent is to auto-retry on connectivity change
   }, [wasOffline, isOnline, queueSize]);
 
   // Reset dismissed state when connection changes

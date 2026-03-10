@@ -215,7 +215,7 @@ export function TradeHistory({ pairId, pair }: TradeHistoryProps) {
     return allTrades
       .sort((a, b) => b.timestamp - a.timestamp)
       .slice(0, 20);
-  }, [chainTrades, lastTrade, wsTradesTransformed]);
+  }, [chainTrades, lastTrade]);
 
   if (historyLoading && !lastTrade) {
     return (

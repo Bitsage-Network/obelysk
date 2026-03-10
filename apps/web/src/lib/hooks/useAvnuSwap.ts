@@ -268,6 +268,7 @@ export function useAvnuSwap(): UseAvnuSwapResult {
   const executeSwap = useCallback(async (slippageBps: number): Promise<string | null> => {
     // Concurrent-execution guard
     if (isExecutingRef.current) {
+      // eslint-disable-next-line no-console
       console.warn("[AVNU] Swap already in progress, ignoring duplicate call");
       return null;
     }
@@ -287,6 +288,7 @@ export function useAvnuSwap(): UseAvnuSwapResult {
     // Slippage bounds validation
     const clampedSlippage = Math.max(0, Math.min(slippageBps, 5_000)); // cap at 50%
     if (clampedSlippage !== slippageBps) {
+      // eslint-disable-next-line no-console
       console.warn(`[AVNU] Slippage clamped from ${slippageBps} to ${clampedSlippage} bps`);
     }
 

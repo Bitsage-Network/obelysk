@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence, PanInfo } from "framer-motion";
 import {
@@ -93,7 +94,7 @@ export function AssetActionPanel({
             {/* Token Info */}
             <div className="px-6 pb-4 flex items-center gap-4">
               {logo ? (
-                <img src={logo} alt={symbol} className="w-12 h-12 rounded-full" />
+                <Image src={logo} alt={symbol} width={48} height={48} className="w-12 h-12 rounded-full" />
               ) : (
                 <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center text-lg font-bold text-white">
                   {symbol.slice(0, 2)}

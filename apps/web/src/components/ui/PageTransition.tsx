@@ -585,6 +585,7 @@ export function CountUp({
     };
 
     requestAnimationFrame(animate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- displayValue is read as the animation start value; adding it would restart the animation on every frame
   }, [value, duration]);
 
   return (

@@ -453,6 +453,7 @@ export class ReconnectingWebSocket {
 
   private log(...args: unknown[]): void {
     if (this.options.debug) {
+      // eslint-disable-next-line no-console
       console.log(`[ReconnectingWS]`, ...args);
     }
   }
@@ -585,6 +586,7 @@ export function useReconnectingWebSocket(
       ws.disconnect();
       wsRef.current = null;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- wsOptions is an object that changes every render; we only want to reconnect when url changes
   }, [url]);
 
   const send = useCallback((data: string | ArrayBuffer | Blob) => {

@@ -278,7 +278,7 @@ function StakePageInner({
     } catch (err: unknown) {
       setTxError(err instanceof Error ? err.message : "Transaction failed");
     }
-  }, [address, contracts.STAKING, sendTransaction]);
+  }, [address, contracts.STAKING, sendTransaction, network]);
 
   // Handle unstake transaction
   const handleUnstake = useCallback(async (amountBigInt: bigint) => {
@@ -292,7 +292,7 @@ function StakePageInner({
     } catch (err: unknown) {
       setTxError(err instanceof Error ? err.message : "Transaction failed");
     }
-  }, [address, sendTransaction]);
+  }, [address, sendTransaction, network]);
 
   // Derive staking stats from SDK data
   const totalStaked = stakeInfo?.stake?.amount;

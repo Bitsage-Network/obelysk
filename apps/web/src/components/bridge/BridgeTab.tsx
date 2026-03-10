@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -366,13 +367,12 @@ export function BridgeTab({ initialToken }: { initialToken?: string }) {
                     : "bg-surface-elevated text-gray-400 border-transparent hover:text-white hover:border-surface-border"
                 )}
               >
-                <img
+                <Image
                   src={TOKEN_ICONS[t]}
                   alt={t}
+                  width={16}
+                  height={16}
                   className="w-4 h-4 rounded-full"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
                 />
                 {t}
               </button>

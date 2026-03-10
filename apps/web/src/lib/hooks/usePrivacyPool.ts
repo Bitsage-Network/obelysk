@@ -1043,7 +1043,7 @@ export function usePrivacyPool(): UsePrivacyPoolReturn {
         throw error;
       }
     },
-    [account, address, hasKeys, initializeKeys, unlockKeys, poolStats.globalRoot, refreshStats, network]
+    [account, address, hasKeys, initializeKeys, unlockKeys, refreshStats, network]
   );
 
   // Auto-refresh on mount

@@ -10,9 +10,11 @@ const isDev = process.env.NODE_ENV === 'development';
 
 export const logger = {
   log: (...args: unknown[]) => {
+    // eslint-disable-next-line no-console
     if (isDev) console.log(...args);
   },
   warn: (...args: unknown[]) => {
+    // eslint-disable-next-line no-console
     if (isDev) console.warn(...args);
   },
   error: (...args: unknown[]) => console.error(...args),

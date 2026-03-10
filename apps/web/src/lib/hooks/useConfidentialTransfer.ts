@@ -219,7 +219,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       // Registration check failed — silently return false (privacy: no log output)
       return false;
     }
-  }, [address, provider]);
+  }, [address, provider, CONFIDENTIAL_TRANSFER_ADDRESS]);
 
   /**
    * Register with a new public key
@@ -283,7 +283,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
       setState((s) => ({ ...s, isLoading: false, error: message }));
       throw error;
     }
-  }, [address, account, sendAsync, provider, isRegistered, hasKeys, publicKey, initializeKeys, unlockKeys]);
+  }, [address, account, sendAsync, provider, isRegistered, hasKeys, publicKey, initializeKeys, unlockKeys, CONFIDENTIAL_TRANSFER_ADDRESS]);
 
   /**
    * Fund private balance (public -> private)
@@ -348,7 +348,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         throw error;
       }
     },
-    [address, account, sendAsync, provider, unlockKeys]
+    [address, account, sendAsync, provider, unlockKeys, CONFIDENTIAL_TRANSFER_ADDRESS]
   );
 
   /**
@@ -445,7 +445,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         throw error;
       }
     },
-    [address, account, sendAsync, provider, state.balances, unlockKeys]
+    [address, account, sendAsync, provider, state.balances, unlockKeys, CONFIDENTIAL_TRANSFER_ADDRESS]
   );
 
   /**
@@ -478,7 +478,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         throw error;
       }
     },
-    [address, account, sendAsync, provider]
+    [address, account, sendAsync, provider, CONFIDENTIAL_TRANSFER_ADDRESS]
   );
 
   /**
@@ -533,7 +533,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         throw error;
       }
     },
-    [address, account, sendAsync, provider, state.balances, unlockKeys]
+    [address, account, sendAsync, provider, state.balances, unlockKeys, CONFIDENTIAL_TRANSFER_ADDRESS]
   );
 
   /**
@@ -570,7 +570,7 @@ export function useConfidentialTransfer(): UseConfidentialTransferReturn {
         return 0n;
       }
     },
-    [address, provider, unlockKeys]
+    [address, provider, unlockKeys, CONFIDENTIAL_TRANSFER_ADDRESS]
   );
 
   /**

@@ -33,6 +33,7 @@ export function EnvValidator({ children, showInDev = false }: EnvValidatorProps)
     if (result.valid) {
       logEnvConfig();
     } else {
+      // eslint-disable-next-line no-console
       console.warn("[EnvValidator] Validation failed:", result.errors);
     }
   }, []);

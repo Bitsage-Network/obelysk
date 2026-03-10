@@ -541,7 +541,8 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, sendAsync]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- CONFIDENTIAL_SWAP_ADDRESS is stable (memoized from network), network is a string, unlockKeys may change ref each render
+    [address, account, sendAsync, CONFIDENTIAL_SWAP_ADDRESS, network]
   );
 
   /**
@@ -570,7 +571,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, sendAsync]
+    [address, account, sendAsync, CONFIDENTIAL_SWAP_ADDRESS]
   );
 
   /**
@@ -705,7 +706,8 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, contract, sendAsync, generateProofBundle]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unlockKeys ref may change each render; CONFIDENTIAL_SWAP_ADDRESS and network are stable strings
+    [address, account, contract, sendAsync, generateProofBundle, CONFIDENTIAL_SWAP_ADDRESS, network]
   );
 
   /**
@@ -811,7 +813,8 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, contract, sendAsync, generateProofBundle]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unlockKeys ref may change each render; CONFIDENTIAL_SWAP_ADDRESS and network are stable strings
+    [address, account, contract, sendAsync, generateProofBundle, CONFIDENTIAL_SWAP_ADDRESS, network]
   );
 
   /**
@@ -876,7 +879,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, sendAsync]
+    [address, account, sendAsync, CONFIDENTIAL_SWAP_ADDRESS, unlockKeys]
   );
 
   /**
@@ -932,7 +935,7 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         throw error;
       }
     },
-    [address, account, contract, sendAsync]
+    [address, account, contract, sendAsync, CONFIDENTIAL_SWAP_ADDRESS, unlockKeys]
   );
 
   /**
@@ -974,7 +977,8 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         return 0n;
       }
     },
-    [address, contract]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unlockKeys ref may change each render
+    [address, contract, unlockKeys]
   );
 
   /**
@@ -1046,7 +1050,8 @@ export function useConfidentialSwap(): UseConfidentialSwapReturn {
         return order;
       }
     },
-    [address]
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unlockKeys ref may change each render
+    [address, unlockKeys]
   );
 
   return {

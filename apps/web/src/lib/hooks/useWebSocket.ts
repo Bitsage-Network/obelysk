@@ -358,6 +358,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 
           // Calculate exponential backoff with jitter
           const delay = calculateBackoff(reconnectCountRef.current, reconnectDelay);
+          // eslint-disable-next-line no-console
           console.log(`WebSocket reconnecting in ${delay}ms (attempt ${reconnectCountRef.current}/${reconnectAttempts})`);
 
           reconnectTimeoutRef.current = setTimeout(() => {

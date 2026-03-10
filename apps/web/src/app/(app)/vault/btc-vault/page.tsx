@@ -652,6 +652,7 @@ export default function BtcVaultPage() {
     if (depositSource !== "btc_l1" || !gardenEnabled) return;
     if (gardenAmountError || parsedAmount === 0n) return;
     gardenBridge.fetchQuote(parsedAmount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gardenBridge is an object that changes every render; we trigger on the primitive deps only
   }, [parsedAmount, depositSource, gardenEnabled, gardenAmountError]);
 
   useEffect(() => {
@@ -659,6 +660,7 @@ export default function BtcVaultPage() {
     if (selectedNote) {
       gardenWithdraw.fetchWithdrawQuote(BigInt(selectedNote.amount));
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gardenWithdraw is an object ref; we trigger on primitive deps only
   }, [selectedNote, withdrawDest, gardenEnabled, activeTab]);
 
   // BTC address validation (network-aware)
@@ -728,6 +730,7 @@ export default function BtcVaultPage() {
       amount: gardenBridge.order.outputAmount,
       assetSymbol: "wBTC",
     }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- gardenBridge.order and vault are object refs; only trigger when bridge completes
   }, [gardenBridge.progress?.status]);
 
   // Garden withdraw handler

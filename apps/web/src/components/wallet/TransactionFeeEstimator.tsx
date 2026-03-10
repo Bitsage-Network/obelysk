@@ -194,6 +194,7 @@ export function TransactionFeeEstimator({
       setNetworkConditions(conditions);
       return conditions;
     } catch (err) {
+      // eslint-disable-next-line no-console
       console.warn("[FeeEstimator] RPC unavailable, using baseline values:", err);
 
       // Return baseline values (not random) when RPC is unavailable

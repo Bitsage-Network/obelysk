@@ -1685,6 +1685,7 @@ export function buildExecuteRagequitCall(
   depositIndex: number,
   network: NetworkType = "sepolia"
 ): Call {
+  // eslint-disable-next-line no-console
   console.warn("buildExecuteRagequitCall is deprecated. Use buildCompleteRagequitCall with requestId instead.");
   // Legacy fallback - won't work with new contract
   const addresses = getContractAddresses(network);

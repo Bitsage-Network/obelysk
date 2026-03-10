@@ -344,6 +344,7 @@ export async function verifyStarknetSignature(
     // Note: Full cryptographic verification should call the account contract's
     // is_valid_signature method. This basic check confirms format validity.
     // The session manager contract will do full verification on-chain.
+    // eslint-disable-next-line no-console
     console.log('Starknet signature format valid, on-chain verification required');
     return true;
   } catch (error) {
@@ -385,6 +386,7 @@ export async function verifyMultichainSignature(
     case 'bitcoin':
     case 'cosmos':
       // Future: implement these
+      // eslint-disable-next-line no-console
       console.warn(`${signature.chain} signature verification not yet implemented`);
       return false;
 

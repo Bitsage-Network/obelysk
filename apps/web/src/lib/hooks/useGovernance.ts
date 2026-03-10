@@ -532,6 +532,7 @@ export function useGovernanceContext(network: NetworkType = 'sepolia') {
       .slice(0, maxProposalsToFetch)
       .map(h => h.proposal)
       .filter((p): p is OnChainProposal => p !== null && p.id !== '0');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- p1-p10 are hook return objects; we access .proposal which is the stable data we depend on
   }, [p1.proposal, p2.proposal, p3.proposal, p4.proposal, p5.proposal,
       p6.proposal, p7.proposal, p8.proposal, p9.proposal, p10.proposal,
       maxProposalsToFetch]);

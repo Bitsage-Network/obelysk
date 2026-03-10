@@ -140,6 +140,7 @@ export function useCancelRagequit(): UseCancelRagequitResult {
           }
         } catch (e) {
           // Set might not exist, continue to next
+          // eslint-disable-next-line no-console
           console.warn(`Failed to fetch set ${knownSet.id}:`, e);
         }
       }
@@ -160,6 +161,7 @@ export function useCancelRagequit(): UseCancelRagequitResult {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- privacyPoolsContract is an object ref that changes every render; we only re-fetch when address or commitment changes
   }, [address, ragequitRequest?.commitment]);
 
   /**
@@ -199,6 +201,7 @@ export function useCancelRagequit(): UseCancelRagequitResult {
     } finally {
       setIsLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- privacyPoolsContract is an object ref; this callback is intentionally stable
   }, []);
 
   /**
@@ -253,6 +256,7 @@ export function useCancelRagequit(): UseCancelRagequitResult {
       // Return structure — contract validates the Merkle root against on-chain state
       return merkleProofToLeanIMT(proof, selectedSet.memberCount);
     } catch (e) {
+      // eslint-disable-next-line no-console
       console.warn("Could not generate full proof, using minimal structure:", e);
       return merkleProofToLeanIMT(proof, selectedSet.memberCount);
     }

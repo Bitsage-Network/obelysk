@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 export const TOKEN_COLORS: Record<string, { from: string; to: string; text: string }> = {
@@ -22,11 +23,15 @@ export function TokenIcon({ symbol, size = "md" }: { symbol: string; size?: "sm"
   const dims = size === "sm" ? "w-6 h-6" : size === "lg" ? "w-10 h-10" : "w-8 h-8";
   const textDims = size === "sm" ? "w-6 h-6 text-[10px]" : size === "lg" ? "w-10 h-10 text-sm" : "w-8 h-8 text-xs";
 
+  const imgSize = size === "sm" ? 24 : size === "lg" ? 40 : 32;
+
   if (logo) {
     return (
-      <img
+      <Image
         src={logo}
         alt={symbol}
+        width={imgSize}
+        height={imgSize}
         className={cn(dims, "rounded-full shrink-0")}
       />
     );

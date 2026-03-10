@@ -285,8 +285,10 @@ export class PrivacySessionManager {
     try {
       const signedMessage = await account.signMessage(typedData);
       walletSignature = signedMessage as unknown as string[];
+      // eslint-disable-next-line no-console
       console.log("[PrivacySession] Session authorized by wallet signature");
     } catch (error) {
+      // eslint-disable-next-line no-console
       console.warn("[PrivacySession] Wallet signature skipped (user rejected or not supported):", error);
       // Continue without signature - session will be client-only
     }
@@ -328,8 +330,10 @@ export class PrivacySessionManager {
         // Wait for transaction confirmation
         await provider.waitForTransaction(onChainTxHash, { retryInterval: 2000 });
         isOnChain = true;
+        // eslint-disable-next-line no-console
         console.log("[PrivacySession] Session registered on-chain:", onChainTxHash);
       } catch (error) {
+        // eslint-disable-next-line no-console
         console.warn("[PrivacySession] On-chain registration failed, using client-only:", error);
       }
     }

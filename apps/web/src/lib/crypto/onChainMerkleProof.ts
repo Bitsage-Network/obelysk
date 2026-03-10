@@ -459,6 +459,7 @@ export async function verifyRootAgainstChain(
   const match = normalizedLocal === normalizedOnChain;
 
   if (!match) {
+    // eslint-disable-next-line no-console
     console.warn("[MerkleProof] Root mismatch");
   }
 

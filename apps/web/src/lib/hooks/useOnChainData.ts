@@ -167,6 +167,7 @@ export function useOnChainSagePrice(network: NetworkType = 'sepolia'): OnChainPr
         pragmaQuery.refetch();
       },
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- we depend on specific query properties, not the query objects themselves; adding full objects would cause infinite loops
   }, [bestAskQuery.data, bestAskQuery.isLoading,
       marketStatsQuery.data, marketStatsQuery.isLoading, marketStatsQuery.isError,
       recentTradesQuery.data, recentTradesQuery.isLoading, recentTradesQuery.isError,
@@ -398,6 +399,7 @@ export function useOnChainNetworkGraph(network: NetworkType = 'sepolia'): OnChai
         poolStatsQuery.refetch();
       },
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- we depend on specific query properties, not the query objects themselves
   }, [
     address,
     validatorCountQuery.data, validatorCountQuery.isLoading, validatorCountQuery.isError,
@@ -490,6 +492,7 @@ export function useOnChainNetworkStats(network: NetworkType = 'sepolia'): OnChai
         stakingConfigQuery.refetch();
       },
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- we depend on specific query properties, not the query objects themselves
   }, [
     validatorCountQuery.data, validatorCountQuery.isLoading, validatorCountQuery.isError,
     totalJobsQuery.data, totalJobsQuery.isLoading, totalJobsQuery.isError,

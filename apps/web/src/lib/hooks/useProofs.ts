@@ -163,7 +163,8 @@ export function useProofs(options: {
 
   // Proof verifications from API polling (WebSocket coordinator offline)
   const isConnected = false;
-  const proofVerifications: { job_id: string; is_valid: boolean; timestamp: number; verifier: string; proof_hash: string }[] = [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- placeholder empty array; WebSocket coordinator is offline so this is always empty
+  const proofVerifications: { job_id: string; is_valid: boolean; timestamp: number; verifier: string; proof_hash: string }[] = useMemo(() => [], []);
 
   // Fetch proofs from API
   const fetchData = useCallback(async (append = false) => {
@@ -205,6 +206,7 @@ export function useProofs(options: {
   // Initial fetch
   useEffect(() => {
     fetchData(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchData changes when page changes; we only want to re-fetch on workerId/jobId change
   }, [options.workerId, options.jobId]);
 
   // Handle WebSocket proof verifications - update proof status in real-time

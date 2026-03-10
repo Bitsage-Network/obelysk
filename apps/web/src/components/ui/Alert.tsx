@@ -709,6 +709,7 @@ export function FeatureAnnouncement({
       <div className="flex flex-col sm:flex-row">
         {image && (
           <div className="sm:w-1/3 h-32 sm:h-auto">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={image}
               alt=""

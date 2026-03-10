@@ -232,6 +232,7 @@ export function useTransactionHistory(
     if (targetAddress) {
       fetchEvents(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchEvents includes continuationToken and pageSize in its deps; we only want initial fetch on address change
   }, [targetAddress, sageTokenAddress]);
 
   const refetch = useCallback(() => {

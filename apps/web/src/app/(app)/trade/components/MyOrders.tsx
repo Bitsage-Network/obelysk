@@ -194,7 +194,7 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
     };
 
     fetchOrderDetails();
-  }, [provider, orderIds]);
+  }, [provider, orderIds, network]);
 
   const isLoading = idsLoading || detailsLoading;
 
