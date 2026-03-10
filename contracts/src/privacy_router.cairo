@@ -894,6 +894,12 @@ pub trait IPrivacyRouter<TContractState> {
 
     /// Check if LeanIMT is active
     fn is_lean_imt_active(self: @TContractState) -> bool;
+
+    /// Initialize a supported asset (owner only)
+    fn initialize_asset(ref self: TContractState, asset_id: u64, token_address: ContractAddress, decimals: u8);
+
+    /// Remove asset support (owner only, SAGE cannot be removed)
+    fn remove_asset_support(ref self: TContractState, asset_id: u64);
 }
 
 #[starknet::contract]
@@ -1480,36 +1486,6 @@ mod PrivacyRouter {
         self.supported_assets.write(super::AssetIds::SAGE, sage_token);
         self.asset_decimals.write(super::AssetIds::SAGE, 18);
         // Other assets will be configured via initialize_asset()
-    }
-
-    // =============================================================================
-    // Asset Management (Owner Only)
-    // =============================================================================
-
-    /// Initialize or update a supported asset
-    /// Called by owner to add support for USDC, STRK, BTC, etc.
-    fn initialize_asset(
-        ref self: ContractState,
-        asset_id: u64,
-        token_address: ContractAddress,
-        decimals: u8
-    ) {
-        let caller = get_caller_address();
-        assert!(caller == self.owner.read(), "Only owner");
-        assert!(!token_address.is_zero(), "Invalid token address");
-
-        self.supported_assets.write(asset_id, token_address);
-        self.asset_decimals.write(asset_id, decimals);
-    }
-
-    /// Remove support for an asset (emergency only)
-    fn remove_asset_support(ref self: ContractState, asset_id: u64) {
-        let caller = get_caller_address();
-        assert!(caller == self.owner.read(), "Only owner");
-        // SAGE cannot be removed
-        assert!(asset_id != super::AssetIds::SAGE, "Cannot remove SAGE");
-
-        self.supported_assets.write(asset_id, core::num::traits::Zero::zero());
     }
 
     #[abi(embed_v0)]
@@ -3379,6 +3355,24 @@ mod PrivacyRouter {
         /// Check if LeanIMT is active
         fn is_lean_imt_active(self: @ContractState) -> bool {
             self._is_lean_imt_active()
+        }
+
+        fn initialize_asset(
+            ref self: ContractState,
+            asset_id: u64,
+            token_address: ContractAddress,
+            decimals: u8
+        ) {
+            self._only_owner();
+            assert!(!token_address.is_zero(), "Invalid token address");
+            self.supported_assets.write(asset_id, token_address);
+            self.asset_decimals.write(asset_id, decimals);
+        }
+
+        fn remove_asset_support(ref self: ContractState, asset_id: u64) {
+            self._only_owner();
+            assert!(asset_id != super::AssetIds::SAGE, "Cannot remove SAGE");
+            self.supported_assets.write(asset_id, core::num::traits::Zero::zero());
         }
 
     }

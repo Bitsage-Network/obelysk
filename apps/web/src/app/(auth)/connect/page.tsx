@@ -100,11 +100,8 @@ export default function ConnectPage() {
     try {
       setConnectingConnectorId(connector.id);
       setLocalError(null);
-      console.log("Connecting to:", connector.id, connector.name);
-
       // Set a timeout to auto-cancel stuck connections
       timeoutRef.current = setTimeout(() => {
-        console.log("Connection timeout - resetting");
         setLocalError("Connection timed out. Please try again or check your wallet.");
         setConnectingConnectorId(null);
         reset();
@@ -118,7 +115,6 @@ export default function ConnectPage() {
         timeoutRef.current = null;
       }
 
-      console.log("Connection successful");
       // Small delay to ensure wallet state is updated, then show approval
       setTimeout(() => {
         setConnectingConnectorId(null);

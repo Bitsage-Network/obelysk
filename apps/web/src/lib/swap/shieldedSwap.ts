@@ -282,16 +282,35 @@ export async function estimateSwapOutput(
 
     const expectedOutput = BigInt(result.toString());
 
-    // Price impact estimation: compare actual output vs. expected at pool's spot price.
-    // Since amountIn and expectedOutput are different tokens, we measure impact as
-    // the deviation from the pool's marginal rate (quote returns post-impact output).
-    // A better approximation: compare output with a tiny quote to get the spot rate.
-    // For now, use the fee-adjusted ratio as a proxy (0 impact for small swaps).
-    const priceImpact = 0; // TODO: implement proper price impact via spot-rate comparison
+    // Price impact: compare effective rate against spot rate from a tiny reference quote.
+    let priceImpact = 0;
+    try {
+      const refAmount = amountIn / 1000n || 1n;
+      const refResult = await contract.call("quote", [
+        {
+          token0: poolKey.token0,
+          token1: poolKey.token1,
+          fee: poolKey.fee,
+          tick_spacing: poolKey.tick_spacing,
+          extension: poolKey.extension,
+        },
+        refAmount.toString(),
+        isToken1,
+      ]);
+      const refOutput = BigInt(refResult.toString());
+      if (refOutput > 0n) {
+        // Spot rate from tiny quote vs actual rate
+        const spotRate = Number(refOutput) / Number(refAmount);
+        const actualRate = Number(expectedOutput) / Number(amountIn);
+        priceImpact = ((spotRate - actualRate) / spotRate) * 100;
+      }
+    } catch {
+      // If reference quote fails, leave impact at 0
+    }
 
     return {
       expectedOutput,
-      priceImpact: Math.abs(priceImpact),
+      priceImpact: Math.max(0, priceImpact),
       fee: (amountIn * BigInt(poolKey.fee)) / (2n ** 128n),
       route: `${inputToken} → Ekubo → ${outputToken}`,
     };

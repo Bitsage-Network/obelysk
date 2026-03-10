@@ -276,7 +276,6 @@ function StakePageInner({
       // Send both calls atomically
       await sendTransaction([approveCall, stakeCall]);
     } catch (err: unknown) {
-      console.error("Stake transaction failed:", err);
       setTxError(err instanceof Error ? err.message : "Transaction failed");
     }
   }, [address, contracts.STAKING, sendTransaction]);
@@ -291,7 +290,6 @@ function StakePageInner({
       const unstakeCall = buildUnstakeCall(amountBigInt, network);
       await sendTransaction([unstakeCall]);
     } catch (err: unknown) {
-      console.error("Unstake transaction failed:", err);
       setTxError(err instanceof Error ? err.message : "Transaction failed");
     }
   }, [address, sendTransaction]);

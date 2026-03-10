@@ -592,7 +592,6 @@ function SendPageInner() {
         }, 2000);
       }
     } catch (error) {
-      console.error("Send failed:", error instanceof Error ? error.message : "unknown error");
       toast.error(error instanceof Error ? error.message : "Send failed");
     } finally {
       setIsSending(false);

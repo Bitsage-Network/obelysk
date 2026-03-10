@@ -71,7 +71,7 @@ function parseU256(value: unknown): bigint {
     if ('value' in v) return parseU256(v.value);
   }
   if (value !== undefined && value !== null) {
-    console.warn('[parseU256] Unknown balance shape:', typeof value, value);
+    // Unknown balance shape — silently return 0
   }
   return 0n;
 }

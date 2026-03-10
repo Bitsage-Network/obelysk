@@ -288,8 +288,6 @@ export function PlaceOrder({ pairId, pair, initialPrice, initialAmount, initialS
       setAmount("");
       setSliderValue(0);
     } catch (error: unknown) {
-      console.error("Failed to place order:", error instanceof Error ? error.message : "unknown error");
-
       // Extract error message for user-friendly display
       let errorMessage = "Transaction failed. Please try again.";
       if (error instanceof Error) {
