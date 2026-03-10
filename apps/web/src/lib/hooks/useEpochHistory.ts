@@ -125,7 +125,6 @@ export function useEpochHistory(limit: number = 10): {
 
       setEpochs(results);
     } catch (err) {
-      console.warn("[EpochHistory] Failed to fetch:", err);
       setIsError(true);
     } finally {
       setIsLoading(false);

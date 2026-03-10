@@ -67,7 +67,6 @@ function buildTradingPairs(): Map<string, TradingPair> {
     const quote = getAssetBySymbol(quoteSymbol);
 
     if (!base || !quote) {
-      console.warn(`Missing asset for pair ${config.id}: base=${baseSymbol}, quote=${quoteSymbol}`);
       continue;
     }
 

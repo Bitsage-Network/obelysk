@@ -327,7 +327,6 @@ export async function readEpochFromContract(
       secondsRemaining: (blocksRemaining || 1) * 4, // ~4s per block
     };
   } catch (err) {
-    console.warn("[DarkPool] Failed to read epoch from contract:", err);
     return null;
   }
 }
@@ -365,7 +364,6 @@ export async function readEncryptedBalance(
 
     return { c1_x, c1_y, c2_x, c2_y };
   } catch (err) {
-    console.warn("[DarkPool] Failed to read encrypted balance:", err);
     return null;
   }
 }
@@ -505,7 +503,6 @@ export async function readEpochResult(
       settledAt,
     };
   } catch (err) {
-    console.warn("[DarkPool] Failed to read epoch result:", err);
     return null;
   }
 }
@@ -550,7 +547,6 @@ export async function readEpochPairResult(
       settledAt,
     };
   } catch (err) {
-    console.warn("[DarkPool] Failed to read epoch pair result:", err);
     return null;
   }
 }
@@ -605,7 +601,6 @@ export async function readOrderFromContract(
       fillAmount,
     };
   } catch (err) {
-    console.warn("[DarkPool] Failed to read order:", err);
     return null;
   }
 }
@@ -1181,7 +1176,6 @@ function deserializeOrderNote(raw: unknown): DarkPoolOrderNote | null {
       clearingPrice: r.clearingPrice ? BigInt(r.clearingPrice as string) : undefined,
     } as DarkPoolOrderNote;
   } catch {
-    console.warn("[DarkPool] Skipping corrupted order note in IndexedDB");
     return null;
   }
 }

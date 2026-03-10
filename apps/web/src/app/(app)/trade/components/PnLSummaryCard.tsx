@@ -58,7 +58,6 @@ export function PnLSummaryCard({ orders }: PnLSummaryCardProps) {
 
       // D6: Skip entries with corrupted data (null = parse failure) and log for debugging
       if (entryPrice === null || clearingPrice === null || fillAmount === null) {
-        console.warn(`[PnL] Skipping order ${order.orderId}: malformed price data`);
         continue;
       }
       if (entryPrice === 0 || clearingPrice === 0 || fillAmount === 0) continue;

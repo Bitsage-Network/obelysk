@@ -179,7 +179,7 @@ export function MyOrders({ pairId, pair }: MyOrdersProps) {
                 status: Number(result[12] || '0'),
               });
             } else {
-              console.warn('[MyOrders] Unexpected result length:', result?.length);
+              // Unexpected result length — skip
             }
           } catch {
             // Skip orders that fail to fetch
