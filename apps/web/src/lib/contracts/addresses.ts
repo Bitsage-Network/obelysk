@@ -542,7 +542,7 @@ export const EXTERNAL_LINKS = {
 
 // App URLs for cross-app linking
 export const APP_URLS = {
-  validator: "https://validator.bitsage.network",
+  validator: "https://validators.bitsage.network",
   obelysk: "https://obelysk.bitsage.network",
   governance: "https://governance.bitsage.network",
   faucet: "https://faucet.bitsage.network",

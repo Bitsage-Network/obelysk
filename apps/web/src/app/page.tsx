@@ -63,7 +63,7 @@ const ecosystemProjects = [
   {
     name: "Validator Network",
     description: "STARK proof validation",
-    href: "https://validator.bitsage.network",
+    href: "https://validators.bitsage.network",
     icon: Server,
     active: false,
   },
@@ -194,7 +194,7 @@ export default function HomePage() {
           </div>
           <div className="hidden sm:flex items-center gap-4 text-gray-500">
             <a href="https://docs.bitsage.network/obelysk" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Docs</a>
-            <a href="https://validator.bitsage.network" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Validator</a>
+            <a href="https://validators.bitsage.network" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Validator</a>
             <a href="https://discord.gg/bitsage" target="_blank" rel="noopener noreferrer" className="hover:text-white transition-colors">Discord</a>
           </div>
         </div>

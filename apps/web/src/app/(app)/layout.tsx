@@ -33,7 +33,7 @@ const moreItems = [
   { title: "Bridge", href: "/bridge", icon: ArrowUpDown },
   {
     title: "Validator",
-    href: "https://validator.bitsage.network",
+    href: "https://validators.bitsage.network",
     icon: ExternalLink,
     external: true,
   },
