@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
 const isDev = process.env.NODE_ENV === "development";
 
 /** @type {import('next').NextConfig} */
@@ -32,7 +34,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https:",
               "font-src 'self' data:",
-              `connect-src 'self' ${isDev ? "ws://localhost:* " : ""}https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com`,
+              `connect-src 'self' ${isDev ? "ws://localhost:* " : ""}https://*.starknet.io https://*.alchemy.com https://*.infura.io https://*.blastapi.io https://*.avnu.fi https://*.cartridge.gg https://*.garden.finance https://*.lava.build https://*.publicnode.com https://*.bitsage.network wss://*.bitsage.network https://api.coingecko.com https://*.ingest.sentry.io`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -64,4 +66,10 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+export default withSentryConfig(nextConfig, {
+  // Suppress source map upload warnings when SENTRY_AUTH_TOKEN is not set
+  silent: true,
+  // Disable source map upload (can enable later with auth token)
+  disableServerWebpackPlugin: true,
+  disableClientWebpackPlugin: true,
+});
